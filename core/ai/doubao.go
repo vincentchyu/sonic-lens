@@ -77,7 +77,7 @@ func (p *DoubaoProvider) AnalyzeTrack(
 
 	// 打印请求体
 	reqJSON, _ := json.Marshal(dReq)
-	log.Debug(ctx, "豆包请求体", zap.String("body", string(reqJSON)))
+	log.Info(ctx, "豆包请求体", zap.String("body", string(reqJSON)))
 
 	// 调用豆包 API
 	resp, err := p.client.CreateChatCompletion(ctx, dReq)
@@ -246,10 +246,10 @@ func buildSystemPrompt(feedbackContext string) string {
 • 说明歌词的语言风格（诗意/叙事/口语等）
 • 尤其对中文歌词，和外语原文进行详细的解读，不少于300字，重点关注歌词含义、隐喻、立意等，帮助用户解读深刻含义
 • 针对每一段进行赏析和解读，文本解析格式：每一段原文（解读）
-• ⚠️ 重要：分段解读(appreciate_analysis)必须包含完整的歌词内容，不要遗漏任何歌词行
+• ⚠️ 重要：分段解读(appreciate_analysis)必须包含完整的歌词内容，不要遗漏任何歌词行,你可以对歌词内容整体上下文自行理解,进行分段综合分析、也可以进行分句分析
 • 格式要求：
-  - 每一句/每一段歌词原文必须出现在解读中
-  - 原文后紧跟（解读），解读前后括号要换行
+  - 每段、句歌词原文必须出现在解读中
+  - 一段、句原文后紧跟（解读：），（之前换行，）之后换行
 	示例：
 	就在一瞬间
     就在一瞬间 握紧我矛盾密布的手
