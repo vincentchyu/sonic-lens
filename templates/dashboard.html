@@ -34,29 +34,26 @@
             margin-bottom: 15px;
             overflow-x: auto;
             gap: 10px;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            background-color: var(--background-color);
-            padding-top: 20px; /* Match container padding */
-            margin-top: -20px; /* Pull up to cover padding */
+            background-color: var(--card-bg);
+            padding: 10px 0;
         }
 
         .insight-tab {
-            padding: 8px 12px;
+            padding: 8px 16px;
             cursor: pointer;
             border-bottom: 2px solid transparent;
             color: var(--text-secondary);
             font-size: 0.9rem;
             white-space: nowrap;
             transition: all 0.2s ease;
+            border-radius: 6px 6px 0 0;
         }
 
         .insight-tab.active {
             color: var(--primary-color);
             border-bottom-color: var(--primary-color);
             font-weight: 600;
-            background-color: rgba(52, 152, 219, 0.05);
+            background-color: rgba(52, 152, 219, 0.08);
         }
 
         .insight-tab:hover {
@@ -1475,6 +1472,53 @@
             box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
             animation-name: animatetop;
             animation-duration: 0.3s;
+        }
+
+        /* 歌曲详情模态框：标题和Tab固定，仅内容区滚动 */
+        #trackDetailsModal .modal-content {
+            display: flex;
+            flex-direction: column;
+            max-height: 85vh;
+        }
+
+        #trackDetailsModal .modal-header {
+            flex-shrink: 0;
+        }
+
+        #trackDetailsModal .modal-tabs {
+            flex-shrink: 0;
+            position: relative;
+            z-index: 10;
+            background: var(--card-bg);
+        }
+
+        #trackDetailsModal .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            padding: 0 20px 20px 20px; /* Top padding moved to specific elements or handled by sticky margin */
+        }
+
+        /* AI分析二级Tab在内容区内吸顶 */
+        #trackDetailsModal .modal-body .insight-tabs {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: var(--card-bg);
+            margin: 0 -20px 15px -20px;
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        /* 修复第一个 section 与吸顶 Tab 的间距 */
+        #trackDetailsModal .modal-body .insight-item {
+            padding-top: 5px;
+        }
+
+        /* 基础信息 Tab 依然需要顶部间距 */
+        #trackDetailsModal .modal-body .track-info {
+            padding-top: 20px;
         }
 
         @keyframes animatetop {
@@ -5518,7 +5562,7 @@
                 .then(lyricsData => {
                     if (lyricsData.lyrics) {
                         bodyContent.innerHTML = `
-                  <div class="lyrics-container" style="max-height: 500px; overflow-y: auto; padding: 20px; font-family: sans-serif; line-height: 1.8; text-align: center;">
+                  <div class="lyrics-container" style="padding: 20px; font-family: sans-serif; line-height: 1.8; text-align: center;">
                     <div class="lyrics-text" style="white-space: pre-wrap;">${lyricsData.lyrics}</div>
                   </div>
                 `;
