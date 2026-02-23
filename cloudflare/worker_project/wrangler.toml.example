@@ -1,0 +1,15 @@
+name = "lastfm-scrobbler-api"
+main = "src/index.js"
+compatibility_date = "2024-12-05"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lastfm-scrobbler-db"
+database_id = "f29099d5" # 请替换为你实际的 D1 ID，这里先用个占位或从之前的配置读取
+
+[observability]
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true

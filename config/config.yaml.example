@@ -1,0 +1,49 @@
+# Cloudflare D1 同步配置示例
+# 将此配置添加到你的 config/config.yaml 文件中
+
+cloudflare:
+  account_id: "your_cloudflare_account_id"      # Cloudflare Account ID
+  api_token: "your_cloudflare_api_token"        # Cloudflare API Token (需要 D1 权限)
+  d1_database_id: "your_d1_database_id"         # D1 数据库 ID
+  sync_enabled: true                            # 是否启用 D1 同步
+  sync_interval: 24                             # 同步间隔(小时),默认 24 小时
+
+# AI 大模型配置示例
+ai:
+  # 当前使用的大模型提供方，可选值示例：openai、gemini、ollama、doubao 等
+  provider: "openai"
+
+  # OpenAI 配置（推荐优先使用配置文件，其次再用环境变量）
+  openai:
+    apiKey: "your_openai_api_key"               # 也可以通过环境变量 OPENAI_API_KEY 配置
+    baseUrl: "https://api.openai.com"           # 可选，自建代理时可修改或留空
+    model: "gpt-4.1-mini"                       # 可选，留空则使用默认 gpt-4.1-mini
+
+  # Gemini 配置（当前代码中暂未实现 Provider，仅预留）
+  gemini:
+    apiKey: ""                                  # 预留字段
+    baseUrl: ""                                 # 预留字段
+    model: ""                                   # 预留字段
+
+  # 本地 Ollama 配置（已实现，使用前请先启动 Ollama 并拉取模型）
+  ollama:
+    host: "http://localhost:11434"             # Ollama 本地服务地址，默认 http://localhost:11434
+    model: "gpt-oss:latest"                     # 使用的模型名称，如 gpt-oss:latest、llama3.2:latest
+
+  # 豆包 / 字节系模型配置（当前代码中暂未实现 Provider，仅预留）
+  doubao:
+    apiKey: ""                                  # 预留字段
+    baseUrl: ""                                 # 预留字段
+    model: ""                                   # 预留字段
+
+# 注意事项:
+# 1. **安全性**: api_token 具有账户权限,切勿提交到 Git 仓库
+# 2. **获取 Account ID**: 在 Cloudflare Dashboard 右侧可以找到
+# 3. **创建 API Token**: 
+#    - 访问: https://dash.cloudflare.com/profile/api-tokens
+#    - 创建 Token,权限需要包括: "D1:Edit"
+# 4. **创建 D1 数据库**:
+#    wrangler d1 create lastfm-scrobbler-db
+#    # 复制返回的 database_id 到此处
+# 5. **初始化数据库表**:
+#    wrangler d1 execute lastfm-scrobbler-db --file=./cloudflare/d1_schema.sql

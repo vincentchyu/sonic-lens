@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/local/sbin:/opt/local/bin:/opt/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:/opt/homebrew/bin</string>
+	</dict>
+	<!-- 唯一标识符 -->
+	<key>Label</key>
+	<string>com.vincent.sonic-lens.job</string>
+	<!-- 要运行的脚本 -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>./shell/bin/sonic-lens</string>
+		<string>-m</string>
+		<string>-c</string>
+		<string>./config/config_local.yaml</string>
+	</array>
+    <key>WorkingDirectory</key>
+    <string>/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/</string>
+    <!-- 在登录时自动启动 -->
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- 保持存活，挂了自动重启 -->
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>

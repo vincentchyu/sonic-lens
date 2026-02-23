@@ -1,0 +1,18 @@
+<svg width="70" height="70" xmlns="http://www.w3.org/2000/svg">
+    <!-- 背景 -->
+    <rect width="70" height="70" fill="transparent"/>
+    <!-- Logo图形：负空间同心圆 -->
+    <g transform="translate(35, 35)">
+        <!-- 黑色圆形基底 -->
+        <circle cx="0" cy="0" r="30" fill="black"/>
+        <!-- 白色线条作为负空间 -->
+        <circle cx="0" cy="0" r="28" fill="none" stroke="white" stroke-width="2" stroke-dasharray="175 5"
+                stroke-dashoffset="0"/>
+        <circle cx="0" cy="0" r="20" fill="none" stroke="white" stroke-width="2" stroke-dasharray="125 5"
+                stroke-dashoffset="2"/>
+        <circle cx="0" cy="0" r="12" fill="none" stroke="white" stroke-width="2" stroke-dasharray="75 5"
+                stroke-dashoffset="4"/>
+        <!-- 中心白色负空间 -->
+        <circle cx="0" cy="0" r="4" fill="white"/>
+    </g>
+</svg>

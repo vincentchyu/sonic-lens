@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音乐偏好分析报告</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 夜间模式 */
+        body.dark-mode {
+            background-color: #1a1a1a;
+        }
+
+        body.dark-mode .container {
+            background-color: #2c2c2c;
+            color: #f0f0f0;
+        }
+
+        body.dark-mode .section-title {
+            color: #5dade2;
+            border-bottom: 2px solid #5dade2;
+        }
+
+        body.dark-mode .track-info {
+            color: #f0f0f0;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            color: #3498db;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+
+        .track-item {
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+
+        .track-item:last-child {
+            border-bottom: none;
+        }
+
+        .track-info {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .play-count {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .rank {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background-color: #3498db;
+            color: white;
+            text-align: center;
+            line-height: 30px;
+            border-radius: 50%;
+            margin-right: 15px;
+        }
+
+        /* 并列显示 */
+        .report-sections {
+            display: flex;
+            gap: 30px;
+        }
+
+        .report-section {
+            flex: 1;
+        }
+
+        @media (max-width: 768px) {
+            .report-sections {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+<script>
+    // 自动切换日夜模式
+    function toggleDarkModeBasedOnTime() {
+        const body = document.body;
+        const currentHour = new Date().getHours();
+
+        // 晚上7点到早上6点之间启用夜间模式
+        if (currentHour >= 19 || currentHour < 6) {
+            body.classList.add("dark-mode");
+        } else {
+            body.classList.remove("dark-mode");
+        }
+    }
+
+    // 页面加载完成后初始化
+    document.addEventListener("DOMContentLoaded", function () {
+        toggleDarkModeBasedOnTime();
+    });
+</script>
+<div class="container">
+    <div class="section">
+        <h2 class="section-title">统计概览</h2>
+        <p>总曲目数: <strong>{{.TotalTracks}}</strong></p>
+    </div>
+
+    <div class="report-sections">
+        <div class="report-section">
+            <div class="section">
+                <h2 class="section-title">播放次数最多的曲目</h2>
+                {{range $index, $track := .TopTracks}}
+                <div class="track-item">
+                    <div class="track-info">
+                        <span class="rank">{{$index | addOne}}</span>
+                        {{$track.Artist}} - {{$track.Album}} - {{$track.Track}}
+                    </div>
+                    <div class="play-count">播放次数: {{$track.PlayCount}}</div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="report-section">
+            <div class="section">
+                <h2 class="section-title">最近播放的曲目</h2>
+                {{range $index, $record := .RecentRecords}}
+                <div class="track-item">
+                    <div class="track-info">
+                        <span class="rank">{{$index | addOne}}</span>
+                        {{$record.Artist}} - {{$record.Album}} - {{$record.Track}}
+                    </div>
+                    <div>播放时间: {{$record.PlayTime.Format "2006-01-02 15:04:05"}}</div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

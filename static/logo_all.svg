@@ -1,0 +1,23 @@
+<svg width="240" height="70" xmlns="http://www.w3.org/2000/svg">
+    <!-- 背景 -->
+    <rect width="240" height="70" fill="transparent"/>
+    <!-- Logo图形：断裂同心圆 -->
+    <g transform="translate(35, 35)">
+        <!-- 三个同心圆，每个有微小断裂，断裂位置依次偏移 -->
+        <circle cx="0" cy="0" r="28" fill="none" stroke="black" stroke-width="1.5" stroke-dasharray="175 5"
+                stroke-dashoffset="0"/>
+        <circle cx="0" cy="0" r="20" fill="none" stroke="black" stroke-width="1.5" stroke-dasharray="125 5"
+                stroke-dashoffset="2"/>
+        <circle cx="0" cy="0" r="12" fill="none" stroke="black" stroke-width="1.5" stroke-dasharray="75 5"
+                stroke-dashoffset="4"/>
+        <!-- 中心白色负空间 -->
+        <circle cx="0" cy="0" r="4" fill="black"/>
+    </g>
+    <!-- 品牌文字 -->
+    <text x="75" y="32" font-family="Inter, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="black"
+          letter-spacing="0.5">音眸轨迹 · SonicLens
+    </text>
+    <text x="75" y="50" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" fill="black"
+          letter-spacing="0.5">声之透镜 · 深度解析 · 聆听之印记
+    </text>
+</svg>
