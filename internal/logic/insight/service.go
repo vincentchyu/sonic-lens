@@ -203,13 +203,8 @@ func (s *serviceImpl) GetOrCreateInsight(
 		LLMProvider:       llmResp.LLMProvider,
 		LangSource:        llmReq.LangSource,
 		LangTarget:        llmReq.LangTarget,
+		AnalysisBySection: llmResp.AnalysisBySection,
 		LastUsedAt:        time.Now(),
-	}
-
-	if llmResp.AnalysisBySection != nil {
-		if serialized, serErr := json.Marshal(llmResp.AnalysisBySection); serErr == nil {
-			newInsight.AnalysisBySection = string(serialized)
-		}
 	}
 	if llmResp.Metadata != nil {
 		if serialized, serErr := json.Marshal(llmResp.Metadata); serErr == nil {
@@ -330,6 +325,7 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 							Track:  track,
 							// LyricsOriginal:    lyrics, // 移除
 							LyricsTranslation: llmResp.LyricsTranslation,
+							AnalysisBySection: llmResp.AnalysisBySection,
 							AnalysisSummary:   llmResp.AnalysisSummary,
 							BackgroundInfo:    llmResp.BackgroundInfo,
 							EraContext:        llmResp.EraContext,
@@ -337,11 +333,6 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 							LangSource:        llmReq.LangSource,
 							LangTarget:        llmReq.LangTarget,
 							LastUsedAt:        time.Now(),
-						}
-						if llmResp.AnalysisBySection != nil {
-							if serialized, serErr := json.Marshal(llmResp.AnalysisBySection); serErr == nil {
-								newInsight.AnalysisBySection = string(serialized)
-							}
 						}
 
 						// 检查是否已存在记录，存在则更新

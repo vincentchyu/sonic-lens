@@ -1,8 +1,12 @@
 package model
 
 import (
+	"bytes"
 	"context"
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -18,9 +22,8 @@ type TrackInsight struct {
 	// 总体摘要性解读
 	AnalysisSummary string `gorm:"column:analysis_summary;type:text" json:"analysis_summary"`
 	// 按段落/主题的细粒度解析，JSON 字符串
-	AnalysisBySection string `gorm:"column:analysis_by_section;type:text" json:"analysis_by_section"`
-	// 歌曲或专辑的创作背景
-	BackgroundInfo string `gorm:"column:background_info;type:text" json:"background_info"`
+	AnalysisBySection JSONText `gorm:"type:text" json:"analysis_by_section"` // 歌曲或专辑的创作背景
+	BackgroundInfo    string   `gorm:"column:background_info;type:text" json:"background_info"`
 	// 时代语境、文化/社会背景
 	EraContext string `gorm:"column:era_context;type:text" json:"era_context"`
 	// 使用的大模型提供方，例如 openai:gpt-4.1、gemini:1.5-pro 等
@@ -40,6 +43,24 @@ type TrackInsight struct {
 	LastUsedAt time.Time `gorm:"column:last_used_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"last_used_at"`
 }
 
+type JSONText map[string]string
+
+func (j JSONText) Value() (driver.Value, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(j)
+	return strings.TrimSpace(buf.String()), err
+}
+
+func (j *JSONText) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("invalid scan")
+	}
+	return json.Unmarshal(b, j)
+}
+
 // TableName 自定义表名
 func (TrackInsight) TableName() string {
 	return "track_insight"
@@ -48,18 +69,13 @@ func (TrackInsight) TableName() string {
 // ToSimplifiedJSON 将结果转换为简化版 JSON 字符串，模拟 AI 返回格式
 func (ti *TrackInsight) ToSimplifiedJSON() string {
 	res := map[string]interface{}{
-		"lyrics_translation": ti.LyricsTranslation,
-		"analysis_summary":   ti.AnalysisSummary,
-		"background_info":    ti.BackgroundInfo,
-		"era_context":        ti.EraContext,
-		"llm_provider":       ti.LLMProvider,
-		"metadata":           ti.Metadata,
-	}
-	if ti.AnalysisBySection != "" {
-		var sections map[string]string
-		if err := json.Unmarshal([]byte(ti.AnalysisBySection), &sections); err == nil {
-			res["analysis_by_section"] = sections
-		}
+		"lyrics_translation":  ti.LyricsTranslation,
+		"analysis_by_section": ti.AnalysisBySection,
+		"analysis_summary":    ti.AnalysisSummary,
+		"background_info":     ti.BackgroundInfo,
+		"era_context":         ti.EraContext,
+		"llm_provider":        ti.LLMProvider,
+		"metadata":            ti.Metadata,
 	}
 	b, _ := json.Marshal(res)
 	return string(b)

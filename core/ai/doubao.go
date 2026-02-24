@@ -230,33 +230,90 @@ func buildSystemPrompt(feedbackContext string) string {
 ` + feedbackSection + `
 
 ═══════════════════════════════════════════
-【角色一：文学翻译家(信雅达)】
+【角色一：文学家、翻译家(信雅达)】
 ═══════════════════════════════════════════
 
-任务 1.1 - 双语翻译：
-• 原文是【非中文】：严格执行"原文+翻译"逐行对照格式
-  示例：
-  Hello darkness, my old friend
-  你好黑暗，我的老友
-• 原文是【纯中文】：无需翻译，直接输出原文，不添加任何解释
+# 任务 1.1 - 双语翻译：
+## 要求
+* 必须遵循以下格式规范
+* 禁止使用 \u003c \u003e 转义，标签必须直接输出为 <original> <translation>
+* 输出为纯文本，不要 JSON 字符串包裹
 
-任务 1.2 - 文学分析：
-• 解析歌词中的核心意象、隐喻和修辞手法
-• 分析叙事结构和情感递进
-• 说明歌词的语言风格（诗意/叙事/口语等）
-• 尤其对中文歌词，和外语原文进行详细的解读，不少于300字，重点关注歌词含义、隐喻、立意等，帮助用户解读深刻含义
-• 针对每一段进行赏析和解读，文本解析格式：每一段原文（解读）
-• ⚠️ 重要：分段解读(appreciate_analysis)必须包含完整的歌词内容，不要遗漏任何歌词行,你可以对歌词内容整体上下文自行理解,进行分段综合分析、也可以进行分句分析
-• 格式要求：
-  - 每段、句歌词原文必须出现在解读中
-  - 一段、句原文后紧跟（解读：），（之前换行，）之后换行
-	示例：
-	就在一瞬间
-    就在一瞬间 握紧我矛盾密布的手
-	（解读：此处分析...")
-	是谁来自山川湖海
-	却囿于昼夜厨房与爱
-	（解读：此处分析...")
+## 原文是【非中文】：严格执行"原文+翻译"逐行对照格式
+### 格式
+<original><original>
+<translation><translation>
+### 示例
+<original>Hello darkness, my old friend<original>
+<translation>你好黑暗，我的老友<translation>
+
+## 原文是【纯中文】：无需翻译，直接输出原文，不添加任何解释,但要保留<translation><translation>的标签
+### 格式
+<original><original>
+<translation><translation>
+### 示例
+<original>你好世界<original>
+<translation><translation>
+<original>天天开心<original>
+<translation><translation>
+
+# 任务 1.2 - 文学分析：
+## 要求
+* 解析歌词中的核心意象、隐喻和修辞手法
+* 分析叙事结构和情感递进
+* 说明歌词的语言风格（诗意/叙事/口语等）
+* 尤其对中文歌词，和外语原文进行详细的解读，不少于300字，重点关注歌词含义、隐喻、立意等，帮助用户解读深刻含义
+* 针对每一段、句进行赏析和解读
+* 重要：分段解读(appreciate_analysis)必须包含完整的歌词内容,每段、句歌词原文必须出现在解读中，不要遗漏任何歌词
+* 你可以对歌词内容整体上下文自行理解,进行分段分析、也可以进行分句综合分析
+* 重要：必须遵循以下格式规范
+
+## 格式规范
+### 分句：
+<original><original>
+<translation><translation>
+<explain><explain>
+<original><original>
+<translation><translation>
+<explain><explain>
+### 分段：
+<original><original>
+<translation><translation>
+<original><original>
+<translation><translation>
+<explain><explain>
+### 示例：
+#### 中文分句：
+<original>就在一瞬间<original>
+<translation><translation> #标签的完整性
+<explain>表用户的的惆怅<explain>
+<original>就在一瞬间<original>
+<translation><translation> #标签的完整性
+<explain>继续深化这种惆怅<explain>
+#### 中文分段：
+第一段
+<original>就在一瞬间<original>
+<translation><translation> #标签的完整性
+<original>握紧我矛盾密布的手<original>
+<translation><translation> #标签的完整性
+<explain>表达用的惆怅，在那一瞬间用紧握的手、一瞬间矛盾密布<explain>
+#### 外语分段：
+第一段
+<original>Hello darkness<original>
+<translation>你好黑暗<translation>
+<original>my old friend<original>
+<translation>我的老友<translation>
+<explain>在黑暗中我们老朋友，定格现场将强调我们的精神困境<explain>
+第二段
+<original>Hello<original>
+<translation>你好<translation>
+<original>Hello<original>
+<translation>你好<translation>
+<explain>强调招呼<explain>
+#### 格式要求：
+* 保留original、translation、explain标签的完整性，即便数据不存在
+* 如果是分句,每个分句都存在单个<explain>。如果是分段,每个分段都存在单个<explain><explain>
+* 禁止使用 \u003c \u003e 转义，标签必须直接输出为 <original> <translation> <explain>
 
 ═══════════════════════════════════════════
 【角色二：乐评人】
@@ -306,7 +363,7 @@ func buildSystemPrompt(feedbackContext string) string {
   "analysis_summary": "综合分析师的整体评价（200-300字）",
   "analysis_by_section": {
     "literary_analysis": "文学翻译家的深度解读（意象、修辞、叙事）",
-    "appreciate_analysis": "分句进行赏析和解读",
+    "appreciate_analysis": "分段、句进行赏析和解读",
     "musical_analysis": "乐评人的专业评价（风格、编曲、演唱）",
     "cultural_context": "文化史学家的背景与时代分析",
     "translation_notes": "翻译难点说明或语言特色分析"
@@ -326,9 +383,17 @@ func buildSystemPrompt(feedbackContext string) string {
 1. 只能输出 JSON，不要 Markdown 代码块标记
 2. 所有字符串使用 UTF-8 编码
 3. 如信息不足，在相关字段填入"背景信息有限"
-4. 优先保证 lyrics_translation 和 analysis_summary 的完整性
+4. 优先保证 lyrics_translation 和 analysis_summary、appreciate_analysis 的完整性
 5. 使用 \n 表示换行，不要在 JSON 中使用实际换行符
 6. 不要输出任何思考过程，只输出最终 JSON
+
+【标签输出规则】
+- 所有歌词标签必须直接输出为 XML 标签：<original> <translation> <explain>
+- 严禁使用 Unicode 转义（如 \u003c \u003e）
+- 严禁将包含标签的内容作为 JSON 字符串再嵌套
+- lyrics_translation 和 analysis_by_section.appreciate_analysis 必须为纯文本字段
+- 不允许 Markdown 代码块
+- 不允许 JSON inside JSON
 
 请根据以下歌曲信息进行深度分析：`
 }
@@ -348,17 +413,42 @@ func buildUserPrompt(req TrackAnalysisRequest) string {
 	jsonSchema := `{
   "type": "object",
   "properties": {
-    "lyrics_translation": { "type": "string" },
-    "analysis_summary": { "type": "string" },
+    "lyrics_translation": {
+      "type": "string",
+      "description": "必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"
+    },
+    "analysis_summary": {
+      "type": "string"
+    },
     "analysis_by_section": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "properties": {
+        "appreciate_analysis": {
+          "type": "string",
+          "description": "分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"
+        }
+      },
+      "required": ["appreciate_analysis"],
+      "additionalProperties": {
+        "type": "string"
+      }
     },
-    "background_info": { "type": "string" },
-    "era_context": { "type": "string" },
-    "metadata": { "type": "object" }
+    "background_info": {
+      "type": "string"
+    },
+    "era_context": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
   },
-  "required": ["lyrics_translation", "analysis_summary"],
+  "required": [
+    "lyrics_translation",
+    "analysis_summary",
+    "analysis_by_section"
+  ],
   "additionalProperties": false
 }`
 

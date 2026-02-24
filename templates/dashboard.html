@@ -1508,7 +1508,7 @@
             margin: 0 -20px 15px -20px;
             padding: 10px 20px;
             border-bottom: 1px solid var(--border-color);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
         }
 
         /* 修复第一个 section 与吸顶 Tab 的间距 */
@@ -1620,6 +1620,39 @@
         .section-content {
             color: var(--text-secondary);
             font-size: 0.95rem;
+        }
+
+        .appreciate-item {
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .appreciate-item .section-name {
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .appreciate-content {
+            margin-top: 8px;
+        }
+
+        .explain-block {
+            margin: 12px 0;
+            padding: 12px 14px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+            border-radius: 8px;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .dark-mode .explain-block {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+        }
+
+        .explain-content {
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            line-height: 1.7;
+            font-weight: 500;
+            white-space: pre-wrap;
         }
 
         .close {
@@ -2701,23 +2734,83 @@
         }
     }
 
+    function parseTaggedContent(text, tagName) {
+        const regex = new RegExp(`<${tagName}>([\\s\\S]*?)<${tagName}>`, 'g');
+        const results = [];
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            results.push(match[1].trim());
+        }
+        return results;
+    }
+
+    function parseLyricsTranslation(text) {
+        if (!text) return [];
+        const cleanText = text.replace(/\\n/g, '\n');
+        const originals = parseTaggedContent(cleanText, 'original');
+        const translations = parseTaggedContent(cleanText, 'translation');
+        const result = [];
+        const maxLen = Math.max(originals.length, translations.length);
+        for (let i = 0; i < maxLen; i++) {
+            result.push({
+                original: originals[i] || '',
+                translation: translations[i] || ''
+            });
+        }
+        return result;
+    }
+
+    function parseAppreciateAnalysis(text) {
+        if (!text) return [];
+        const cleanText = text.replace(/\\n/g, '\n');
+
+        const result = [];
+        let currentGroup = {items: [], explain: ''};
+
+        const regex = /<(original|translation|explain)>([\s\S]*?)<\1>/g;
+        let match;
+
+        while ((match = regex.exec(cleanText)) !== null) {
+            const tag = match[1];
+            const content = match[2].trim();
+
+            if (tag === 'original') {
+                currentGroup.items.push({original: content, translation: ''});
+            } else if (tag === 'translation') {
+                if (currentGroup.items.length > 0) {
+                    currentGroup.items[currentGroup.items.length - 1].translation = content;
+                }
+            } else if (tag === 'explain') {
+                currentGroup.explain = content;
+                if (currentGroup.items.length > 0 || currentGroup.explain) {
+                    result.push(currentGroup);
+                }
+                currentGroup = {items: [], explain: ''};
+            }
+        }
+
+        if (currentGroup.items.length > 0) {
+            result.push(currentGroup);
+        }
+
+        return result;
+    }
+
     function generateShareInsightHtml(insight) {
         let html = '';
 
         if (insight.lyrics_translation) {
-            const lines = insight.lyrics_translation.replace(/\\n/g, '\n').split('\n').filter(l => l.trim() !== '');
-            if (lines.length > 0) {
+            const lyrics = parseLyricsTranslation(insight.lyrics_translation);
+            if (lyrics.length > 0) {
                 html += `<div style="margin-bottom: 20px;">
               <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 10px 0; opacity: 0.9;">📝 歌词翻译</h3>
               <div style="font-size: 12px; line-height: 1.8;">`;
-                for (let i = 0; i < lines.length; i += 2) {
-                    const original = lines[i] || "";
-                    const translated = lines[i + 1] || "";
+                lyrics.forEach(item => {
                     html += `<div style="margin-bottom: 8px;">
-                <div style="opacity: 0.7; font-style: italic;">${original}</div>
-                ${translated ? `<div style="font-weight: 500;">${translated}</div>` : ''}
+                <div style="opacity: 0.7; font-style: italic;">${item.original}</div>
+                ${item.translation ? `<div style="font-weight: 500;">${item.translation}</div>` : ''}
               </div>`;
-                }
+                });
                 html += `</div></div>`;
             }
         }
@@ -2752,10 +2845,31 @@
                 Object.entries(sections).forEach(([section, content]) => {
                     const title = sectionTitles[section] || section;
                     const contentStr = typeof content === 'string' ? content.replace(/\\n/g, '\n') : JSON.stringify(content);
-                    html += `<div style="margin-bottom: 12px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,0.4);">
-                <h4 style="font-size: 12px; font-weight: 600; margin: 0 0 6px 0;">${title}</h4>
-                <div style="font-size: 11px; line-height: 1.7; white-space: pre-wrap; opacity: 0.9;">${contentStr}</div>
-              </div>`;
+
+                    if (section === 'appreciate_analysis') {
+                        const parsed = parseAppreciateAnalysis(contentStr);
+                        if (parsed.length > 0) {
+                            html += `<div style="margin-bottom: 12px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,0.4);">
+                        <h4 style="font-size: 12px; font-weight: 600; margin: 0 0 8px 0;">${title}</h4>`;
+                            parsed.forEach((group, idx) => {
+                                group.items.forEach(item => {
+                                    html += `<div style="margin-bottom: 4px; font-size: 11px;">
+                                <div style="opacity: 0.7; font-style: italic;">${item.original}</div>
+                                ${item.translation ? `<div style="font-weight: 500;">${item.translation}</div>` : ''}
+                              </div>`;
+                                });
+                                if (group.explain) {
+                                    html += `<div style="margin: 6px 0 12px 0; padding: 8px 10px; background: rgba(255,255,255,0.1); border-radius: 6px; font-size: 11px; line-height: 1.7; font-weight: 500;">${group.explain}</div>`;
+                                }
+                            });
+                            html += `</div>`;
+                        }
+                    } else {
+                        html += `<div style="margin-bottom: 12px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,0.4);">
+                    <h4 style="font-size: 12px; font-weight: 600; margin: 0 0 6px 0;">${title}</h4>
+                    <div style="font-size: 11px; line-height: 1.7; white-space: pre-wrap; opacity: 0.9;">${contentStr}</div>
+                  </div>`;
+                    }
                 });
                 html += `</div>`;
             }
@@ -3054,27 +3168,22 @@
     function generateInsightContentHtml(insight) {
         let html = '<div class="insight-container">';
 
-        // 1. 歌词翻译
-        const translation = insight.lyrics_translation || "";
-        const lines = translation.replace(/\\n/g, '\n').split('\n').filter(l => l.trim() !== '');
-
-        if (lines.length > 0) {
+        const lyrics = parseLyricsTranslation(insight.lyrics_translation);
+        if (lyrics.length > 0) {
             html += `
             <div class="insight-section">
               <h3><span>📝</span> 歌词翻译</h3>
               <div class="lyrics-grid">
                 ${(() => {
                 let lyricsHtml = '';
-                for (let i = 0; i < lines.length; i += 2) {
-                    const original = lines[i] || "";
-                    const translated = lines[i + 1] || "";
+                lyrics.forEach(item => {
                     lyricsHtml += `
                       <div class="lyrics-line">
-                        <div class="lyrics-original">${original}</div>
-                        ${translated ? `<div class="lyrics-translated">${translated}</div>` : ''}
+                        <div class="lyrics-original">${item.original}</div>
+                        ${item.translation ? `<div class="lyrics-translated">${item.translation}</div>` : ''}
                       </div>
                     `;
-                }
+                });
                 return lyricsHtml;
             })()}
               </div>
@@ -3082,7 +3191,6 @@
           `;
         }
 
-        // 2. 曲目解读
         if (insight.analysis_summary) {
             html += `
             <div class="insight-section">
@@ -3092,7 +3200,6 @@
           `;
         }
 
-        // 3. 分段解析
         try {
             let sections = insight.analysis_by_section;
             if (typeof sections === 'string' && sections.trim() !== '') {
@@ -3104,37 +3211,68 @@
             }
 
             if (sections && Object.keys(sections).length > 0) {
-                html += `
-              <div class="insight-section">
-                <h3><span>🧩</span> 分段解析</h3>
-                <div class="analysis-sections">
-                  ${Object.entries(sections).map(([section, content]) => {
-                    const sectionTitles = {
-                        "literary_analysis": "文学翻译家的深度解读",
-                        "musical_analysis": "乐评人的专业评价",
-                        "cultural_context": "文化史学家的背景与时代分析",
-                        "cultural_context": "文化史学家的背景与时代分析",
-                        "translation_notes": "翻译难点说明或语言特色分析",
-                        "appreciate_analysis": "分句进行赏析和解读"
-                    };
+                const sectionTitles = {
+                    "literary_analysis": "文学翻译家的深度解读",
+                    "musical_analysis": "乐评人的专业评价",
+                    "cultural_context": "文化史学家的背景与时代分析",
+                    "translation_notes": "翻译难点说明或语言特色分析",
+                    "appreciate_analysis": "分句进行赏析和解读"
+                };
+
+                let sectionsHtml = '';
+                Object.entries(sections).forEach(([section, content]) => {
                     const title = sectionTitles[section] || section;
-                    const contentHtml = typeof content === 'string' ? content.replace(/\\n/g, '\n') : JSON.stringify(content);
-                    return `
-                      <div class="section-item">
-                        <h4>${title}</h4>
-                        <div class="section-content" style="white-space: pre-wrap; line-height: 1.8;">${contentHtml}</div>
-                      </div>
-                    `;
-                }).join('')}
-                </div>
-              </div>
-            `;
+                    const contentStr = typeof content === 'string' ? content.replace(/\\n/g, '\n') : JSON.stringify(content);
+
+                    if (section === 'appreciate_analysis') {
+                        const parsed = parseAppreciateAnalysis(contentStr);
+                        if (parsed.length > 0) {
+                            let appreciateHtml = '';
+                            parsed.forEach((group, idx) => {
+                                group.items.forEach(item => {
+                                    appreciateHtml += `
+                                        <div class="lyrics-line">
+                                            <div class="lyrics-original">${item.original}</div>
+                                            ${item.translation ? `<div class="lyrics-translated">${item.translation}</div>` : ''}
+                                        </div>
+                                    `;
+                                });
+                                if (group.explain) {
+                                    appreciateHtml += `
+                                        <div class="explain-block">
+                                            <div class="explain-content">${group.explain}</div>
+                                        </div>
+                                    `;
+                                }
+                            });
+                            sectionsHtml += `
+                                <div class="section-item appreciate-item">
+                                    <span class="section-name">${title}</span>
+                                    <div class="appreciate-content">${appreciateHtml}</div>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        sectionsHtml += `
+                            <div class="section-item">
+                                <span class="section-name">${title}</span>
+                                <div class="section-content" style="white-space: pre-wrap; line-height: 1.8;">${contentStr}</div>
+                            </div>
+                        `;
+                    }
+                });
+
+                html += `
+                    <div class="insight-section">
+                        <h3><span>🧩</span> 分段解析</h3>
+                        <div class="analysis-sections">${sectionsHtml}</div>
+                    </div>
+                `;
             }
         } catch (err) {
             console.error("渲染分段解析时出错:", err);
         }
 
-        // 4. 创作背景
         if (insight.background_info && insight.background_info.length > 5) {
             html += `
             <div class="insight-section">
@@ -3144,7 +3282,6 @@
           `;
         }
 
-        // 5. 时代语境
         if (insight.era_context) {
             html += `
             <div class="insight-section">
@@ -5783,7 +5920,7 @@
 
 <!-- 分享图片容器 (隐藏，用于生成图片) -->
 <div id="shareInsightContainer"
-     style="position: absolute; left: -9999px; top: -9999px; width: 393px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-family: 'Segoe UI', system-ui, sans-serif; color: #fff; overflow: hidden;">
+     style="position: absolute; left: -9999px; top: -9999px; width: 393px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-family: 'Segoe UI', system-ui, sans-serif; color: #fff; overflow: visible;">
     <div style="padding: 24px 20px;">
         <div style="text-align: center; margin-bottom: 24px;">
             <div style="font-size: 10px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.8; margin-bottom: 10px;">
@@ -5796,12 +5933,35 @@
         <div id="shareInsightContent"
              style="background: rgba(255,255,255,0.12); border-radius: 12px; padding: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);"></div>
         <div style="margin-top: 20px; text-align: center; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.2);">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; color: #fff;margin-bottom:3px;">
+                <!-- 内联图标：同心圆 -->
+                <svg width="32" height="32" viewBox="0 0 70 70" xmlns="http://www.w3.org/2000/svg"
+                     style="flex-shrink: 0; opacity: 0.9;">
+                    <g transform="translate(35, 35)">
+                        <circle cx="0" cy="0" r="28" fill="none" stroke="white" stroke-width="3"
+                                stroke-dasharray="175 5"/>
+                        <circle cx="0" cy="0" r="20" fill="none" stroke="white" stroke-width="3"
+                                stroke-dasharray="125 5"/>
+                        <circle cx="0" cy="0" r="12" fill="none" stroke="white" stroke-width="3"
+                                stroke-dasharray="75 5"/>
+                        <circle cx="0" cy="0" r="4" fill="white"/>
+                    </g>
+                </svg>
+                <!-- HTML 文本：品牌信息 -->
+                <div style="text-align: left; display: flex; flex-direction: column; gap: 2px;">
+                    <div style="font-size: 13px; font-weight: 700; opacity: 0.95; letter-spacing: 0.5px; white-space: nowrap;">
+                        音眸轨迹 · SonicLens
+                    </div>
+                    <div style="font-size: 8px; opacity: 0.7; letter-spacing: 0.2px; white-space: nowrap;">声之透镜 ·
+                        深度解析 · 聆听之印记
+                    </div>
+                </div>
+            </div>
             <div style="font-size: 10px; opacity: 0.7;">
-                <span style="font-weight: 600;">音眸轨迹</span> ·
                 <span>@vincentchyu</span> ·
                 <span id="shareModelName">AI</span>
             </div>
-            <div style="font-size: 9px; opacity: 0.5; margin-top: 6px;">blog-vincent.chyu.org</div>
+            <div style="font-size: 9px; opacity: 0.5; margin-top: 3px;">blog-vincent.chyu.org</div>
         </div>
     </div>
 </div>
