@@ -29,3 +29,14 @@ func (LLMCallLog) TableName() string {
 func CreateLLMCallLog(ctx context.Context, log *LLMCallLog) error {
 	return GetDB().WithContext(ctx).Create(log).Error
 }
+
+// GetLLMCallLogsByTrack 按曲目信息查询流水日志
+func GetLLMCallLogsByTrack(ctx context.Context, trackInfo string, limit int) ([]*LLMCallLog, error) {
+	var logs []*LLMCallLog
+	err := GetDB().WithContext(ctx).
+		Where("track_info = ?", trackInfo).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&logs).Error
+	return logs, err
+}

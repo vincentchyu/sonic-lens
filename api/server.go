@@ -361,6 +361,148 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	// 获取所有 AI 解析记录 (分页管理)
+	r.GET(
+		"/api/insights/all", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			keyword := c.Query("keyword")
+			if limit > 100 {
+				limit = 100
+			}
+
+			insights, total, err := insightService.GetAllInsights(c.Request.Context(), limit, offset, keyword)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(
+				http.StatusOK, gin.H{
+					"insights": insights,
+					"total":    total,
+					"limit":    limit,
+					"offset":   offset,
+				},
+			)
+		},
+	)
+
+	// 切换解析记录状态 (禁用 / 启用)
+	r.POST(
+		"/api/insights/:id/toggle-status", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+			idStr := c.Param("id")
+			insightID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || insightID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+				return
+			}
+
+			if err := insightService.ToggleInsightStatus(c.Request.Context(), insightID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	// 直接删除解析记录
+	r.DELETE(
+		"/api/insights/:id", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+			idStr := c.Param("id")
+			insightID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || insightID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+				return
+			}
+
+			if err := insightService.DeleteInsight(c.Request.Context(), insightID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	// 获取某次解析关联的 LLM 调用流水
+	r.GET(
+		"/api/insights/:id/logs", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			// 由于目前模型定义中日志是按 artist + track 关联的，我们先通过 ID 查到曲目信息
+			idStr := c.Param("id")
+			insightID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || insightID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+				return
+			}
+
+			// 分页查询所有以找到目标（简单实现，建议在 Logic 层增加按 ID 特化查询）
+			insights, _, err := insightService.GetAllInsights(c.Request.Context(), 1000, 0, "")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			var target *model.TrackInsight
+			for _, ins := range insights {
+				if ins.ID == insightID {
+					target = ins
+					break
+				}
+			}
+
+			if target == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
+				return
+			}
+
+			logs, err := insightService.GetTrackCallLogs(c.Request.Context(), target.Artist, target.Track)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"logs": logs})
+		},
+	)
+
+	// 获取关联的用户反馈记录
+	r.GET(
+		"/api/insights/:id/feedbacks", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+			idStr := c.Param("id")
+			insightID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || insightID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+				return
+			}
+
+			feedbacks, err := insightService.GetInsightFeedbacks(c.Request.Context(), insightID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"feedbacks": feedbacks})
+		},
+	)
+
 	// 获取歌词数据（优先查库，没有则调用 lrcapi 等）
 	r.GET(
 		"/api/track-lyrics", func(c *gin.Context) {

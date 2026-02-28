@@ -33,6 +33,16 @@ type Service interface {
 	GetAvailableAIProviders() []string
 	// GetInsightOnly 仅从数据库获取已有的解析结果，不触发 AI 分析
 	GetInsightOnly(ctx context.Context, artist, album, track string) ([]*InsightWithScore, error)
+	// GetAllInsights 分页获取所有解析记录
+	GetAllInsights(ctx context.Context, limit, offset int, keyword string) ([]*model.TrackInsight, int64, error)
+	// ToggleInsightStatus 切换解析记录的禁用状态
+	ToggleInsightStatus(ctx context.Context, id int64) error
+	// GetTrackCallLogs 获取某曲目的 LLM 调用流水
+	GetTrackCallLogs(ctx context.Context, artist, track string) ([]*model.LLMCallLog, error)
+	// DeleteInsight 删除解析记录
+	DeleteInsight(ctx context.Context, id int64) error
+	// GetInsightFeedbacks 获取关联反馈
+	GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
 }
 
 type serviceImpl struct {
@@ -468,4 +478,35 @@ func detectLanguage(text string) string {
 		}
 	}
 	return "en"
+}
+
+// GetAllInsights 分页获取所有解析记录
+func (s *serviceImpl) GetAllInsights(ctx context.Context, limit, offset int, keyword string) ([]*model.TrackInsight, int64, error) {
+	return model.GetAllTrackInsights(ctx, limit, offset, keyword)
+}
+
+// ToggleInsightStatus 切换解析记录的禁用状态
+func (s *serviceImpl) ToggleInsightStatus(ctx context.Context, id int64) error {
+	insight, err := getInsightByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	insight.IsDisabled = !insight.IsDisabled
+	return model.UpdateTrackInsight(ctx, insight)
+}
+
+// GetTrackCallLogs 获取某曲目的 LLM 调用流水
+func (s *serviceImpl) GetTrackCallLogs(ctx context.Context, artist, track string) ([]*model.LLMCallLog, error) {
+	trackInfo := artist + " - " + track
+	return model.GetLLMCallLogsByTrack(ctx, trackInfo, 50) // 获取最近50条
+}
+
+// DeleteInsight 删除解析记录
+func (s *serviceImpl) DeleteInsight(ctx context.Context, id int64) error {
+	return model.DeleteTrackInsight(ctx, uint64(id))
+}
+
+// GetInsightFeedbacks 获取关联反馈
+func (s *serviceImpl) GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error) {
+	return model.GetTrackInsightFeedbacks(ctx, insightID)
 }

@@ -41,6 +41,9 @@ type TrackInsight struct {
 	CreatedAt  time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt  time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 	LastUsedAt time.Time `gorm:"column:last_used_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"last_used_at"`
+
+	// 管理字段：是否禁用（禁用后 Dashboard 默认不可见）
+	IsDisabled bool `gorm:"column:is_disabled;type:tinyint(1);default:0;index" json:"is_disabled"`
 }
 
 type JSONText map[string]string
@@ -100,6 +103,7 @@ func GetTrackInsight(ctx context.Context, artist, album, track string) (*TrackIn
 	var insight TrackInsight
 	err := GetDB().WithContext(ctx).
 		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
+		Where("is_disabled = ?", false).
 		First(&insight).Error
 	if err != nil {
 		return nil, err
@@ -115,6 +119,7 @@ func GetTrackInsights(ctx context.Context, artist, album, track string) ([]*Trac
 	var insights []*TrackInsight
 	err := GetDB().WithContext(ctx).
 		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
+		Where("is_disabled = ?", false).
 		Order("created_at DESC").
 		Find(&insights).Error
 	if err != nil {
@@ -123,8 +128,45 @@ func GetTrackInsights(ctx context.Context, artist, album, track string) ([]*Trac
 	return insights, nil
 }
 
+// GetAllTrackInsights 获取所有解析记录（用于管理列表）
+// GetAllTrackInsights 获取所有解析记录（用于管理列表）
+func GetAllTrackInsights(ctx context.Context, limit, offset int, keyword string) ([]*TrackInsight, int64, error) {
+	var insights []*TrackInsight
+	var total int64
+	db := GetDB().WithContext(ctx).Model(&TrackInsight{})
+
+	if keyword != "" {
+		db = db.Where("track LIKE ?", "%"+keyword+"%")
+	}
+
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := db.Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&insights).Error
+	return insights, total, err
+}
+
+// DeleteTrackInsight 删除解析记录
+func DeleteTrackInsight(ctx context.Context, id uint64) error {
+	return GetDB().WithContext(ctx).Delete(&TrackInsight{}, id).Error
+}
+
 func CreateTrackInsightFeedback(ctx context.Context, feedback *TrackInsightFeedback) error {
 	return GetDB().WithContext(ctx).Create(feedback).Error
+}
+
+// GetTrackInsightFeedbacks 获取某次解析的所有反馈
+func GetTrackInsightFeedbacks(ctx context.Context, insightID int64) ([]*TrackInsightFeedback, error) {
+	var feedbacks []*TrackInsightFeedback
+	err := GetDB().WithContext(ctx).
+		Where("insight_id = ?", insightID).
+		Order("created_at DESC").
+		Find(&feedbacks).Error
+	return feedbacks, err
 }
 
 func GetInsightsTotalScores(ctx context.Context, insightIDs []int64) (map[int64]int, error) {
