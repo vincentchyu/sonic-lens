@@ -12,7 +12,7 @@ import (
 
 const (
 	percentScrobble = 0.55
-	defaultSleep    = 3
+	defaultSleep    = 2
 	longSleep       = 60 // 休眠间隔六十秒
 	checkCount      = 100
 )
