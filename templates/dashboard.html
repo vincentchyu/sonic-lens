@@ -2455,7 +2455,30 @@
     let currentPosition = 0; // 当前播放位置
     let trackDuration = 0; // 歌曲总时长
     let progressInterval = null; // 进度更新定时器
-    let currentTrackInsight = null; // 当前曲目的 AI 解析结果
+    let currentTrackInsight = null; // 当前曲目的 AI 解析结果 (兼容旧代码)
+    
+    // AI Insight 模块化状态管理
+    const insightStates = {
+        nowPlaying: { 
+            insight: null, 
+            allInsights: [], 
+            eventSource: null,
+            trackInfo: null
+        },
+        list: { 
+            insight: null, 
+            allInsights: [], 
+            eventSource: null,
+            trackInfo: null
+        },
+        details: { 
+            insight: null, 
+            allInsights: [], 
+            eventSource: null,
+            trackInfo: null
+        }
+    };
+
     let lastTrackKey = ""; // 用于检测切歌
     let currentRankingType = "all"; // 当前排行榜类型
     let rankingSearchKeyword = ""; // 当前排行榜搜索关键字
@@ -2630,28 +2653,35 @@
 
     // 1. 处理正在播放面板的“AI 分析”点击
     async function handleAiInsightClick() {
-        // 不再通过 textContent 区分，始终尝试 fetchTrackInsight(false) 即查询模式
-        fetchTrackInsight(false);
+        // 始终尝试 fetchTrackInsight(false) 即查询模式，默认上下文为 'nowPlaying'
+        fetchTrackInsight(false, null, 'nowPlaying');
     }
 
     // 2. 显示模型选择弹窗
-    function showModelPicker(targetTrack = null) {
+    let pendingAnalysisContext = 'nowPlaying'; // 暂存当前的上下文类型
+
+    // 2. 显示模型选择弹窗
+    function showModelPicker(targetTrack = null, contextType = 'nowPlaying') {
         // 如果传入了 targetTrack（比如从详情页传来），则暂存它
         pendingAnalysisTrack = targetTrack || currentTrackInfo;
+        pendingAnalysisContext = contextType;
         showModal("aiModelPickerModal");
     }
 
     // 3. 用户选择模型后点击“开始分析”
     function startAnalysisWithSelectedModel() {
         hideModal("aiModelPickerModal");
-        // 使用暂存的曲目信息开启强制分析流
-        fetchTrackInsight(true, pendingAnalysisTrack);
+        // 使用暂存的曲目信息和上下文开启强制分析流
+        fetchTrackInsight(true, pendingAnalysisTrack, pendingAnalysisContext);
     }
 
     // 4. 发送对 AI 歌词解析的点赞 / 点踩反馈
-    function recordAiFeedback(score) {
-        console.log("recordAiFeedback called with score:", score, "currentTrackInsight:", currentTrackInsight);
-        if (!currentTrackInsight) {
+    function recordAiFeedback(score, contextType = 'nowPlaying') {
+        const state = insightStates[contextType];
+        const insight = state.insight || currentTrackInsight;
+
+        console.log("recordAiFeedback called with score:", score, "insight:", insight, "context:", contextType);
+        if (!insight) {
             alert("暂无分析结果");
             return;
         }
@@ -2691,22 +2721,27 @@
             });
     }
 
-    async function shareInsight() {
-        if (!currentTrackInsight) {
+    async function shareInsight(contextType = 'nowPlaying') {
+        const state = insightStates[contextType];
+        const insight = state.insight || currentTrackInsight;
+
+        if (!insight) {
             alert("暂无分析结果可分享");
             return;
         }
 
-        const trackInfo = currentTrackInfo || pendingAnalysisTrack;
+        const trackInfo = state.trackInfo || currentTrackInfo || pendingAnalysisTrack;
         if (!trackInfo) {
             alert("无法获取曲目信息");
             return;
         }
 
-        const shareBtn = document.getElementById("aiShareBtn");
-        const originalText = shareBtn.textContent;
-        shareBtn.textContent = "生成中...";
-        shareBtn.disabled = true;
+        const shareBtn = document.getElementById(`${contextType}-aiShareBtn`);
+        const originalText = shareBtn ? shareBtn.textContent : "分享图片";
+        if (shareBtn) {
+            shareBtn.textContent = "生成中...";
+            shareBtn.disabled = true;
+        }
 
         try {
             const container = document.getElementById("shareInsightContainer");
@@ -2718,10 +2753,10 @@
             titleEl.textContent = trackInfo.title || trackInfo.track || "未知曲目";
             metaEl.textContent = `${trackInfo.artist || "未知艺术家"} · ${trackInfo.album || "未知专辑"}`;
 
-            const modelName = currentTrackInsight.llm_provider || "AI";
+            const modelName = insight.llm_provider || "AI";
             modelEl.textContent = modelName.charAt(0).toUpperCase() + modelName.slice(1);
 
-            contentEl.innerHTML = generateShareInsightHtml(currentTrackInsight);
+            contentEl.innerHTML = generateShareInsightHtml(insight);
 
             container.style.position = "fixed";
             container.style.left = "0";
@@ -2765,8 +2800,10 @@
             console.error("分享失败:", error);
             alert("生成分享图片失败: " + error.message);
         } finally {
-            shareBtn.textContent = originalText;
-            shareBtn.disabled = false;
+            if (shareBtn) {
+                shareBtn.textContent = originalText;
+                shareBtn.disabled = false;
+            }
         }
     }
 
@@ -3051,7 +3088,7 @@
     }
 
     // 5. 核心分析驱动函数
-    async function fetchTrackInsight(force = false, targetTrack = null) {
+    async function fetchTrackInsight(force = false, targetTrack = null, contextType = 'nowPlaying') {
         // 这里的逻辑：传入了 targetTrack 就用传入的，否则用全局 currentTrackInfo
         const trackInfo = targetTrack || currentTrackInfo;
         if (!trackInfo) {
@@ -3059,11 +3096,14 @@
             return;
         }
 
+        const state = insightStates[contextType];
+        state.trackInfo = trackInfo;
+
         const aiButton = document.getElementById("aiInsightButton");
         const sseEnabled = document.getElementById("aiModelSseToggle").checked;
-        const streamContent = document.getElementById("aiInsightStreamContent");
-        const actionFooter = document.getElementById("aiActionFooter");
-        const reanalyzeBtn = document.getElementById("aiReanalyzeBtn");
+        const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
+        const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
 
         // 基础参数
         const artist = trackInfo.artist;
@@ -3074,37 +3114,43 @@
         let modelType = "";
         if (force) {
             modelType = document.getElementById('aiModelSelect').value;
-            // aiButton 禁用但文字不改
-            aiButton.disabled = true;
-            streamContent.innerHTML = getRandomLoadingHtml();
-            actionFooter.style.display = "none";
-            showModal("aiInsightModal");
+            if (aiButton) aiButton.disabled = true;
+            if (streamContent) streamContent.innerHTML = getRandomLoadingHtml();
+            if (actionFooter) actionFooter.style.display = "none";
+            showModal(`${contextType}InsightModal`);
         } else {
             // 仅查询模式
-            aiButton.disabled = true;
+            if (aiButton) aiButton.disabled = true;
         }
 
         if (force && sseEnabled) {
             // --- SSE 流式模式 ---
+            // 如果已有连接先关闭
+            if (state.eventSource) state.eventSource.close();
+            
             const url = `/api/track-insight-stream?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&track=${encodeURIComponent(track)}&force=true&modelType=${encodeURIComponent(modelType)}`;
             const eventSource = new EventSource(url);
+            state.eventSource = eventSource;
             let fullText = "";
 
             eventSource.onmessage = function (event) {
-                if (streamContent.querySelector(".ai-loading-wrapper")) streamContent.innerHTML = "";
-                fullText += event.data;
-                streamContent.textContent = fullText;
-                streamContent.scrollTop = streamContent.scrollHeight;
+                if (streamContent) {
+                    if (streamContent.querySelector(".ai-loading-wrapper")) streamContent.innerHTML = "";
+                    fullText += event.data;
+                    streamContent.textContent = fullText;
+                    streamContent.scrollTop = streamContent.scrollHeight;
+                }
             };
 
             eventSource.onerror = function (err) {
                 eventSource.close();
-                aiButton.disabled = false;
+                state.eventSource = null;
+                if (aiButton) aiButton.disabled = false;
                 if (fullText.length > 0) {
                     // 分析完成，执行非强制查询以刷新结果展示排版
-                    fetchTrackInsight(false, trackInfo);
+                    fetchTrackInsight(false, trackInfo, contextType);
                 } else {
-                    // 分析失败，保持文案为 AI 分析，但更新模态框内部按钮文字
+                    // 分析失败
                     streamContent.innerHTML = '<div class="error">对话意外中断或该模型暂不支持流式返回。</div>';
                     actionFooter.style.display = "flex";
                     reanalyzeBtn.textContent = "开始分析";
@@ -3119,75 +3165,74 @@
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify(body)
                 });
-                aiButton.disabled = false;
+                if (aiButton) aiButton.disabled = false;
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error || "分析失败");
 
                 const insights = data.insights || (data.insight ? [data.insight] : []);
-                handleInsightResponse(insights, true);
+                handleInsightResponse(insights, true, contextType);
             } catch (err) {
-                handleInsightError(err, true);
+                handleInsightError(err, true, contextType);
             }
         } else {
             // --- 纯查询模式 (GET) ---
             try {
                 const url = `/api/track-insight?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&track=${encodeURIComponent(track)}`;
                 const response = await fetch(url);
-                aiButton.disabled = false;
+                if (aiButton) aiButton.disabled = false;
                 const data = await response.json();
 
                 const insights = data.insights || [];
                 if (insights.length > 0) {
-                    handleInsightResponse(insights, false);
+                    handleInsightResponse(insights, false, contextType);
                 } else {
-                    handleNoInsight();
+                    handleNoInsight(contextType);
                 }
             } catch (err) {
-                handleInsightError(err, false);
+                handleInsightError(err, false, contextType);
             }
         }
     }
 
     // 辅助：处理解析成功响应
-    function handleInsightResponse(insights, isFromForce) {
+    function handleInsightResponse(insights, isFromForce, contextType) {
         const aiButton = document.getElementById("aiInsightButton");
-        const streamContent = document.getElementById("aiInsightStreamContent");
-        const actionFooter = document.getElementById("aiActionFooter");
-        const reanalyzeBtn = document.getElementById("aiReanalyzeBtn");
+        const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
+        const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
 
-        currentTrackInsight = insights[0];
-        // aiButton 不再改变文字，保持“AI 分析”
-        renderInsight(insights);
-        actionFooter.style.display = "flex";
-        reanalyzeBtn.textContent = "重新分析";
-        if (!isFromForce) showModal("aiInsightModal");
+        insightStates[contextType].insight = insights[0];
+        currentTrackInsight = insights[0]; // 保持兼容
+
+        renderInsight(insights, contextType);
+        
+        if (actionFooter) actionFooter.style.display = "flex";
+        if (reanalyzeBtn) reanalyzeBtn.textContent = "重新分析";
+        if (!isFromForce) showModal(`${contextType}InsightModal`);
     }
 
     // 辅助：处理无解析数据
-    function handleNoInsight() {
+    function handleNoInsight(contextType) {
         const aiButton = document.getElementById("aiInsightButton");
-        const streamContent = document.getElementById("aiInsightStreamContent");
-        const actionFooter = document.getElementById("aiActionFooter");
-        const reanalyzeBtn = document.getElementById("aiReanalyzeBtn");
+        const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
+        const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
 
-        // aiButton 不再改变文字，保持“AI 分析”
-        streamContent.innerHTML = '<div class="loading">该曲目暂无分析数据，请点击下方按钮开始分析。</div>';
-        actionFooter.style.display = "flex";
-        reanalyzeBtn.textContent = "开始分析";
-        showModal("aiInsightModal");
+        if (streamContent) streamContent.innerHTML = '<div class="loading">该曲目暂无分析数据，请点击下方按钮开始分析。</div>';
+        if (actionFooter) actionFooter.style.display = "flex";
+        if (reanalyzeBtn) reanalyzeBtn.textContent = "开始分析";
+        showModal(`${contextType}InsightModal`);
     }
 
     // 辅助：处理错误
-    function handleInsightError(err, isFromForce) {
+    function handleInsightError(err, isFromForce, contextType) {
         const aiButton = document.getElementById("aiInsightButton");
-        const streamContent = document.getElementById("aiInsightStreamContent");
-        const actionFooter = document.getElementById("aiActionFooter");
+        const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
 
         console.error("AI Insight Error:", err);
-        aiButton.disabled = false;
-        // aiButton 不再改变文字
-        streamContent.innerHTML = `<div class="error">${err.message}</div>`;
-        actionFooter.style.display = "flex";
+        if (aiButton) aiButton.disabled = false;
+        if (streamContent) streamContent.innerHTML = `<div class="error">${err.message}</div>`;
+        if (actionFooter) actionFooter.style.display = "flex";
     }
 
     // 6. 初始化 AI 模型
@@ -3216,9 +3261,9 @@
     let allInsights = [];
 
     // 渲染结构化解析结果
-    function renderInsight(data) {
-        const streamContent = document.getElementById("aiInsightStreamContent");
-        if (!data) return;
+    function renderInsight(data, contextType = 'nowPlaying') {
+        const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        if (!data || !streamContent) return;
 
         // 标准化输入为数组
         let insights = [];
@@ -3235,8 +3280,10 @@
             return;
         }
 
-        allInsights = insights;
-        currentTrackInsight = insights[0];
+        const state = insightStates[contextType];
+        state.allInsights = insights;
+        state.insight = insights[0];
+        currentTrackInsight = insights[0]; // 兼容
 
         // 设置为正常布局
         streamContent.style.whiteSpace = "normal";
@@ -3263,15 +3310,15 @@
                 } else {
                     supportRate = totalScore === 0 ? '0.0' : (totalScore > 0 ? '100.0' : '-100.0');
                 }
-                html += `<div class="insight-tab ${activeClass}" onclick="switchInsightTab(${index})" title="总分: ${totalScore} | 支持率: ${supportRate}%">分析 ${insights.length - index} <small>(${timeStr})</small></div>`;
+                html += `<div class="insight-tab ${activeClass}" onclick="switchInsightTrackTab(${index}, '${contextType}')" title="总分: ${totalScore} | 支持率: ${supportRate}%">分析 ${insights.length - index} <small>(${timeStr})</small></div>`;
             });
             html += '</div>';
         }
 
-        html += '<div id="insight-content-container">';
+        html += `<div id="${contextType}-insight-content-container">`;
         insights.forEach((insight, index) => {
             const displayStyle = index === 0 ? 'block' : 'none';
-            html += `<div class="insight-item" id="insight-item-${index}" style="display: ${displayStyle};">`;
+            html += `<div class="insight-item" id="${contextType}-insight-item-${index}" style="display: ${displayStyle};">`;
             html += generateInsightContentHtml(insight);
             html += '</div>';
         });
@@ -3281,9 +3328,10 @@
         streamContent.scrollTop = 0;
     }
 
-    function switchInsightTab(index) {
-        console.log("switchInsightTab:", index);
-        const container = document.getElementById("aiInsightStreamContent");
+    function switchInsightTrackTab(index, contextType) {
+        const container = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        if (!container) return;
+        
         container.querySelectorAll('.insight-tab').forEach((tab, i) => {
             if (i === index) tab.classList.add('active');
             else tab.classList.remove('active');
@@ -3292,8 +3340,88 @@
             if (i === index) item.style.display = 'block';
             else item.style.display = 'none';
         });
-        if (allInsights[index]) {
-            currentTrackInsight = allInsights[index];
+        
+        const state = insightStates[contextType];
+        if (state.allInsights[index]) {
+            state.insight = state.allInsights[index];
+            currentTrackInsight = state.insight; // 兼容
+        }
+    }
+
+    function switchInsightTab(tabName, contextType = 'nowPlaying') {
+        console.log("switchInsightTab:", tabName, "context:", contextType);
+        const modal = document.getElementById(`${contextType}InsightModal`);
+        if (!modal) return;
+
+        // 切换标签页 UI
+        modal.querySelectorAll('.insight-tab').forEach(tab => {
+            const label = tab.textContent;
+            if (label.includes('详情') && tabName === 'summary') tab.classList.add('active');
+            else if (label.includes('反馈') && tabName === 'feedback') tab.classList.add('active');
+            else if (label.includes('原始') && tabName === 'raw') tab.classList.add('active');
+            else tab.classList.remove('active');
+        });
+
+        // 切换内容区域
+        const summaryTab = modal.querySelector(`#${contextType}-insightSummaryTab`);
+        const feedbackTab = modal.querySelector(`#${contextType}-insightFeedbackTab`);
+        const rawTab = modal.querySelector(`#${contextType}-insightRawTab`);
+
+        if (summaryTab) summaryTab.style.display = tabName === 'summary' ? "block" : "none";
+        if (feedbackTab) feedbackTab.style.display = tabName === 'feedback' ? "block" : "none";
+        if (rawTab) rawTab.style.display = tabName === 'raw' ? "block" : "none";
+
+        if (tabName === 'feedback') {
+            loadInsightFeedback(contextType);
+        } else if (tabName === 'raw') {
+            const state = insightStates[contextType];
+            const content = modal.querySelector(`#${contextType}-insightRawContent pre`);
+            if (content && state.insight) {
+                content.textContent = JSON.stringify(state.insight, null, 2);
+            }
+        }
+    }
+
+    async function loadInsightFeedback(contextType) {
+        const state = insightStates[contextType];
+        const insight = state.insight || currentTrackInsight;
+        const container = document.getElementById(`${contextType}-insightFeedbackContent`);
+        if (!container) return;
+
+        if (!insight) {
+            container.innerHTML = '<div class="info">暂无分析结果</div>';
+            return;
+        }
+
+        const insightId = insight.id || insight.ID;
+        try {
+            const resp = await fetch(`/api/insights/${insightId}/feedbacks`);
+            if (!resp.ok) throw new Error("加载反馈失败");
+            const data = await resp.json();
+            const feedbacks = data.feedbacks || [];
+            
+            if (feedbacks.length === 0) {
+                container.innerHTML = '<div class="info">暂无用户反馈</div>';
+                return;
+            }
+
+            let html = '<div class="feedback-list" style="display: flex; flex-direction: column; gap: 12px;">';
+            feedbacks.forEach(f => {
+                const date = new Date(f.created_at).toLocaleString();
+                html += `
+                    <div class="feedback-item" style="padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 600; color: ${f.score > 0 ? '#2ecc71' : '#e74c3c'};">${f.score > 0 ? '👍 赞' : '👎 踩'}</span>
+                            <span style="font-size: 0.8rem; color: var(--text-secondary);">${date}</span>
+                        </div>
+                        ${f.comment ? `<div style="font-size: 0.9rem; line-height: 1.5;">${f.comment}</div>` : '<i style="font-size: 0.85rem; color: var(--text-secondary);">无评论</i>'}
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<div class="error">${e.message}</div>`;
         }
     }
 
@@ -3550,32 +3678,7 @@
         });
     }
 
-    // 获取 AI 歌词解析
-    async function showAiInsight(force = false, targetTrack = null) {
-        const aiButton = document.getElementById("aiInsightButton");
-        const streamContent = document.getElementById("aiInsightStreamContent");
-        const aiFeedbackContainer = document.getElementById("aiFeedbackContainer");
-        const reanalyzeButton = document.getElementById("reanalyzeInsightButton");
 
-        const trackInfo = targetTrack || currentTrackInfo;
-
-        if (!trackInfo) {
-            alert("当前没有正在播放的曲目");
-            return;
-        }
-
-        // 清空现有内容并显示加载态
-        streamContent.innerHTML = getRandomLoadingHtml();
-        aiFeedbackContainer.style.display = "none";
-        aiButton.disabled = true;
-        if (reanalyzeButton) reanalyzeButton.disabled = true; // 禁用重新分析按钮
-
-        showModal("aiInsightModal");
-        await fetchTrackInsight(force, trackInfo);
-
-        aiButton.disabled = false;
-        if (reanalyzeButton) reanalyzeButton.disabled = false; // 重新启用重新分析按钮
-    }
 
     // ========== 歌词功能 ==========
     let currentLyricsData = null;
@@ -3755,13 +3858,15 @@
 
         if (aiButton) {
             aiButton.addEventListener("click", function () {
-                showAiInsight(false); // 首次点击不强制重新分析
+                // 首次点击（或普通点击）调用 fetchTrackInsight(false)，上下文为 'nowPlaying'
+                fetchTrackInsight(false, null, 'nowPlaying');
             });
         }
 
         if (reanalyzeButton) {
             reanalyzeButton.addEventListener("click", function () {
-                showAiInsight(true); // 点击重新分析按钮强制重新分析
+                // 点击“重新分析”调用模型选择器，上下文为 'nowPlaying'
+                showModelPicker(null, 'nowPlaying');
             });
         }
     }
@@ -5510,75 +5615,23 @@
         }
     }
 
-    // 切换音眸详情页签
-    function switchInsightTab(tabName) {
-        // 更新 Tab 样式
-        document.querySelectorAll("#aiInsightModal .insight-tab").forEach(tab => {
-            tab.classList.remove("active");
-            if (tab.textContent.includes(tabName === 'summary' ? '解析' : (tabName === 'feedback' ? '反馈' : '原始'))) {
-                tab.classList.add("active");
-            }
-        });
 
-        // 切换内容区域
-        document.getElementById("insightSummaryTab").style.display = tabName === "summary" ? "block" : "none";
-        document.getElementById("insightFeedbackTab").style.display = tabName === "feedback" ? "block" : "none";
-        document.getElementById("insightRawTab").style.display = tabName === "raw" ? "block" : "none";
 
-        // 按需加载数据
-        if (tabName === "feedback" && currentTrackInsight) {
-            loadInsightFeedbacks(currentTrackInsight.id);
-        } else if (tabName === "raw" && currentTrackInsight) {
-            document.querySelector("#insightRawContent pre").textContent = JSON.stringify(currentTrackInsight, null, 2);
-        }
-    }
 
-    // 加载反馈记录
-    async function loadInsightFeedbacks(insightID) {
-        const container = document.getElementById("insightFeedbackContent");
-        container.innerHTML = '<div class="loading">加载中...</div>';
-        try {
-            const res = await fetch(`/api/insights/${insightID}/feedbacks`);
-            const data = await res.json();
-            const feedbacks = data.feedbacks || [];
-            
-            if (feedbacks.length === 0) {
-                container.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.6;">暂无反馈记录</div>';
-                return;
-            }
 
-            let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
-            feedbacks.forEach(f => {
-                const isPositive = f.score > 0;
-                const emoji = isPositive ? "👍" : "👎";
-                const color = isPositive ? "var(--secondary-color)" : "var(--accent-color)";
-                const time = new Date(f.created_at).toLocaleString("zh-CN");
-                
-                html += `
-                    <div style="padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid var(--border-color);">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="font-weight: 600; color: ${color};">${emoji} ${isPositive ? '满意' : '不满意'}</span>
-                            <span style="font-size: 0.85em; opacity: 0.7;">${time}</span>
-                        </div>
-                        <div style="font-size: 0.95em;">${f.comment || '<span style="opacity:0.4;">(无评价内容)</span>'}</div>
-                    </div>
-                `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
-        } catch (e) {
-            container.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
-        }
-    }
-
-    // 展示详情（支持多页签交互）
+    // 展示详情（从列表点击，使用 list 上下文）
     async function showInsightDetailsById(id) {
+        const contextType = 'list';
         try {
             // 首先切换到“解析详情”页签并展示 Loading
-            switchInsightTab('summary');
-            showModal("aiInsightModal");
-            document.getElementById("aiInsightStreamContent").innerHTML = '<div class="loading">加载中...</div>';
-            document.getElementById("aiActionFooter").style.display = "none";
+            showModal(`${contextType}InsightModal`);
+            switchInsightTab('summary', contextType);
+            
+            const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+            if (streamContent) streamContent.innerHTML = '<div class="loading">加载中...</div>';
+            
+            const footer = document.getElementById(`${contextType}-aiActionFooter`);
+            if (footer) footer.style.display = "none";
 
             const response = await fetch(`/api/insights/all?limit=1000&offset=0`);
             const data = await response.json();
@@ -5586,14 +5639,20 @@
             
             if (!insight) return alert("未找到记录");
 
-            // 全局暂存，供页签切换使用
+            // 更新上下文状态
+            insightStates[contextType].insight = insight;
+            insightStates[contextType].trackInfo = {
+                artist: insight.artist,
+                album: insight.album,
+                title: insight.track
+            };
             currentTrackInsight = insight;
             
             // 渲染主要解析内容
-            renderInsight(insight);
+            renderInsight(insight, contextType);
             
-            // 显示底部操作栏（如果需要）
-            document.getElementById("aiActionFooter").style.display = "flex";
+            // 显示底部操作栏
+            if (footer) footer.style.display = "flex";
             
         } catch (e) {
             console.error(e);
@@ -6006,6 +6065,36 @@
     // 隐藏模态框
     function hideModal(modalId) {
         document.getElementById(modalId).style.display = "none";
+        
+        // 增加清理逻辑
+        if (modalId === 'nowPlayingInsightModal' || modalId === 'listInsightModal') {
+            const contextType = modalId === 'nowPlayingInsightModal' ? 'nowPlaying' : 'list';
+            const state = insightStates[contextType];
+            
+            // 1. 关闭 SSE
+            if (state.eventSource) {
+                state.eventSource.close();
+                state.eventSource = null;
+            }
+            
+            // 2. 清空 DOM
+            const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+            if (streamContent) {
+                streamContent.innerHTML = '<div class="loading">准备中...</div>';
+            }
+            
+            // 3. 重置状态 (除 trackInfo 外)
+            state.insight = null;
+            state.allInsights = [];
+            
+            // 如果两个主要的都没了，兼容性的 currentTrackInsight 也可以清了
+            if (!insightStates.nowPlaying.insight && !insightStates.list.insight) {
+                currentTrackInsight = null;
+            }
+
+            // 切换回第一个 Tab (UI)
+            switchInsightTab('summary', contextType);
+        }
     }
 
     // 获取并显示曲目详细信息
@@ -6201,7 +6290,7 @@
                 <div style="font-size: 3rem; margin-bottom: 20px;">🔍</div>
                 <p style="color: var(--text-secondary); margin-bottom: 20px;">暂无该曲目的 AI 深度分析</p>
                 <div style="display: flex; justify-content: center; gap: 10px;">
-                   <button class="action-btn" onclick="hideModal('trackDetailsModal'); showModelPicker({artist: window.currentDetailData.track.artist, album: window.currentDetailData.track.album, title: window.currentDetailData.track.track});" style="background: var(--primary-color); color: white; padding: 10px 25px; border-radius: 20px; font-weight: 600;">✨ 开始分析</button>
+                   <button class="action-btn" onclick="hideModal('trackDetailsModal'); showModelPicker({artist: window.currentDetailData.track.artist, album: window.currentDetailData.track.album, title: window.currentDetailData.track.track}, 'details');" style="background: var(--primary-color); color: white; padding: 10px 25px; border-radius: 20px; font-weight: 600;">✨ 开始分析</button>
                 </div>
               </div>
             `;
@@ -6243,7 +6332,7 @@
                 // 添加一致的操作按钮行
                 html += `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 15px;">
-                  <button class="action-btn" style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;" onclick="hideModal('trackDetailsModal'); showModelPicker({artist: window.currentDetailData.track.artist, album: window.currentDetailData.track.album, title: window.currentDetailData.track.track});">🔄 重新分析</button>
+                  <button class="action-btn" style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;" onclick="hideModal('trackDetailsModal'); showModelPicker({artist: window.currentDetailData.track.artist, album: window.currentDetailData.track.album, title: window.currentDetailData.track.track}, 'details');">🔄 重新分析</button>
                   <button class="action-btn" style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);" onclick="shareDetailInsight(${index})">分享图片</button>
                   <div style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
                     <button class="action-btn" style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);" onclick="recordAiFeedback(1)">👍 赞</button>
@@ -6315,63 +6404,127 @@
     </div>
 </div>
 
-<!-- AI 歌词解析模态框 -->
-<div id="aiInsightModal" class="modal">
+<!-- “正在播放” AI 歌词解析模态框 -->
+<div id="nowPlayingInsightModal" class="modal">
     <div class="modal-content" style="max-width: 800px;">
         <div class="module-trail"></div>
         <div class="modal-header">
-            <h2>音眸</h2>
-            <span class="close" onclick="hideModal('aiInsightModal')">×</span>
+            <h2>音眸 (正在播放)</h2>
+            <span class="close" onclick="hideModal('nowPlayingInsightModal')">×</span>
         </div>
         <div class="modal-body">
             <!-- 页签导航 -->
             <div class="insight-tabs">
-                <div class="insight-tab active" onclick="switchInsightTab('summary')">解析详情</div>
-                <div class="insight-tab" onclick="switchInsightTab('feedback')">用户反馈</div>
-                <div class="insight-tab" onclick="switchInsightTab('raw')">原始数据</div>
+                <div class="insight-tab active" onclick="switchInsightTab('summary', 'nowPlaying')">解析详情</div>
+                <div class="insight-tab" onclick="switchInsightTab('feedback', 'nowPlaying')">用户反馈</div>
+                <div class="insight-tab" onclick="switchInsightTab('raw', 'nowPlaying')">原始数据</div>
             </div>
 
             <!-- 解析详情页签 -->
-            <div id="insightSummaryTab" class="insight-tab-content">
-                <div id="aiInsightStreamContent"
+            <div id="nowPlaying-insightSummaryTab" class="insight-tab-content">
+                <div id="nowPlaying-aiInsightStreamContent"
                      style="white-space: pre-wrap; font-family: 'Segoe UI', system-ui, sans-serif; max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
                     <div class="loading">准备中...</div>
                 </div>
             </div>
 
             <!-- 用户反馈页签 -->
-            <div id="insightFeedbackTab" class="insight-tab-content" style="display: none;">
-                <div id="insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
+            <div id="nowPlaying-insightFeedbackTab" class="insight-tab-content" style="display: none;">
+                <div id="nowPlaying-insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
                     <div class="loading">加载中...</div>
                 </div>
             </div>
 
             <!-- 原始数据页签 -->
-            <div id="insightRawTab" class="insight-tab-content" style="display: none;">
-                <div id="insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
+            <div id="nowPlaying-insightRawTab" class="insight-tab-content" style="display: none;">
+                <div id="nowPlaying-insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
                     <pre style="white-space: pre-wrap; font-size: 0.85em; color: var(--accent-color);"></pre>
                 </div>
             </div>
 
             <!-- 底部操作区 -->
-            <div id="aiActionFooter"
+            <div id="nowPlaying-aiActionFooter"
                  style="margin-top: 15px; padding: 10px 0; border-top: 1px solid var(--border-color); display: none; justify-content: space-between; align-items: center; gap: 20px;">
-                <button id="aiReanalyzeBtn" class="action-btn"
+                <button id="nowPlaying-aiReanalyzeBtn" class="action-btn"
                         style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;"
-                        onclick="showModelPicker()">重新分析
+                        onclick="showModelPicker(null, 'nowPlaying')">重新分析
                 </button>
-                <button id="aiShareBtn" class="action-btn"
+                <button id="nowPlaying-aiShareBtn" class="action-btn"
                         style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
-                        onclick="shareInsight()">分享图片
+                        onclick="shareInsight('nowPlaying')">分享图片
                 </button>
-                <div id="aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
+                <div id="nowPlaying-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
                     <button class="action-btn"
                             style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);"
-                            onclick="recordAiFeedback(1)">👍 赞
+                            onclick="recordAiFeedback(1, 'nowPlaying')">👍 赞
                     </button>
                     <button class="action-btn"
                             style="padding: 6px 12px; border-radius: 15px; background: rgba(231, 76, 60, 0.1); color: var(--accent-color); border-color: var(--accent-color);"
-                            onclick="recordAiFeedback(-1)">👎 踩
+                            onclick="recordAiFeedback(-1, 'nowPlaying')">👎 踩
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- “音眸列表” AI 歌词解析模态框 -->
+<div id="listInsightModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h2>音眸 (分析历史)</h2>
+            <span class="close" onclick="hideModal('listInsightModal')">×</span>
+        </div>
+        <div class="modal-body">
+            <!-- 页签导航 -->
+            <div class="insight-tabs">
+                <div class="insight-tab active" onclick="switchInsightTab('summary', 'list')">解析详情</div>
+                <div class="insight-tab" onclick="switchInsightTab('feedback', 'list')">用户反馈</div>
+                <div class="insight-tab" onclick="switchInsightTab('raw', 'list')">原始数据</div>
+            </div>
+
+            <!-- 解析详情页签 -->
+            <div id="list-insightSummaryTab" class="insight-tab-content">
+                <div id="list-aiInsightStreamContent"
+                     style="white-space: pre-wrap; font-family: 'Segoe UI', system-ui, sans-serif; max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <div class="loading">准备中...</div>
+                </div>
+            </div>
+
+            <!-- 用户反馈页签 -->
+            <div id="list-insightFeedbackTab" class="insight-tab-content" style="display: none;">
+                <div id="list-insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 原始数据页签 -->
+            <div id="list-insightRawTab" class="insight-tab-content" style="display: none;">
+                <div id="list-insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <pre style="white-space: pre-wrap; font-size: 0.85em; color: var(--accent-color);"></pre>
+                </div>
+            </div>
+
+            <!-- 底部操作区 -->
+            <div id="list-aiActionFooter"
+                 style="margin-top: 15px; padding: 10px 0; border-top: 1px solid var(--border-color); display: none; justify-content: space-between; align-items: center; gap: 20px;">
+                <button id="list-aiReanalyzeBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;"
+                        onclick="showModelPicker(null, 'list')">重新分析
+                </button>
+                <button id="list-aiShareBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
+                        onclick="shareInsight('list')">分享图片
+                </button>
+                <div id="list-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);"
+                            onclick="recordAiFeedback(1, 'list')">👍 赞
+                    </button>
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(231, 76, 60, 0.1); color: var(--accent-color); border-color: var(--accent-color);"
+                            onclick="recordAiFeedback(-1, 'list')">👎 踩
                     </button>
                 </div>
             </div>
