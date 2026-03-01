@@ -13,7 +13,7 @@ import (
 
 // TrackService 定义曲目相关服务接口
 type TrackService interface {
-	GetTrackPlayCounts(ctx context.Context, limit, offset int) ([]*model.Track, error)
+	GetTrackPlayCounts(ctx context.Context, limit, offset int, keyword string) ([]*model.Track, error)
 	GetTrack(ctx context.Context, artist, album, track string) (*model.Track, error)
 	InsertTrackPlayRecord(ctx context.Context, record *model.TrackPlayRecord) error
 	IncrementTrackPlayCount(params model.IncrementTrackPlayCountParams) error
@@ -29,7 +29,7 @@ type TrackService interface {
 	// GetTopArtistsByTrackCount 获取按曲目数统计的热门艺术家
 	GetTopArtistsByTrackCount(ctx context.Context, limit int) ([]map[string]interface{}, error)
 	// GetTrackPlayCountsByPeriod 获取指定时间段内的曲目播放统计
-	GetTrackPlayCountsByPeriod(ctx context.Context, limit, offset int, period string) ([]*model.Track, error)
+	GetTrackPlayCountsByPeriod(ctx context.Context, limit, offset int, period string, keyword string) ([]*model.Track, error)
 	// GetPlayCountsBySource 获取按来源统计的播放次数
 	GetPlayCountsBySource(ctx context.Context) (map[string]int64, error)
 	// GetUnscrobbledRecordsWithPagination 分页获取未同步到Last.fm的播放记录
@@ -74,10 +74,10 @@ func NewTrackService() TrackService {
 }
 
 // GetTrackPlayCounts 获取曲目播放统计列表
-func (s *TrackServiceImpl) GetTrackPlayCounts(ctx context.Context, limit, offset int) (
+func (s *TrackServiceImpl) GetTrackPlayCounts(ctx context.Context, limit, offset int, keyword string) (
 	[]*model.Track, error,
 ) {
-	return model.GetTracks(ctx, limit, offset)
+	return model.GetTracks(ctx, limit, offset, keyword)
 }
 
 // GetTrackPlayCount 获取特定曲目的播放统计
@@ -139,9 +139,9 @@ func (s *TrackServiceImpl) GetTopArtistsByTrackCount(ctx context.Context, limit 
 
 // GetTrackPlayCountsByPeriod 获取指定时间段内的曲目播放统计
 func (s *TrackServiceImpl) GetTrackPlayCountsByPeriod(
-	ctx context.Context, limit, offset int, period string,
+	ctx context.Context, limit, offset int, period string, keyword string,
 ) ([]*model.Track, error) {
-	return model.GetTracksByPeriod(ctx, limit, offset, period)
+	return model.GetTracksByPeriod(ctx, limit, offset, period, keyword)
 }
 
 // GetPlayCountsBySource 获取按来源统计的播放次数

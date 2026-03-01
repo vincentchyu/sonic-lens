@@ -49,7 +49,7 @@ func (s *MusicAnalysisServiceImpl) GenerateMusicPreferenceReport(ctx context.Con
 	}
 
 	// 获取播放次数最多的曲目 (30条数据)
-	topTracks, err := model.GetTracks(ctx, 30, 0)
+	topTracks, err := model.GetTracks(ctx, 30, 0, "")
 	if err != nil {
 		log.Error(ctx, "Failed to get top tracks", zap.Error(err))
 		return nil, err

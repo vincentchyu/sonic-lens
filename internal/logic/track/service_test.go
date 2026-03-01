@@ -55,7 +55,7 @@ func init() {
 
 func TestName(t *testing.T) {
 	ctx := context.Background()
-	tracks, err := model.GetTracks(ctx, 500, 0)
+	tracks, err := model.GetTracks(ctx, 500, 0, "")
 	if err != nil {
 		panic(err)
 	}

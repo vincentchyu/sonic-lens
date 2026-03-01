@@ -91,12 +91,13 @@ func setupRouter(name string) *gin.Engine {
 		"/api/track-play-counts", func(c *gin.Context) {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			keyword := c.Query("keyword")
 
 			if limit > 100 {
 				limit = 100 // Limit max records per page
 			}
 
-			records, err := trackService.GetTrackPlayCounts(c.Request.Context(), limit, offset)
+			records, err := trackService.GetTrackPlayCounts(c.Request.Context(), limit, offset, keyword)
 			log.Info(
 				c.Request.Context(), "Fetched track play counts", zap.Int("count", len(records)),
 				zap.Int("limit", limit), zap.Int("offset", offset),
@@ -804,12 +805,13 @@ func setupRouter(name string) *gin.Engine {
 		"/playCounts", func(c *gin.Context) {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			keyword := c.Query("keyword")
 
 			if limit > 100 {
 				limit = 100 // Limit max records per page
 			}
 
-			records, err := trackService.GetTrackPlayCounts(c.Request.Context(), limit, offset)
+			records, err := trackService.GetTrackPlayCounts(c.Request.Context(), limit, offset, keyword)
 			log.Info(
 				c.Request.Context(), "Fetched track play counts", zap.Int("count", len(records)),
 				zap.Int("limit", limit), zap.Int("offset", offset),
@@ -940,12 +942,13 @@ func setupRouter(name string) *gin.Engine {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 			period := c.Query("period") // 支持 week, month
+			keyword := c.Query("keyword")
 
 			if limit > 100 {
 				limit = 100 // Limit max records per page
 			}
 
-			records, err := trackService.GetTrackPlayCountsByPeriod(c.Request.Context(), limit, offset, period)
+			records, err := trackService.GetTrackPlayCountsByPeriod(c.Request.Context(), limit, offset, period, keyword)
 			log.Info(
 				c.Request.Context(), "Fetched track play counts by period", zap.String("period", period),
 				zap.Int("count", len(records)), zap.Int("limit", limit), zap.Int("offset", offset),

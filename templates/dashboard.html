@@ -250,34 +250,53 @@
             position: fixed;
             left: 0;
             top: 50%;
-            transform: translateY(-50%) translateX(-90%);
+            transform: translateY(-50%);
             height: auto;
             padding: 20px 10px;
             border-radius: 0 16px 16px 0;
             z-index: 2000;
-            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 80px; /* 收起状态宽度，只露出一小截提示 */
-        }
-
-        /* Hover 时展开侧边栏 */
-        .navbar:hover {
-            transform: translateY(-50%) translateX(0);
-            width: 200px; /* 展开状态宽度 */
+            width: 200px;
             border-right: 1px solid var(--glass-border);
         }
 
-        /* 透明遮罩，增加悬停触发面积 */
-        .navbar::after {
-            content: '';
+        /* 收起状态 */
+        .navbar.collapsed {
+            width: 80px;
+            transform: translateY(-50%) translateX(-60px); /* 只露出一小截或靠边 */
+        }
+
+        .navbar.collapsed:hover {
+            transform: translateY(-50%) translateX(0);
+        }
+
+        /* 切换按钮 */
+        .nav-toggle {
             position: absolute;
-            top: 0;
-            bottom: 0;
-            right: -20px;
-            width: 20px;
-            background: transparent;
+            right: -12px;
+            top: 20px;
+            width: 24px;
+            height: 24px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            z-index: 2001;
+            transition: all 0.3s ease;
+            font-size: 12px;
+            border: 2px solid var(--glass-border);
+        }
+
+        .navbar.collapsed .nav-toggle {
+            transform: rotate(180deg);
+            right: 5px;
         }
 
         .navbar-content {
@@ -308,15 +327,15 @@
         }
 
         .logo-text {
-            opacity: 0;
+            opacity: 1;
             font-size: 1rem;
             transition: opacity 0.3s ease;
-            display: none; /* 默认隐藏文字 */
+            display: block;
         }
 
-        .navbar:hover .logo-text {
-            opacity: 1;
-            display: block; /* 展开显示文字 */
+        .navbar.collapsed .logo-text {
+            opacity: 0;
+            display: none;
         }
 
         .nav-links {
@@ -335,40 +354,41 @@
         .nav-links a {
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             text-decoration: none;
             color: var(--text-primary);
             font-weight: 500;
             padding: 12px 10px;
+            padding-left: 20px;
             border-radius: 8px;
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
         }
 
+        .navbar.collapsed .nav-links a {
+            justify-content: center;
+            padding-left: 10px;
+        }
+
         .nav-text {
             margin-left: 10px;
-            opacity: 0;
-            white-space: nowrap;
-            transform: translateX(-10px);
-            transition: all 0.3s ease;
-            display: none;
-        }
-
-        .navbar:hover .nav-links a {
-            justify-content: flex-start;
-            padding-left: 20px;
-        }
-
-        .navbar:hover .nav-text {
             opacity: 1;
+            white-space: nowrap;
             transform: translateX(0);
+            transition: all 0.3s ease;
             display: inline-block;
+        }
+
+        .navbar.collapsed .nav-text {
+            opacity: 0;
+            transform: translateX(-10px);
+            display: none;
         }
 
         .nav-links a:hover,
         .nav-links a.active {
-            background-color: rgba(102, 126, 234, 0.15); /* 使用更温和的背景 */
+            background-color: rgba(102, 126, 234, 0.15);
             color: var(--primary-color);
         }
 
@@ -381,6 +401,46 @@
             width: 4px;
             background-color: var(--primary-color);
             border-radius: 0 4px 4px 0;
+        }
+
+        /* 调整主容器边距，避免被侧边栏遮挡 */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            margin-left: 220px; /* 默认展开时的左边距 */
+            transition: margin-left 0.4s ease;
+        }
+
+        .navbar.collapsed ~ .container {
+            margin-left: 100px;
+        }
+
+        @media (max-width: 1200px) {
+            .container {
+                margin-left: 80px; /* 较小屏幕下减少边距 */
+            }
+            .navbar {
+                width: 80px;
+                transform: translateY(-50%) translateX(-60px);
+            }
+            .navbar.collapsed {
+                transform: translateY(-50%) translateX(-60px);
+            }
+            .navbar .logo-text, .navbar .nav-text {
+                display: none;
+            }
+            .navbar:hover {
+                width: 200px;
+                transform: translateY(-50%) translateX(0);
+            }
+            .navbar:hover .logo-text, .navbar:hover .nav-text {
+                display: inline-block;
+                opacity: 1;
+            }
+            .nav-toggle {
+                display: none; /* 移动端或窄屏隐藏切换按钮 */
+            }
         }
 
         /* 统计卡片 */
@@ -1945,7 +2005,8 @@
 </div>
 
 <!-- 悬浮侧边导航栏 -->
-<nav class="navbar">
+<nav class="navbar" id="mainNavbar">
+    <div class="nav-toggle" id="navToggle">◀</div>
     <div class="navbar-content">
         <a href="#" class="logo">
             <span class="logo-icon">🎵</span>
@@ -1953,8 +2014,8 @@
         </a>
         <ul class="nav-links">
             <li><a href="/" class="active" title="仪表板"><span class="nav-text">仪表板</span></a></li>
-            <li><a href="#" id="unscrobbledTab" title="未上报"><span class="nav-text">未上报列表</span></a></li>
             <li><a href="#" id="insightListTab" title="音眸列表"><span class="nav-text">音眸列表</span></a></li>
+            <li><a href="#" id="unscrobbledTab" title="未上报"><span class="nav-text">未上报列表</span></a></li>
            <!-- <li><a href="/recommendations" title="音乐推荐"><span class="nav-text">音乐推荐</span></a></li>
             <li><a href="/report" title="分析报告"><span class="nav-text">分析报告</span></a></li>
             <li><a href="/playCounts" title="播放统计"><span class="nav-text">播放统计</span></a></li>-->
@@ -2109,8 +2170,12 @@
         <!-- 播放排行榜 -->
         <div class="ranking-card" id="rankingCard">
             <div class="module-trail"></div>
-            <div class="card-header">
+            <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
                 <div class="card-title">播放排行榜</div>
+                <div class="search-container" style="flex: 1; min-width: 150px;">
+                    <input type="text" id="rankingSearchInput" placeholder="搜索歌名或艺术家..." 
+                           style="width: 100%; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); outline: none; font-size: 0.85rem;">
+                </div>
                 <div class="time-filters">
                     <div class="time-filter active" data-ranking="all">总排行</div>
                     <div class="time-filter" data-ranking="month">本月</div>
@@ -2392,6 +2457,9 @@
     let progressInterval = null; // 进度更新定时器
     let currentTrackInsight = null; // 当前曲目的 AI 解析结果
     let lastTrackKey = ""; // 用于检测切歌
+    let currentRankingType = "all"; // 当前排行榜类型
+    let rankingSearchKeyword = ""; // 当前排行榜搜索关键字
+    let rankingSearchTimeout = null; // 排行榜搜索防抖计算器
 
     // 格式化时间（秒转为mm:ss）
     function formatTime(seconds) {
@@ -5035,20 +5103,21 @@
     }
 
     // 初始化排行榜
-    function initRanking(rankingType = "all") {
+    function initRanking(rankingType = "all", keyword = "") {
+        currentRankingType = rankingType;
+        rankingSearchKeyword = keyword;
+        
         const rankingList = document.getElementById("rankingList");
         rankingList.innerHTML = '<div class="loading">加载中...</div>';
 
         // 根据排名类型调整API请求
-        let apiUrl = "/api/track-play-counts?limit=10&offset=0";
+        let apiUrl = `/api/track-play-counts?limit=10&offset=0${keyword ? '&keyword=' + encodeURIComponent(keyword) : ''}`;
         if (rankingType === "month") {
             // 月排行榜
-            apiUrl =
-                "/api/track-play-counts/period?limit=10&offset=0&period=month";
+            apiUrl = `/api/track-play-counts/period?limit=10&offset=0&period=month${keyword ? '&keyword=' + encodeURIComponent(keyword) : ''}`;
         } else if (rankingType === "week") {
             // 周排行榜
-            apiUrl =
-                "/api/track-play-counts/period?limit=10&offset=0&period=week";
+            apiUrl = `/api/track-play-counts/period?limit=10&offset=0&period=week${keyword ? '&keyword=' + encodeURIComponent(keyword) : ''}`;
         }
 
         fetch(apiUrl)
@@ -5760,7 +5829,7 @@
                 } else if (filterType.includes("播放排行榜")) {
                     // 更新排行榜
                     const ranking = this.getAttribute("data-ranking");
-                    initRanking(ranking);
+                    initRanking(ranking, rankingSearchKeyword);
                 }
             });
         });
@@ -5896,6 +5965,19 @@
                     currentInsightKeyword = val;
                     currentInsightPage = 1;
                     loadInsightList();
+                }, 500);
+            });
+        }
+
+        // 播放排行榜搜索
+        const rankingSearchInput = document.getElementById("rankingSearchInput");
+        if (rankingSearchInput) {
+            rankingSearchInput.addEventListener("input", (e) => {
+                const val = e.target.value.trim();
+                if (rankingSearchTimeout) clearTimeout(rankingSearchTimeout);
+                
+                rankingSearchTimeout = setTimeout(() => {
+                    initRanking(currentRankingType, val);
                 }, 500);
             });
         }
@@ -6379,5 +6461,26 @@
 
 <!-- Watermark Logo -->
 <div class="watermark"></div>
+
+<script>
+    // 侧边栏切换逻辑
+    document.addEventListener('DOMContentLoaded', () => {
+        const navbar = document.getElementById('mainNavbar');
+        const toggleBtn = document.getElementById('navToggle');
+        
+        // 从 localStorage 加载用户偏好
+        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        if (isCollapsed && window.innerWidth > 1200) {
+            navbar.classList.add('collapsed');
+            toggleBtn.textContent = '▶';
+        }
+
+        toggleBtn.addEventListener('click', () => {
+            const currentlyCollapsed = navbar.classList.toggle('collapsed');
+            toggleBtn.textContent = currentlyCollapsed ? '▶' : '◀';
+            localStorage.setItem('sidebarCollapsed', currentlyCollapsed);
+        });
+    });
+</script>
 </body>
 </html>

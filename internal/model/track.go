@@ -351,10 +351,14 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 	return nil
 }
 
-// GetTracks retrieves track play counts with pagination
-func GetTracks(ctx context.Context, limit, offset int) ([]*Track, error) {
+// GetTracks retrieves track play counts with pagination and optional keyword search
+func GetTracks(ctx context.Context, limit, offset int, keyword string) ([]*Track, error) {
 	var records []*Track
-	err := GetDB().WithContext(ctx).Order("play_count DESC").Limit(limit).Offset(offset).Find(&records).Error
+	db := GetDB().WithContext(ctx)
+	if keyword != "" {
+		db = db.Where("track LIKE ? OR artist LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+	err := db.Order("play_count DESC").Limit(limit).Offset(offset).Find(&records).Error
 	if err != nil {
 		return nil, err
 	}
@@ -479,8 +483,8 @@ func GetTopArtistsByTrackCount(ctx context.Context, limit int) ([]map[string]int
 	return result, nil
 }
 
-// GetTracksByPeriod retrieves track play counts for a specific period
-func GetTracksByPeriod(ctx context.Context, limit int, offset int, period string) ([]*Track, error) {
+// GetTracksByPeriod retrieves track play counts for a specific period with optional keyword search
+func GetTracksByPeriod(ctx context.Context, limit int, offset int, period string, keyword string) ([]*Track, error) {
 	// 计算时间范围
 	var startTime time.Time
 	switch period {
@@ -490,14 +494,16 @@ func GetTracksByPeriod(ctx context.Context, limit int, offset int, period string
 		startTime = time.Now().AddDate(0, -1, 0)
 	default:
 		// 默认返回所有时间的数据
-		return GetTracks(ctx, limit, offset)
+		return GetTracks(ctx, limit, offset, keyword)
 	}
 
 	// 先获取指定时间范围内的播放记录
 	var playRecords []*TrackPlayRecord
-	err := GetDB().WithContext(ctx).Where(
-		"play_time >= ?", startTime,
-	).Order("").Find(&playRecords).Error
+	db := GetDB().WithContext(ctx).Where("play_time >= ?", startTime)
+	if keyword != "" {
+		db = db.Where("track LIKE ? OR artist LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+	err := db.Find(&playRecords).Error
 	if err != nil {
 		return nil, err
 	}
