@@ -6532,6 +6532,70 @@
     </div>
 </div>
 
+<!-- “歌曲详情” AI 歌词解析模态框 -->
+<div id="detailsInsightModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h2>音眸 (歌曲详情)</h2>
+            <span class="close" onclick="hideModal('detailsInsightModal')">×</span>
+        </div>
+        <div class="modal-body">
+            <!-- 页签导航 -->
+            <div class="insight-tabs">
+                <div class="insight-tab active" onclick="switchInsightTab('summary', 'details')">解析详情</div>
+                <div class="insight-tab" onclick="switchInsightTab('feedback', 'details')">用户反馈</div>
+                <div class="insight-tab" onclick="switchInsightTab('raw', 'details')">原始数据</div>
+            </div>
+
+            <!-- 解析详情页签 -->
+            <div id="details-insightSummaryTab" class="insight-tab-content">
+                <div id="details-aiInsightStreamContent"
+                     style="white-space: pre-wrap; font-family: 'Segoe UI', system-ui, sans-serif; max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <div class="loading">准备中...</div>
+                </div>
+            </div>
+
+            <!-- 用户反馈页签 -->
+            <div id="details-insightFeedbackTab" class="insight-tab-content" style="display: none;">
+                <div id="details-insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 原始数据页签 -->
+            <div id="details-insightRawTab" class="insight-tab-content" style="display: none;">
+                <div id="details-insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <pre style="white-space: pre-wrap; font-size: 0.85em; color: var(--accent-color);"></pre>
+                </div>
+            </div>
+
+            <!-- 底部操作区 -->
+            <div id="details-aiActionFooter"
+                 style="margin-top: 15px; padding: 10px 0; border-top: 1px solid var(--border-color); display: none; justify-content: space-between; align-items: center; gap: 20px;">
+                <button id="details-aiReanalyzeBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;"
+                        onclick="showModelPicker(null, 'details')">重新分析
+                </button>
+                <button id="details-aiShareBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
+                        onclick="shareInsight('details')">分享图片
+                </button>
+                <div id="details-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);"
+                            onclick="recordAiFeedback(1, 'details')">👍 赞
+                    </button>
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(231, 76, 60, 0.1); color: var(--accent-color); border-color: var(--accent-color);"
+                            onclick="recordAiFeedback(-1, 'details')">👎 踩
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- AI 模型选择模态框 -->
 <div id="aiModelPickerModal" class="modal" style="z-index: 2100;">
     <div class="modal-content" style="max-width: 400px; padding: 25px;">

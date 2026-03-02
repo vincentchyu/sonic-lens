@@ -73,7 +73,7 @@ func (p *OllamaProvider) AnalyzeTrack(
 		Model:  p.model,
 		Prompt: prompt,
 		Stream: new(bool), // set streaming to false
-		Think:  &api.ThinkValue{Value: true},
+		Think:  &api.ThinkValue{Value: "medium"},
 	}
 
 	var fullResponse strings.Builder
