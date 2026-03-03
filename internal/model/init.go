@@ -50,6 +50,11 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err = GlobalDBForSqlLite.AutoMigrate(&Genre{}); err != nil {
 			return err
 		}
+		if err = GlobalDBForSqlLite.AutoMigrate(
+			&DashboardStat{}, &PlaySourceStat{}, &TopArtistStat{}, &TopAlbumStat{}, &TopGenreStat{}, &PlayTrendDailyStat{}, &PlayTrendHourlyStat{}, &TrackRankStat{},
+		); err != nil {
+			return err
+		}
 		// Auto migrate the schema for AI insight related tables
 		if err = GlobalDBForSqlLite.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}); err != nil {
 			return err
@@ -77,6 +82,11 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 				return err
 			}
 			if err = GlobalDBForMysql.AutoMigrate(&Genre{}); err != nil {
+				return err
+			}
+			if err = GlobalDBForMysql.AutoMigrate(
+				&DashboardStat{}, &PlaySourceStat{}, &TopArtistStat{}, &TopAlbumStat{}, &TopGenreStat{}, &PlayTrendDailyStat{}, &PlayTrendHourlyStat{}, &TrackRankStat{},
+			); err != nil {
 				return err
 			}
 			// Auto migrate the schema for AI insight related tables

@@ -95,6 +95,14 @@ function errorResponse(message, status = 500) {
     });
 }
 
+function normalizeAlbumPeriod(days) {
+    if (days === 7 || days === 30 || days === 90 || days === 365) return days;
+    if (days <= 14) return 7;
+    if (days <= 60) return 30;
+    if (days <= 180) return 90;
+    return 365;
+}
+
 // OPTIONS 处理
 router.options('/api/.*', () => new Response(null, {headers: corsHeaders}));
 
@@ -135,19 +143,34 @@ router.get('/api/dashboard/stats', (req, env, ctx) => withCache(req, env, async 
         const db = env.DB;
         console.log("Accessing /api/dashboard/stats");
         if (!db) console.error("DB binding not found!");
-        const [totalPlays, totalTracks, totalArtists, totalAlbums] = await Promise.all([
-            db.prepare("SELECT SUM(play_count) as count FROM tracks").first(),
-            db.prepare("SELECT COUNT(*) as count FROM tracks").first(),
-            db.prepare("SELECT COUNT(DISTINCT artist) as count FROM tracks").first(),
-            db.prepare("SELECT COUNT(DISTINCT album) as count FROM tracks").first()
-        ]);
-
-        const result = {
-            totalPlays: totalPlays?.count || 0,
-            totalTracks: totalTracks?.count || 0,
-            totalArtists: totalArtists?.count || 0,
-            totalAlbums: totalAlbums?.count || 0
+        let result = {
+            totalPlays: 0,
+            totalTracks: 0,
+            totalArtists: 0,
+            totalAlbums: 0
         };
+        const stat = await db.prepare("SELECT total_plays, total_tracks, total_artist, total_albums FROM dashboard_stat WHERE id = 1 LIMIT 1").first();
+        if (stat) {
+            result = {
+                totalPlays: stat.total_plays || 0,
+                totalTracks: stat.total_tracks || 0,
+                totalArtists: stat.total_artist || 0,
+                totalAlbums: stat.total_albums || 0
+            };
+        } else {
+            const [totalPlays, totalTracks, totalArtists, totalAlbums] = await Promise.all([
+                db.prepare("SELECT SUM(play_count) as count FROM tracks").first(),
+                db.prepare("SELECT COUNT(*) as count FROM tracks").first(),
+                db.prepare("SELECT COUNT(DISTINCT artist) as count FROM tracks").first(),
+                db.prepare("SELECT COUNT(DISTINCT album) as count FROM tracks").first()
+            ]);
+            result = {
+                totalPlays: totalPlays?.count || 0,
+                totalTracks: totalTracks?.count || 0,
+                totalArtists: totalArtists?.count || 0,
+                totalAlbums: totalAlbums?.count || 0
+            };
+        }
 
         console.log("Stats query result:", JSON.stringify(result));
 
@@ -161,7 +184,10 @@ router.get('/api/dashboard/stats', (req, env, ctx) => withCache(req, env, async 
 router.get('/api/dashboard/play-counts-by-source', (req, env, ctx) => withCache(req, env, async (req, env) => {
     try {
         const db = env.DB;
-        const {results} = await db.prepare("SELECT source, count(source) as count FROM track_play_records GROUP BY source").all();
+        let {results} = await db.prepare("SELECT source, count as count FROM play_source_stat ORDER BY count DESC").all();
+        if (!results || results.length === 0) {
+            ({results} = await db.prepare("SELECT source, count(source) as count FROM track_play_records GROUP BY source").all());
+        }
         const response = {};
         results.forEach(row => {
             let key = row.source || "Unknown";
@@ -186,27 +212,48 @@ router.get('/api/dashboard/trend', (req, env, ctx) => withCache(req, env, async 
         startDate.setDate(startDate.getDate() - range);
         const startDateStr = startDate.toISOString();
 
-        const {results} = await db.prepare(`
-            SELECT strftime('%Y-%m-%d', datetime(play_time, '+8 hours')) as date, 
-              strftime('%H', datetime(play_time, '+8 hours')) as hour, 
-              COUNT(*) as count
-            FROM track_play_records
-            WHERE play_time >= ?
-            GROUP BY date, hour
-            ORDER BY date, hour
-        `).bind(startDateStr).all();
+        let dailyResults = [];
+        let hourlyResults = [];
+        ({results: dailyResults} = await db.prepare(`
+            SELECT stat_date as date, play_count as count
+            FROM play_trend_daily_stat
+            WHERE stat_date >= date(?)
+            ORDER BY stat_date
+        `).bind(startDateStr).all());
+        ({results: hourlyResults} = await db.prepare(`
+            SELECT stat_date as date, printf('%02d', hour) as hour, play_count as count
+            FROM play_trend_hourly_stat
+            WHERE stat_date >= date(?)
+            ORDER BY stat_date, hour
+        `).bind(startDateStr).all());
+        if ((!dailyResults || dailyResults.length === 0) && (!hourlyResults || hourlyResults.length === 0)) {
+            ({results: hourlyResults} = await db.prepare(`
+                SELECT strftime('%Y-%m-%d', datetime(play_time, '+8 hours')) as date, 
+                  strftime('%H', datetime(play_time, '+8 hours')) as hour, 
+                  COUNT(*) as count
+                FROM track_play_records
+                WHERE play_time >= ?
+                GROUP BY date, hour
+                ORDER BY date, hour
+            `).bind(startDateStr).all());
+        }
 
+        const dailyData = {};
         const hourlyData = {};
-        results.forEach(row => {
+        dailyResults.forEach(row => {
+            dailyData[row.date] = row.count || 0;
+        });
+        hourlyResults.forEach(row => {
             if (!hourlyData[row.date]) {
-                hourlyData[row.date] = {total: 0, hourly: {}};
+                hourlyData[row.date] = {date: row.date, total: 0, hourly: {}};
                 for (let i = 0; i < 24; i++) hourlyData[row.date].hourly[i.toString().padStart(2, '0')] = 0;
             }
             hourlyData[row.date].hourly[row.hour] = row.count;
             hourlyData[row.date].total += row.count;
+            if (dailyData[row.date] == null) dailyData[row.date] = 0;
         });
 
-        return jsonResponse({hourly: hourlyData});
+        return jsonResponse({daily: dailyData, hourly: hourlyData});
     } catch (err) {
         return errorResponse(err.message);
     }
@@ -224,11 +271,18 @@ router.get('/api/dashboard/top-artists/:type', async (req, env) => {
 
             let query = "";
             if (type === "tracks") {
-                query = "SELECT artist, COUNT(*) as track_count FROM tracks GROUP BY artist ORDER BY track_count DESC LIMIT ?";
+                query = "SELECT artist, metric_value as track_count FROM top_artist_stat WHERE period_days = 0 AND metric_type = 'tracks' ORDER BY rank ASC LIMIT ?";
             } else {
-                query = "SELECT artist, SUM(play_count) as play_count FROM tracks GROUP BY artist ORDER BY play_count DESC LIMIT ?";
+                query = "SELECT artist, metric_value as play_count FROM top_artist_stat WHERE period_days = 0 AND metric_type = 'plays' ORDER BY rank ASC LIMIT ?";
             }
-            const {results} = await db.prepare(query).bind(limit).all();
+            let {results} = await db.prepare(query).bind(limit).all();
+            if (!results || results.length === 0) {
+                if (type === "tracks") {
+                    ({results} = await db.prepare("SELECT artist, COUNT(*) as track_count FROM tracks GROUP BY artist ORDER BY track_count DESC LIMIT ?").bind(limit).all());
+                } else {
+                    ({results} = await db.prepare("SELECT artist, SUM(play_count) as play_count FROM tracks GROUP BY artist ORDER BY play_count DESC LIMIT ?").bind(limit).all());
+                }
+            }
             return jsonResponse(results);
         } catch (err) {
             return errorResponse(err.message);
@@ -244,15 +298,18 @@ router.get('/api/dashboard/top-albums', async (req, env) => {
             const url = new URL(req.url);
             const limit = parseInt(url.searchParams.get("limit") || "10");
             const days = parseInt(url.searchParams.get("days") || "30");
+            const periodDays = normalizeAlbumPeriod(days);
 
-            let results;
-            if (days > 3650) {
-                ({results} = await db.prepare("SELECT album, artist, SUM(play_count) as play_count FROM tracks GROUP BY album, artist ORDER BY play_count DESC LIMIT ?").bind(limit).all());
-            } else {
-                const startDate = new Date();
-                startDate.setDate(startDate.getDate() - days);
-                const startDateStr = startDate.toISOString();
-                ({results} = await db.prepare("SELECT album, album_artist as artist, COUNT(*) as play_count FROM track_play_records WHERE play_time >= ? GROUP BY album, album_artist ORDER BY play_count DESC LIMIT ?").bind(startDateStr, limit).all());
+            let {results} = await db.prepare("SELECT album, artist, play_count FROM top_album_stat WHERE period_days = ? ORDER BY rank ASC LIMIT ?").bind(periodDays, limit).all();
+            if (!results || results.length === 0) {
+                if (days > 3650) {
+                    ({results} = await db.prepare("SELECT album, artist, SUM(play_count) as play_count FROM tracks GROUP BY album, artist ORDER BY play_count DESC LIMIT ?").bind(limit).all());
+                } else {
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - days);
+                    const startDateStr = startDate.toISOString();
+                    ({results} = await db.prepare("SELECT album, album_artist as artist, COUNT(*) as play_count FROM track_play_records WHERE play_time >= ? GROUP BY album, album_artist ORDER BY play_count DESC LIMIT ?").bind(startDateStr, limit).all());
+                }
             }
             return jsonResponse(results);
         } catch (err) {
@@ -268,7 +325,10 @@ router.get('/api/dashboard/top-genres', async (req, env) => {
             const db = env.DB;
             const url = new URL(req.url);
             const limit = parseInt(url.searchParams.get("limit") || "10");
-            const {results} = await db.prepare("select tg.track_genre_name, tg.track_genre_count, g.name_zh as genre_name_zh, g.play_count as genre_count from (select genre as track_genre_name, sum(play_count) as track_genre_count from tracks where genre != '' group by genre order by track_genre_count desc limit ?) as tg left join genres as g on tg.track_genre_name = g.name").bind(limit).all();
+            let {results} = await db.prepare("SELECT genre_name as track_genre_name, track_genre_count, genre_name_zh, genre_count FROM top_genre_stat ORDER BY rank ASC LIMIT ?").bind(limit).all();
+            if (!results || results.length === 0) {
+                ({results} = await db.prepare("select tg.track_genre_name, tg.track_genre_count, g.name_zh as genre_name_zh, g.play_count as genre_count from (select genre as track_genre_name, sum(play_count) as track_genre_count from tracks where genre != '' group by genre order by track_genre_count desc limit ?) as tg left join genres as g on tg.track_genre_name = g.name").bind(limit).all());
+            }
             return jsonResponse(results);
         } catch (err) {
             return errorResponse(err.message);

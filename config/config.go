@@ -13,6 +13,7 @@ type Config struct {
 	Musixmatch MusixmatchConfig `yaml:"musixmatch"`
 	Log        LogConfig        `yaml:"log"`
 	Database   DatabaseConfig   `yaml:"database"`
+	Dashboard  DashboardConfig  `yaml:"dashboard"`
 	HTTP       HTTPConfig       `yaml:"http"`
 	Telemetry  TelemetryConfig  `yaml:"telemetry"`
 	Redis      RedisConfig      `yaml:"redis"`
@@ -49,6 +50,16 @@ type DatabaseConfig struct {
 
 type HTTPConfig struct {
 	Port string `yaml:"port"`
+}
+
+type DashboardConfig struct {
+	StatRefreshEnabled              bool `yaml:"statRefreshEnabled"`
+	StatRefreshIntervalMinutes      int  `yaml:"statRefreshIntervalMinutes"`
+	HeavyStatRefreshIntervalMinutes int  `yaml:"heavyStatRefreshIntervalMinutes"`
+	HeavyStatOnlyOnNewPlay          bool `yaml:"heavyStatOnlyOnNewPlay"`
+	TopN                            int  `yaml:"topN"`
+	TrendDays                       int  `yaml:"trendDays"`
+	HourlyTrendDays                 int  `yaml:"hourlyTrendDays"`
 }
 
 type MysqlConfig struct {

@@ -3,13 +3,13 @@ package model
 import (
 	"context"
 	"errors"
-	"sort"
 	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
+	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
 )
 
@@ -353,10 +353,14 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 
 // GetTracks retrieves track play counts with pagination and optional keyword search
 func GetTracks(ctx context.Context, limit, offset int, keyword string) ([]*Track, error) {
+	if statRows, err := GetTrackPlayCountsFromStat(ctx, "all", limit, offset, keyword); err == nil && len(statRows) > 0 {
+		return statRows, nil
+	}
+
 	var records []*Track
 	db := GetDB().WithContext(ctx)
 	if keyword != "" {
-		db = db.Where("track LIKE ? OR artist LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		db = db.Where("MATCH(track, artist) AGAINST(? IN BOOLEAN MODE)", keyword)
 	}
 	err := db.Order("play_count DESC").Limit(limit).Offset(offset).Find(&records).Error
 	if err != nil {
@@ -367,8 +371,12 @@ func GetTracks(ctx context.Context, limit, offset int, keyword string) ([]*Track
 
 // GetTrackCounts returns the total number of tracks
 func GetTrackCounts(ctx context.Context) (int64, error) {
+	stat, err := GetDashboardOverviewFromStat(ctx)
+	if err == nil && stat != nil {
+		return stat.TotalTracks, nil
+	}
 	var count int64
-	err := GetDB().WithContext(ctx).Model(&Track{}).Count(&count).Error
+	err = GetDB().WithContext(ctx).Model(&Track{}).Count(&count).Error
 	if err != nil {
 		return 0, err
 	}
@@ -416,7 +424,7 @@ func GetAllTrackPlayCounts(ctx context.Context) ([]*Track, error) {
 // GetTracksByArtist retrieves all tracks by a specific artist
 func GetTracksByArtist(ctx context.Context, artist string) ([]*Track, error) {
 	var tracks []*Track
-	err := GetDB().WithContext(ctx).Where("artist LIKE ?", "%"+artist+"%").Find(&tracks).Error
+	err := GetDB().WithContext(ctx).Where("artist = ?", artist).Find(&tracks).Error
 	if err != nil {
 		return nil, err
 	}
@@ -425,8 +433,12 @@ func GetTracksByArtist(ctx context.Context, artist string) ([]*Track, error) {
 
 // GetTotalPlayCount returns the total play count across all tracks
 func GetTotalPlayCount(ctx context.Context) (int64, error) {
+	stat, err := GetDashboardOverviewFromStat(ctx)
+	if err == nil && stat != nil {
+		return stat.TotalPlays, nil
+	}
 	var total int64
-	err := GetDB().WithContext(ctx).Model(&Track{}).Select("SUM(play_count)").Scan(&total).Error
+	err = GetDB().WithContext(ctx).Model(&Track{}).Select("SUM(play_count)").Scan(&total).Error
 	if err != nil {
 		return 0, err
 	}
@@ -435,8 +447,12 @@ func GetTotalPlayCount(ctx context.Context) (int64, error) {
 
 // GetArtistCounts returns the total number of unique artists
 func GetArtistCounts(ctx context.Context) (int64, error) {
+	stat, err := GetDashboardOverviewFromStat(ctx)
+	if err == nil && stat != nil {
+		return stat.TotalArtist, nil
+	}
 	var count int64
-	err := GetDB().WithContext(ctx).Model(&Track{}).Distinct("artist").Count(&count).Error
+	err = GetDB().WithContext(ctx).Model(&Track{}).Distinct("artist").Count(&count).Error
 	if err != nil {
 		return 0, err
 	}
@@ -445,8 +461,12 @@ func GetArtistCounts(ctx context.Context) (int64, error) {
 
 // GetAlbumCounts returns the total number of unique albums
 func GetAlbumCounts(ctx context.Context) (int64, error) {
+	stat, err := GetDashboardOverviewFromStat(ctx)
+	if err == nil && stat != nil {
+		return stat.TotalAlbums, nil
+	}
 	var count int64
-	err := GetDB().WithContext(ctx).Model(&Track{}).Distinct("album").Count(&count).Error
+	err = GetDB().WithContext(ctx).Model(&Track{}).Distinct("album").Count(&count).Error
 	if err != nil {
 		return 0, err
 	}
@@ -455,8 +475,12 @@ func GetAlbumCounts(ctx context.Context) (int64, error) {
 
 // GetTopArtistsByPlayCount returns the top artists by play count
 func GetTopArtistsByPlayCount(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	statResult, err := GetTopArtistsFromStat(ctx, "plays", limit)
+	if err == nil && len(statResult) > 0 {
+		return statResult, nil
+	}
 	var result []map[string]interface{}
-	err := GetDB().WithContext(ctx).Model(&Track{}).
+	err = GetDB().WithContext(ctx).Model(&Track{}).
 		Select("artist, SUM(play_count) as play_count").
 		Group("artist").
 		Order("SUM(play_count) DESC").
@@ -470,8 +494,12 @@ func GetTopArtistsByPlayCount(ctx context.Context, limit int) ([]map[string]inte
 
 // GetTopArtistsByTrackCount returns the top artists by track count
 func GetTopArtistsByTrackCount(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	statResult, err := GetTopArtistsFromStat(ctx, "tracks", limit)
+	if err == nil && len(statResult) > 0 {
+		return statResult, nil
+	}
 	var result []map[string]interface{}
-	err := GetDB().WithContext(ctx).Model(&Track{}).
+	err = GetDB().WithContext(ctx).Model(&Track{}).
 		Select("artist, COUNT(*) as track_count").
 		Group("artist").
 		Order("COUNT(*) DESC").
@@ -485,6 +513,10 @@ func GetTopArtistsByTrackCount(ctx context.Context, limit int) ([]map[string]int
 
 // GetTracksByPeriod retrieves track play counts for a specific period with optional keyword search
 func GetTracksByPeriod(ctx context.Context, limit int, offset int, period string, keyword string) ([]*Track, error) {
+	if statRows, err := GetTrackPlayCountsFromStat(ctx, period, limit, offset, keyword); err == nil && len(statRows) > 0 {
+		return statRows, nil
+	}
+
 	// 计算时间范围
 	var startTime time.Time
 	switch period {
@@ -497,57 +529,45 @@ func GetTracksByPeriod(ctx context.Context, limit int, offset int, period string
 		return GetTracks(ctx, limit, offset, keyword)
 	}
 
-	// 先获取指定时间范围内的播放记录
-	var playRecords []*TrackPlayRecord
-	db := GetDB().WithContext(ctx).Where("play_time >= ?", startTime)
-	if keyword != "" {
-		db = db.Where("track LIKE ? OR artist LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	type aggRow struct {
+		Artist    string
+		Album     string
+		Track     string
+		PlayCount int64
 	}
-	err := db.Find(&playRecords).Error
+	var rows []aggRow
+	db := GetDB().WithContext(ctx).Model(&TrackPlayRecord{}).Where("play_time >= ?", startTime)
+	if keyword != "" {
+		if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
+			db = db.Where("MATCH(track, artist, album) AGAINST(? IN BOOLEAN MODE)", keyword)
+		} else {
+			kw := "%" + keyword + "%"
+			db = db.Where("track LIKE ? OR artist LIKE ? OR album LIKE ?", kw, kw, kw)
+		}
+	}
+	err := db.Select("artist, album, track, COUNT(*) as play_count").
+		Group("artist, album, track").
+		Order("play_count DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 
-	// 统计每个曲目的播放次数
-	trackCountMap := make(map[string]*Track)
-	for _, record := range playRecords {
-		key := record.Artist + "|" + record.Album + "|" + record.Track
-		if trackCount, exists := trackCountMap[key]; exists {
-			trackCount.PlayCount++
-		} else {
-			trackCountMap[key] = &Track{
-				Artist:    record.Artist,
-				Album:     record.Album,
-				Track:     record.Track,
-				PlayCount: 1,
-			}
-		}
+	result := make([]*Track, 0, len(rows))
+	for _, row := range rows {
+		result = append(
+			result,
+			&Track{
+				Artist:    row.Artist,
+				Album:     row.Album,
+				Track:     row.Track,
+				PlayCount: int(row.PlayCount),
+			},
+		)
 	}
-
-	// 转换为切片并排序
-	var trackCounts []*Track
-	for _, trackCount := range trackCountMap {
-		trackCounts = append(trackCounts, trackCount)
-	}
-
-	// 按播放次数排序
-	sort.Slice(
-		trackCounts, func(i, j int) bool {
-			return trackCounts[i].PlayCount > trackCounts[j].PlayCount
-		},
-	)
-
-	// 应用分页
-	start := offset
-	end := offset + limit
-	if start >= len(trackCounts) {
-		return []*Track{}, nil
-	}
-	if end > len(trackCounts) {
-		end = len(trackCounts)
-	}
-
-	return trackCounts[start:end], nil
+	return result, nil
 }
 
 // GetAppleMusicFavorite retrieves the Apple Music favorite status for a track

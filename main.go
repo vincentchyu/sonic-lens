@@ -82,6 +82,8 @@ func initServer() error {
 
 	// Start D1 sync scheduler
 	go d1sync.StartD1SyncScheduler(ctx)
+	// Start dashboard stat scheduler
+	go d1sync.StartDashboardStatScheduler(ctx)
 
 	// Start scrobblerRun goroutine
 	go api.StartHTTPServer(ctx, config.ConfigObj.Telemetry.Name)

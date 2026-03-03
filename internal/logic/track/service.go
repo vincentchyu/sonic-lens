@@ -24,6 +24,8 @@ type TrackService interface {
 	GetRecentPlayRecords(ctx context.Context, limit int) ([]*model.TrackPlayRecord, error)
 	// GetRecentPlayRecordsByDays 获取指定天数内的播放记录
 	GetRecentPlayRecordsByDays(ctx context.Context, days int) (map[string][]*model.TrackPlayRecord, error)
+	// GetPlayTrendByDays 获取指定天数的趋势聚合数据
+	GetPlayTrendByDays(ctx context.Context, days int) (map[string]int, map[string]*model.HourlyPlayTrendData, error)
 	// GetTopArtistsByPlayCount 获取按播放次数统计的热门艺术家
 	GetTopArtistsByPlayCount(ctx context.Context, limit int) ([]map[string]interface{}, error)
 	// GetTopArtistsByTrackCount 获取按曲目数统计的热门艺术家
@@ -125,6 +127,12 @@ func (s *TrackServiceImpl) GetRecentPlayRecordsByDays(
 	ctx context.Context, days int,
 ) (map[string][]*model.TrackPlayRecord, error) {
 	return model.GetRecentPlayRecordsByDays(ctx, days)
+}
+
+func (s *TrackServiceImpl) GetPlayTrendByDays(
+	ctx context.Context, days int,
+) (map[string]int, map[string]*model.HourlyPlayTrendData, error) {
+	return model.GetPlayTrendFromStatByDays(ctx, days)
 }
 
 // GetTopArtistsByPlayCount 获取按播放次数统计的热门艺术家

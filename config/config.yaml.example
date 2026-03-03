@@ -1,6 +1,15 @@
 # Cloudflare D1 同步配置示例
 # 将此配置添加到你的 config/config.yaml 文件中
 
+dashboard:
+  statRefreshEnabled: true                      # 是否启用 dashboard 统计定时任务
+  statRefreshIntervalMinutes: 10                # 统计刷新间隔(分钟)，默认10分钟
+  heavyStatRefreshIntervalMinutes: 60           # 重型统计刷新间隔(分钟)，默认60分钟
+  heavyStatOnlyOnNewPlay: true                  # 仅在有新播放记录时刷新 top_*/trend_*，默认 true
+  topN: 10                                      # 统计榜单每类保留条数，默认10
+  trendDays: 180                                # 趋势统计保留天数，默认180天
+  hourlyTrendDays: 30                           # 小时趋势保留天数，默认30天(更早历史仅保留日趋势)
+
 cloudflare:
   account_id: "your_cloudflare_account_id"      # Cloudflare Account ID
   api_token: "your_cloudflare_api_token"        # Cloudflare API Token (需要 D1 权限)

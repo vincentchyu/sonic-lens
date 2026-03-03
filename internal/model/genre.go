@@ -144,6 +144,10 @@ func GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*Genre, error) {
 
 // GetTopGenresWithDetails returns the top genres with detailed information including track count
 func GetTopGenresWithDetails(ctx context.Context, limit int) ([]*TopGenre, error) {
+	if statRows, err := GetTopGenresWithDetailsFromStat(ctx, limit); err == nil && len(statRows) > 0 {
+		return statRows, nil
+	}
+
 	var result []*TopGenre
 
 	// 根据数据库类型使用不同的SQL语法

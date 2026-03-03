@@ -445,8 +445,8 @@
 
         /* 统计卡片 */
         .stats-container {
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 15px;
             margin-bottom: 20px;
         }
@@ -459,8 +459,8 @@
             display: flex;
             flex-direction: column;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
-            min-width: 150px;
-            flex: 1;
+            min-width: 0;
+            width: 100%;
         }
 
         .stat-card:hover {
@@ -611,9 +611,21 @@
         /* 图表区域 */
         .charts-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
+        }
+
+        /* 桌面端：热门艺术家+热门专辑第一行，口味流派第二行，播放趋势第三行 */
+        @media (min-width: 1201px) {
+            .charts-container {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #genreChartCard,
+            #trendChartCard {
+                grid-column: 1 / -1;
+            }
         }
 
         .chart-card {
@@ -696,7 +708,7 @@
         /* 排行榜容器 */
         .rankings-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -867,6 +879,9 @@
             .charts-container {
                 grid-template-columns: 1fr;
             }
+            .rankings-container {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (max-width: 768px) {
@@ -875,9 +890,10 @@
                 position: fixed;
                 bottom: 0;
                 left: 0;
+                right: 0;
                 top: auto;
-                transform: none;
-                width: 100%;
+                transform: none !important;
+                width: 100% !important;
                 height: auto;
                 flex-direction: row;
                 border-radius: 16px 16px 0 0;
@@ -886,14 +902,20 @@
                 border-top: 1px solid var(--glass-border);
             }
 
+            .navbar.collapsed {
+                transform: none !important;
+                width: 100% !important;
+            }
+
             .navbar:hover {
-                transform: none;
-                width: 100%;
+                transform: none !important;
+                width: 100% !important;
             }
 
             .navbar-content {
                 flex-direction: row;
                 justify-content: space-around;
+                width: 100%;
             }
 
             .logo {
@@ -905,16 +927,21 @@
                 justify-content: space-around;
                 margin-top: 0;
                 gap: 0;
+                width: 100%;
             }
 
             .nav-links li {
                 margin: 0;
+                flex: 1;
             }
 
             .nav-links a {
                 flex-direction: column;
+                justify-content: center;
+                align-items: center;
                 padding: 5px 10px;
                 border-radius: 8px;
+                min-width: 0;
             }
 
             .nav-text {
@@ -924,11 +951,16 @@
                 font-size: 0.7rem;
                 margin-left: 0;
                 margin-top: 3px;
+                white-space: nowrap;
             }
 
             .navbar:hover .nav-links a {
                 padding-left: 10px;
                 justify-content: center;
+            }
+
+            .nav-toggle {
+                display: none !important;
             }
 
             .nav-links a.active::before {
@@ -938,10 +970,13 @@
             /* 给容器加底边距，防止被底部导航遮挡 */
             .container {
                 padding-bottom: 80px;
+                margin-left: 0 !important;
             }
 
-            .stats-container {
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            .stats-container,
+            .charts-container,
+            .rankings-container {
+                grid-template-columns: 1fr;
             }
 
             .ranking-item {
@@ -978,11 +1013,20 @@
             .card-header {
                 flex-direction: column;
                 align-items: flex-start;
+                gap: 10px;
             }
 
             .time-filters {
                 margin-top: 10px;
                 align-self: flex-start;
+                width: 100%;
+                overflow-x: auto;
+            }
+
+            #rankingSearchInput,
+            #insightSearchInput {
+                width: 100% !important;
+                max-width: 100%;
             }
 
             .ranking-item {
@@ -2013,9 +2057,9 @@
             <span class="logo-text">音眸轨迹</span>
         </a>
         <ul class="nav-links">
-            <li><a href="/" class="active" title="仪表板"><span class="nav-text">仪表板</span></a></li>
-            <li><a href="#" id="insightListTab" title="音眸列表"><span class="nav-text">音眸列表</span></a></li>
-            <li><a href="#" id="unscrobbledTab" title="未上报"><span class="nav-text">未上报列表</span></a></li>
+            <li><a href="/" class="active" aria-label="仪表板"><span class="nav-text">仪表板</span></a></li>
+            <li><a href="#" id="insightListTab" aria-label="音眸列表"><span class="nav-text">音眸列表</span></a></li>
+            <li><a href="#" id="unscrobbledTab" aria-label="未上报列表"><span class="nav-text">未上报列表</span></a></li>
            <!-- <li><a href="/recommendations" title="音乐推荐"><span class="nav-text">音乐推荐</span></a></li>
             <li><a href="/report" title="分析报告"><span class="nav-text">分析报告</span></a></li>
             <li><a href="/playCounts" title="播放统计"><span class="nav-text">播放统计</span></a></li>-->
@@ -2085,7 +2129,7 @@
     <!-- 图表区域 -->
     <div class="charts-container">
         <!-- 热门艺术家 -->
-        <div class="chart-card">
+        <div class="chart-card" id="artistChartCard">
             <div class="module-trail"></div>
             <div class="card-header">
                 <div class="card-title">热门艺术家</div>
@@ -2100,7 +2144,7 @@
         </div>
 
         <!-- 热门专辑 -->
-        <div class="chart-card">
+        <div class="chart-card" id="albumChartCard">
             <div class="module-trail"></div>
             <div class="card-header">
                 <div class="card-title">热门专辑</div>
@@ -2117,7 +2161,7 @@
         </div>
 
         <!-- 热门流派 -->
-        <div class="chart-card">
+        <div class="chart-card" id="genreChartCard">
             <div class="module-trail"></div>
             <div class="card-header">
                 <div class="card-title">口味流派</div>
@@ -2131,7 +2175,7 @@
         </div>
 
         <!-- 播放趋势图 -->
-        <div class="chart-card">
+        <div class="chart-card" id="trendChartCard">
             <div class="module-trail"></div>
             <!-- <div class="chart-card" style="grid-column: span 2"> -->
             <div class="card-header">
@@ -6684,10 +6728,13 @@
     document.addEventListener('DOMContentLoaded', () => {
         const navbar = document.getElementById('mainNavbar');
         const toggleBtn = document.getElementById('navToggle');
+        const isMobileNav = window.innerWidth <= 768;
         
         // 从 localStorage 加载用户偏好
         const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-        if (isCollapsed && window.innerWidth > 1200) {
+        if (isMobileNav) {
+            navbar.classList.remove('collapsed');
+        } else if (isCollapsed && window.innerWidth > 1200) {
             navbar.classList.add('collapsed');
             toggleBtn.textContent = '▶';
         }

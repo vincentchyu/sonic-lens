@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/vincentchyu/sonic-lens/common"
@@ -98,9 +99,18 @@ func (TrackPlayRecord) TableName() string {
 }
 
 func InsertTrackPlayRecord(ctx context.Context, record *TrackPlayRecord) error {
+	if record == nil {
+		return errors.New("track play record is nil")
+	}
+
 	// 验证记录中的艺术家、专辑和曲目信息
 	if err := common.ValidateTrackInfo(ctx, record.Artist, record.Album, record.Track); err != nil {
 		return err
+	}
+
+	// 避免零时间被写入 MySQL 为 "0000-00-00 00:00:00"
+	if record.PlayTime.IsZero() {
+		record.PlayTime = time.Now()
 	}
 
 	return GetDB().WithContext(ctx).Create(record).Error
@@ -204,8 +214,13 @@ func GetUnscrobbledRecordsByIds(ctx context.Context, ids []int64) ([]*TrackPlayR
 
 // GetPlayCountsBySource 获取按来源统计的播放次数
 func GetPlayCountsBySource(ctx context.Context) (map[string]int64, error) {
+	sourceCounts, err := GetPlayCountsBySourceFromStat(ctx)
+	if err == nil && len(sourceCounts) > 0 {
+		return sourceCounts, nil
+	}
+
 	var result []map[string]interface{}
-	err := GetDB().WithContext(ctx).Model(&TrackPlayRecord{}).
+	err = GetDB().WithContext(ctx).Model(&TrackPlayRecord{}).
 		Select("source, COUNT(*) as count").
 		Group("source").
 		Find(&result).Error
@@ -214,7 +229,7 @@ func GetPlayCountsBySource(ctx context.Context) (map[string]int64, error) {
 	}
 
 	// 转换为map[string]int64
-	sourceCounts := make(map[string]int64)
+	sourceCounts = make(map[string]int64)
 	for _, item := range result {
 		if source, ok := item["source"].(string); ok {
 			if count, ok := item["count"].(int64); ok {
@@ -237,6 +252,10 @@ type TopAlbum struct {
 
 // GetTopAlbumsByPlayCount 获取按播放次数统计的热门专辑
 func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAlbum, error) {
+	if statRows, err := GetTopAlbumsByPlayCountFromStat(ctx, days, limit); err == nil && len(statRows) > 0 {
+		return statRows, nil
+	}
+
 	var result []*TopAlbum
 
 	// 计算时间范围

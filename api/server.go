@@ -660,48 +660,46 @@ func setupRouter(name string) *gin.Engine {
 			}
 			fillInTrendCycle := FillInTrendCycle(rangeDays)
 
-			// 获取指定天数的播放记录
-			recordMap, err := trackService.GetRecentPlayRecordsByDays(ctx, rangeDays)
+			dateTrendData, hourlyTrendData, err := trackService.GetPlayTrendByDays(ctx, rangeDays)
 			if err != nil {
-				log.Error(ctx, "Failed to get recent play records", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get recent play records"})
-				return
-			}
-			// 处理数据以适应趋势图
-			// 按日期统计播放次数
-			dateTrendData := make(map[string]int)
-			// 按日期和小时统计播放次数
-			hourlyTrendData := make(map[string]*model.HourlyPlayTrendData)
-			for _, trendCycle := range fillInTrendCycle {
-				if records, ok := recordMap[trendCycle]; ok {
-					for _, record := range records {
-						dateStr := record.PlayTime.Format("2006-01-02")
-						hour := record.PlayTime.Hour()
-						// 统计每日总播放次数
-						dateTrendData[dateStr]++
-						// 初始化该日期的小时统计数据
-						if _, exists := hourlyTrendData[dateStr]; !exists {
-							hourlyTrendData[dateStr] = &model.HourlyPlayTrendData{
-								Date:   dateStr,
-								Total:  0,
-								Hourly: make(map[int]int),
+				log.Warn(ctx, "Failed to get trend data from stat table, falling back to realtime scan", zap.Error(err))
+				recordMap, fallbackErr := trackService.GetRecentPlayRecordsByDays(ctx, rangeDays)
+				if fallbackErr != nil {
+					log.Error(ctx, "Failed to get recent play records", zap.Error(fallbackErr))
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get recent play records"})
+					return
+				}
+				dateTrendData = make(map[string]int)
+				hourlyTrendData = make(map[string]*model.HourlyPlayTrendData)
+				for _, trendCycle := range fillInTrendCycle {
+					if records, ok := recordMap[trendCycle]; ok {
+						for _, record := range records {
+							dateStr := record.PlayTime.Format("2006-01-02")
+							hour := record.PlayTime.Hour()
+							dateTrendData[dateStr]++
+							if _, exists := hourlyTrendData[dateStr]; !exists {
+								hourlyTrendData[dateStr] = &model.HourlyPlayTrendData{
+									Date:   dateStr,
+									Total:  0,
+									Hourly: make(map[int]int),
+								}
 							}
+							hourlyTrendData[dateStr].Hourly[hour]++
+							hourlyTrendData[dateStr].Total++
 						}
-
-						// 统计该小时的播放次数
-						hourlyTrendData[dateStr].Hourly[hour]++
-						hourlyTrendData[dateStr].Total++
 					}
-				} else {
+				}
+			}
+
+			for _, trendCycle := range fillInTrendCycle {
+				if _, ok := dateTrendData[trendCycle]; !ok {
 					dateTrendData[trendCycle] = 0
+				}
+				if _, ok := hourlyTrendData[trendCycle]; !ok {
 					hourlyTrendData[trendCycle] = &model.HourlyPlayTrendData{
-						Date:  trendCycle,
-						Total: 0,
-						Hourly: map[int]int{
-							0: 0,
-							1: 0,
-							2: 0,
-						},
+						Date:   trendCycle,
+						Total:  0,
+						Hourly: map[int]int{},
 					}
 				}
 			}

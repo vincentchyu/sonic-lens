@@ -22,6 +22,19 @@ type D1Client struct {
 	cfg *config.CloudflareConfig
 }
 
+const d1MaxParamsPerStatement = 31
+
+func batchSizeByParams(paramsPerRow int) int {
+	if paramsPerRow <= 0 {
+		return 1
+	}
+	size := d1MaxParamsPerStatement / paramsPerRow
+	if size < 1 {
+		return 1
+	}
+	return size
+}
+
 // NewD1Client 创建 D1 客户端
 func NewD1Client(cfg *config.CloudflareConfig) (*D1Client, error) {
 	if cfg == nil {
@@ -122,9 +135,8 @@ func (c *D1Client) getTracksFromLocal(ctx context.Context, incremental bool, las
 // batchUpsertTracks 批量插入或更新曲目数据
 func (c *D1Client) batchUpsertTracks(ctx context.Context, tracks []*model.Track) error {
 	// D1 单次事务限制,使用批量处理
-	// D1 parameters limit set to 32 (strict limit per user request)
-	// 12 params per track * 2 = 24 params < 32
-	batchSize := 2
+	// 12 params per row -> floor(31/12)=2
+	batchSize := batchSizeByParams(12)
 	totalBatches := (len(tracks) + batchSize - 1) / batchSize
 
 	for i := 0; i < len(tracks); i += batchSize {
@@ -250,8 +262,8 @@ func (c *D1Client) getPlayRecordsFromLocal(ctx context.Context, incremental bool
 }
 
 func (c *D1Client) batchUpsertPlayRecords(ctx context.Context, records []*model.TrackPlayRecord) error {
-	// 10 params * 3 = 30 < 32
-	batchSize := 3
+	// 10 params per row -> floor(31/10)=3
+	batchSize := batchSizeByParams(10)
 	totalBatches := (len(records) + batchSize - 1) / batchSize
 
 	for i := 0; i < len(records); i += batchSize {
@@ -356,6 +368,377 @@ func (c *D1Client) SyncGenres(ctx context.Context, incremental bool) error {
 	return nil
 }
 
+// SyncDashboardStats 同步 dashboard 统计表到 D1
+func (c *D1Client) SyncDashboardStats(ctx context.Context) error {
+	log.Info(ctx, "Starting D1 dashboard stats sync")
+	if err := model.EnsureDashboardStatSchema(ctx); err != nil {
+		return fmt.Errorf("failed to ensure dashboard stat schema: %w", err)
+	}
+
+	lastSyncTime, err := c.getLastSyncTime(ctx, "dashboard_stats")
+	if err != nil {
+		log.Warn(ctx, "Failed to get dashboard stats last sync time, using full sync fallback", zap.Error(err))
+		lastSyncTime = time.Time{}
+	}
+
+	overviewRows, err := model.GetDashboardStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get dashboard_stat from local db: %w", err)
+	}
+	sourceRows, err := model.GetPlaySourceStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get play_source_stat from local db: %w", err)
+	}
+	artistRows, err := model.GetTopArtistStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get top_artist_stat from local db: %w", err)
+	}
+	albumRows, err := model.GetTopAlbumStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get top_album_stat from local db: %w", err)
+	}
+	genreRows, err := model.GetTopGenreStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get top_genre_stat from local db: %w", err)
+	}
+	trendDailyRows, err := model.GetPlayTrendDailyStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get play_trend_daily_stat from local db: %w", err)
+	}
+	trendHourlyRows, err := model.GetPlayTrendHourlyStatsUpdatedSince(ctx, lastSyncTime)
+	if err != nil {
+		return fmt.Errorf("failed to get play_trend_hourly_stat from local db: %w", err)
+	}
+
+	totalCount := len(overviewRows) + len(sourceRows) + len(artistRows) + len(albumRows) + len(genreRows) + len(trendDailyRows) + len(trendHourlyRows)
+	if totalCount == 0 {
+		log.Info(ctx, "No dashboard stats changes to sync")
+		return nil
+	}
+
+	// 仅首次同步执行一次全量清理，后续增量同步不再全量 DELETE + 全量 INSERT。
+	if lastSyncTime.IsZero() {
+		if err := c.resetDashboardStatTables(ctx); err != nil {
+			return fmt.Errorf("failed to reset D1 dashboard stat tables: %w", err)
+		}
+	}
+
+	if err := c.batchUpsertDashboardOverview(ctx, overviewRows); err != nil {
+		return fmt.Errorf("failed to sync dashboard overview: %w", err)
+	}
+	if err := c.batchUpsertPlaySourceStats(ctx, sourceRows); err != nil {
+		return fmt.Errorf("failed to sync play source stats: %w", err)
+	}
+	if err := c.batchUpsertTopArtistStats(ctx, artistRows); err != nil {
+		return fmt.Errorf("failed to sync top artist stats: %w", err)
+	}
+	if err := c.batchUpsertTopAlbumStats(ctx, albumRows); err != nil {
+		return fmt.Errorf("failed to sync top album stats: %w", err)
+	}
+	if err := c.batchUpsertTopGenreStats(ctx, genreRows); err != nil {
+		return fmt.Errorf("failed to sync top genre stats: %w", err)
+	}
+	if err := c.batchUpsertPlayTrendDailyStats(ctx, trendDailyRows); err != nil {
+		return fmt.Errorf("failed to sync daily trend stats: %w", err)
+	}
+	if err := c.batchUpsertPlayTrendHourlyStats(ctx, trendHourlyRows); err != nil {
+		return fmt.Errorf("failed to sync hourly trend stats: %w", err)
+	}
+
+	// 增量同步模式下，清理遗留旧数据（由本地“删后重建”造成）。
+	if !lastSyncTime.IsZero() {
+		if err := c.cleanupStaleDashboardStatRows(ctx, lastSyncTime); err != nil {
+			return fmt.Errorf("failed to cleanup stale dashboard stats rows: %w", err)
+		}
+	}
+
+	if err := c.updateSyncMetadata(ctx, "dashboard_stats", totalCount); err != nil {
+		log.Warn(ctx, "Failed to update dashboard stats sync metadata", zap.Error(err))
+	}
+
+	log.Info(
+		ctx, "D1 dashboard stats sync completed",
+		zap.Int("dashboard_stat", len(overviewRows)),
+		zap.Int("play_source_stat", len(sourceRows)),
+		zap.Int("top_artist_stat", len(artistRows)),
+		zap.Int("top_album_stat", len(albumRows)),
+		zap.Int("top_genre_stat", len(genreRows)),
+		zap.Int("play_trend_daily_stat", len(trendDailyRows)),
+		zap.Int("play_trend_hourly_stat", len(trendHourlyRows)),
+	)
+	return nil
+}
+
+func (c *D1Client) cleanupStaleDashboardStatRows(ctx context.Context, lastSyncTime time.Time) error {
+	lastSyncAt := lastSyncTime.Format(time.RFC3339)
+	tables := []string{
+		"dashboard_stat",
+		"play_source_stat",
+		"top_artist_stat",
+		"top_album_stat",
+		"top_genre_stat",
+		"play_trend_daily_stat",
+		"play_trend_hourly_stat",
+	}
+
+	for _, table := range tables {
+		query := fmt.Sprintf("DELETE FROM %s WHERE updated_at < ?", table)
+		if _, err := c.db.ExecContext(ctx, query, lastSyncAt); err != nil {
+			return fmt.Errorf("failed to cleanup stale rows from table %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) resetDashboardStatTables(ctx context.Context) error {
+	tables := []string{
+		"dashboard_stat",
+		"play_source_stat",
+		"top_artist_stat",
+		"top_album_stat",
+		"top_genre_stat",
+		"play_trend_daily_stat",
+		"play_trend_hourly_stat",
+	}
+	for _, table := range tables {
+		if _, err := c.db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+			return fmt.Errorf("failed to clear table %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) batchUpsertDashboardOverview(ctx context.Context, rows []*model.DashboardStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 6 params per row -> floor(31/6)=5
+	batchSize := batchSizeByParams(6)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertDashboardOverviewBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertDashboardOverviewBatch(ctx context.Context, rows []*model.DashboardStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*6)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?, ?, ?, ?)"
+		args = append(args, row.ID, row.TotalPlays, row.TotalTracks, row.TotalArtist, row.TotalAlbums, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO dashboard_stat (id, total_plays, total_tracks, total_artist, total_albums, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (c *D1Client) batchUpsertPlaySourceStats(ctx context.Context, rows []*model.PlaySourceStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 4 params per row -> floor(31/4)=7
+	batchSize := batchSizeByParams(4)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertPlaySourceStatsBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertPlaySourceStatsBatch(ctx context.Context, rows []*model.PlaySourceStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*4)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?, ?)"
+		args = append(args, row.ID, row.Source, row.Count, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO play_source_stat (id, source, count, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (c *D1Client) batchUpsertTopArtistStats(ctx context.Context, rows []*model.TopArtistStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 6 params per row -> floor(31/6)=5
+	batchSize := batchSizeByParams(6)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertTopArtistStatsBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertTopArtistStatsBatch(ctx context.Context, rows []*model.TopArtistStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*6)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?, ?, ?, ?)"
+		args = append(args, row.PeriodDays, row.MetricType, row.Artist, row.MetricValue, row.Rank, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO top_artist_stat (period_days, metric_type, artist, metric_value, rank, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (c *D1Client) batchUpsertTopAlbumStats(ctx context.Context, rows []*model.TopAlbumStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 6 params per row -> floor(31/6)=5
+	batchSize := batchSizeByParams(6)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertTopAlbumStatsBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertTopAlbumStatsBatch(ctx context.Context, rows []*model.TopAlbumStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*6)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?, ?, ?, ?)"
+		args = append(args, row.PeriodDays, row.Album, row.Artist, row.PlayCount, row.Rank, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO top_album_stat (period_days, album, artist, play_count, rank, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (c *D1Client) batchUpsertTopGenreStats(ctx context.Context, rows []*model.TopGenreStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 6 params per row -> floor(31/6)=5
+	batchSize := batchSizeByParams(6)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertTopGenreStatsBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertTopGenreStatsBatch(ctx context.Context, rows []*model.TopGenreStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*6)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?, ?, ?, ?)"
+		args = append(args, row.GenreName, row.GenreNameZh, row.TrackGenreCount, row.GenreCount, row.Rank, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO top_genre_stat (genre_name, genre_name_zh, track_genre_count, genre_count, rank, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (c *D1Client) batchUpsertPlayTrendDailyStats(ctx context.Context, rows []*model.PlayTrendDailyStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 3 params per row -> floor(31/3)=10
+	batchSize := batchSizeByParams(3)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertPlayTrendDailyStatsBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertPlayTrendDailyStatsBatch(ctx context.Context, rows []*model.PlayTrendDailyStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*3)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?)"
+		args = append(args, row.StatDate.Format("2006-01-02"), row.PlayCount, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO play_trend_daily_stat (stat_date, play_count, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (c *D1Client) batchUpsertPlayTrendHourlyStats(ctx context.Context, rows []*model.PlayTrendHourlyStat) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	// 4 params per row -> floor(31/4)=7
+	batchSize := batchSizeByParams(4)
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := c.upsertPlayTrendHourlyStatsBatch(ctx, rows[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) upsertPlayTrendHourlyStatsBatch(ctx context.Context, rows []*model.PlayTrendHourlyStat) error {
+	placeholders := make([]string, len(rows))
+	args := make([]interface{}, 0, len(rows)*4)
+	for i, row := range rows {
+		placeholders[i] = "(?, ?, ?, ?)"
+		args = append(args, row.StatDate.Format("2006-01-02"), row.Hour, row.PlayCount, row.UpdatedAt.Format(time.RFC3339))
+	}
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO play_trend_hourly_stat (stat_date, hour, play_count, updated_at) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+	_, err := c.db.ExecContext(ctx, query, args...)
+	return err
+}
+
 func (c *D1Client) getGenresFromLocal(ctx context.Context, incremental bool, lastSyncTime time.Time) (
 	[]*model.Genre, error,
 ) {
@@ -368,8 +751,8 @@ func (c *D1Client) getGenresFromLocal(ctx context.Context, incremental bool, las
 }
 
 func (c *D1Client) batchUpsertGenres(ctx context.Context, genres []*model.Genre) error {
-	// 5 params * 6 = 30 < 32
-	batchSize := 6
+	// 5 params per row -> floor(31/5)=6
+	batchSize := batchSizeByParams(5)
 	totalBatches := (len(genres) + batchSize - 1) / batchSize
 
 	for i := 0; i < len(genres); i += batchSize {
@@ -492,6 +875,11 @@ func (c *D1Client) SyncAll(ctx context.Context, incremental bool) error {
 	if err := c.SyncGenres(ctx, incremental); err != nil {
 		log.Error(ctx, "Failed to sync genres", zap.Error(err))
 		return err
+	}
+
+	// 同步 dashboard 统计数据
+	if err := c.SyncDashboardStats(ctx); err != nil {
+		log.Warn(ctx, "Failed to sync dashboard stats, skipping", zap.Error(err))
 	}
 
 	log.Info(ctx, "Full D1 sync completed successfully")
