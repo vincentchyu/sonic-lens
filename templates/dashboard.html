@@ -143,6 +143,41 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
         }
 
+        /* 性能模式：针对低性能设备/安卓盒子降低 GPU 压力 */
+        .performance-mode .navbar,
+        .performance-mode .stat-card,
+        .performance-mode .chart-card,
+        .performance-mode .ranking-card,
+        .performance-mode #nowPlaying,
+        .performance-mode .ai-model-selector,
+        .performance-mode .modal-content,
+        .performance-mode #lyricsFloating,
+        .performance-mode .insight-tabs,
+        .performance-mode #recentTracksModal {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .performance-mode .color-orb {
+            animation: none !important;
+            filter: blur(60px);
+            opacity: 0.25;
+        }
+
+        /* 低端设备：歌词浮窗改为不透明实底，避免半透明毛玻璃 */
+        body.performance-mode #lyricsFloating {
+            background-color: #f7f8fa !important;
+            border-color: #d7dce3 !important;
+            opacity: 1 !important;
+        }
+
+        body.performance-mode.dark-mode #lyricsFloating {
+            background-color: #171b22 !important;
+            border-color: #2a3342 !important;
+            opacity: 1 !important;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -2339,7 +2374,26 @@
     function watchSystemThemeChange() {
         if (window.matchMedia) {
             const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-            mediaQuery.addEventListener("change", toggleDarkModeBasedOnSystem);
+            if (mediaQuery.addEventListener) {
+                mediaQuery.addEventListener("change", toggleDarkModeBasedOnSystem);
+            } else if (mediaQuery.addListener) {
+                mediaQuery.addListener(toggleDarkModeBasedOnSystem);
+            }
+        }
+    }
+
+    function enablePerformanceModeIfNeeded() {
+        const nav = window.navigator || {};
+        const ua = nav.userAgent || "";
+        const hardwareConcurrency = nav.hardwareConcurrency || 0;
+        const deviceMemory = nav.deviceMemory || 0;
+        const isAndroid = /Android/i.test(ua);
+        const isTvLike = /(TV|AFT|BRAVIA|MiBOX|MiTV|SmartTV|GoogleTV|HbbTV)/i.test(ua);
+        const lowCpu = hardwareConcurrency > 0 && hardwareConcurrency <= 4;
+        const lowMem = deviceMemory > 0 && deviceMemory <= 2;
+
+        if ((isAndroid && isTvLike) || lowCpu || lowMem) {
+            document.body.classList.add("performance-mode");
         }
     }
 
@@ -2376,22 +2430,16 @@
         initGenreChart();
 
         // 重新初始化当前激活的图表
-        const trendRange =
-            document
-                .querySelector(".time-filter.active[data-range]")
-                ?.getAttribute("data-range") || 30;
+        const trendRangeEl = document.querySelector(".time-filter.active[data-range]");
+        const trendRange = trendRangeEl ? trendRangeEl.getAttribute("data-range") : 30;
         initTrendChart(trendRange);
 
-        const artistType =
-            document
-                .querySelector(".time-filter.active[data-type]")
-                ?.getAttribute("data-type") || "plays";
+        const artistTypeEl = document.querySelector(".time-filter.active[data-type]");
+        const artistType = artistTypeEl ? artistTypeEl.getAttribute("data-type") : "plays";
         initArtistChart(artistType);
 
-        const albumDays =
-            document
-                .querySelector(".time-filter.active[data-days]")
-                ?.getAttribute("data-days") || 30;
+        const albumDaysEl = document.querySelector(".time-filter.active[data-days]");
+        const albumDays = albumDaysEl ? albumDaysEl.getAttribute("data-days") : 30;
         initAlbumChart(albumDays);
 
         // 如果未上报页面可见，重新加载其内容以适应主题变化
@@ -3722,6 +3770,14 @@
     // ========== 歌词功能 ==========
     let currentLyricsData = null;
     let lyricsUpdateInterval = null;
+    let lyricsLineElements = [];
+    let activeLyricIndex = -1;
+    const lyricsCache = {};
+    const LYRICS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+    function buildLyricsCacheKey(artist, album, track) {
+        return `${artist || ""}::${album || ""}::${track || ""}`;
+    }
 
     function parseLRC(lrcText) {
         const lines = lrcText.split('\n');
@@ -3729,12 +3785,26 @@
         const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
 
         lines.forEach(line => {
-            const matches = [...line.matchAll(timeRegex)];
+            const matches = [];
+            let match;
+            // 兼容旧浏览器：避免使用 String.prototype.matchAll
+            while ((match = timeRegex.exec(line)) !== null) {
+                matches.push(match);
+            }
+            timeRegex.lastIndex = 0;
             if (matches.length > 0) {
                 const lastMatch = matches[matches.length - 1];
                 const minutes = parseInt(lastMatch[1]);
                 const seconds = parseInt(lastMatch[2]);
-                const milliseconds = lastMatch[3] ? parseInt(lastMatch[3].padEnd(3, '0')) : 0;
+                let milliseconds = 0;
+                if (lastMatch[3]) {
+                    // 兼容旧浏览器：避免使用 String.prototype.padEnd
+                    let msText = lastMatch[3];
+                    while (msText.length < 3) {
+                        msText += '0';
+                    }
+                    milliseconds = parseInt(msText);
+                }
                 const time = minutes * 60 + seconds + milliseconds / 1000;
                 const text = line.replace(timeRegex, '').trim();
                 if (text) {
@@ -3748,6 +3818,12 @@
 
     async function fetchLyrics(artist, album, track) {
         try {
+            const cacheKey = buildLyricsCacheKey(artist, album, track);
+            const cached = lyricsCache[cacheKey];
+            if (cached && Date.now() - cached.ts < LYRICS_CACHE_TTL_MS) {
+                return cached.data;
+            }
+
             const params = new URLSearchParams({
                 artist: artist,
                 album: album || '',
@@ -3755,7 +3831,12 @@
             });
             const response = await fetch(`/api/track-lyrics?${params}`);
             if (!response.ok) throw new Error('获取歌词失败');
-            return await response.json();
+            const data = await response.json();
+            lyricsCache[cacheKey] = {
+                ts: Date.now(),
+                data: data
+            };
+            return data;
         } catch (error) {
             console.error('获取歌词失败:', error);
             return {lyrics: '', has_lrc: false};
@@ -3772,24 +3853,35 @@
         lyricsContainer.innerHTML = '<div class="lyrics-text">正在加载歌词...</div>';
         lyricsFloating.style.display = 'block';
 
-        const lyricsData = await fetchLyrics(
-            currentTrackInfo.artist,
-            currentTrackInfo.album,
-            currentTrackInfo.title
-        );
+        try {
+            const lyricsData = await fetchLyrics(
+                currentTrackInfo.artist,
+                currentTrackInfo.album,
+                currentTrackInfo.title
+            );
 
-        if (!lyricsData.lyrics) {
-            lyricsContainer.innerHTML = '<div class="lyrics-text">暂无歌词数据</div>';
-            currentLyricsData = null;
-            return;
-        }
+            if (!lyricsData.lyrics) {
+                lyricsContainer.innerHTML = '<div class="lyrics-text">暂无歌词数据</div>';
+                currentLyricsData = null;
+                return;
+            }
 
-        if (lyricsData.has_lrc) {
-            currentLyricsData = parseLRC(lyricsData.lyrics);
-            renderLRCLyrics(currentLyricsData);
-            startLyricsSync();
-        } else {
-            lyricsContainer.innerHTML = `<div class="lyrics-text">${lyricsData.lyrics}</div>`;
+            if (lyricsData.has_lrc) {
+                currentLyricsData = parseLRC(lyricsData.lyrics);
+                renderLRCLyrics(currentLyricsData);
+                startLyricsSync();
+            } else {
+                lyricsContainer.innerHTML = "";
+                const plainLyrics = document.createElement("div");
+                plainLyrics.className = "lyrics-text";
+                plainLyrics.textContent = lyricsData.lyrics;
+                lyricsContainer.appendChild(plainLyrics);
+                currentLyricsData = null;
+                stopLyricsSync();
+            }
+        } catch (error) {
+            console.error('歌词渲染失败:', error);
+            lyricsContainer.innerHTML = '<div class="lyrics-text">歌词加载失败，请稍后重试</div>';
             currentLyricsData = null;
             stopLyricsSync();
         }
@@ -3798,14 +3890,19 @@
     function renderLRCLyrics(lrcData) {
         const lyricsContainer = document.getElementById('lyricsContainer');
         lyricsContainer.innerHTML = '';
+        activeLyricIndex = -1;
+        lyricsLineElements = [];
+        const fragment = document.createDocumentFragment();
         lrcData.forEach((item, index) => {
             const lineDiv = document.createElement('div');
             lineDiv.className = 'lyrics-line';
             lineDiv.textContent = item.text;
             lineDiv.dataset.time = item.time;
             lineDiv.dataset.index = index;
-            lyricsContainer.appendChild(lineDiv);
+            lyricsLineElements.push(lineDiv);
+            fragment.appendChild(lineDiv);
         });
+        lyricsContainer.appendChild(fragment);
     }
 
     function startLyricsSync() {
@@ -3813,23 +3910,36 @@
         lyricsUpdateInterval = setInterval(() => {
             if (!currentLyricsData || !currentTrackInfo) return;
             const currentTime = currentPosition || 0;
-            let activeIndex = -1;
+            let nextActiveIndex = -1;
             for (let i = 0; i < currentLyricsData.length; i++) {
                 if (currentLyricsData[i].time <= currentTime) {
-                    activeIndex = i;
+                    nextActiveIndex = i;
                 } else {
                     break;
                 }
             }
-            const lyricsLines = document.querySelectorAll('.lyrics-line');
-            lyricsLines.forEach((line, index) => {
-                if (index === activeIndex) {
-                    line.classList.add('active');
-                    line.scrollIntoView({behavior: 'smooth', block: 'center'});
+
+            // 只有歌词高亮行发生变化时才更新 DOM，避免高频全量扫描
+            if (nextActiveIndex === activeLyricIndex) return;
+
+            if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
+                lyricsLineElements[activeLyricIndex].classList.remove('active');
+            }
+            activeLyricIndex = nextActiveIndex;
+
+            if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
+                const line = lyricsLineElements[activeLyricIndex];
+                line.classList.add('active');
+                if (isLowEndMode()) {
+                    line.scrollIntoView();
                 } else {
-                    line.classList.remove('active');
+                    try {
+                        line.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    } catch (e) {
+                        line.scrollIntoView();
+                    }
                 }
-            });
+            }
         }, 200);
     }
 
@@ -3838,6 +3948,7 @@
             clearInterval(lyricsUpdateInterval);
             lyricsUpdateInterval = null;
         }
+        activeLyricIndex = -1;
     }
 
     function closeLyrics() {
@@ -3939,8 +4050,52 @@
             });
     }
 
+    function stableSerialize(value) {
+        if (value === null || typeof value !== "object") {
+            return JSON.stringify(value);
+        }
+        if (Array.isArray(value)) {
+            return "[" + value.map(stableSerialize).join(",") + "]";
+        }
+        const keys = Object.keys(value).sort();
+        return "{" + keys.map(function (key) {
+            return JSON.stringify(key) + ":" + stableSerialize(value[key]);
+        }).join(",") + "}";
+    }
+
+    function getThemeSignature() {
+        return isDarkMode() ? "dark" : "light";
+    }
+
+    function isLowEndMode() {
+        return document.body.classList.contains("performance-mode");
+    }
+
+    function getPollingInterval(baseMs) {
+        if (!isLowEndMode()) return baseMs;
+        return Math.max(baseMs * 2, 120000);
+    }
+
+    function applyLowEndChartOptions(options) {
+        if (!isLowEndMode()) {
+            return options;
+        }
+        options.animation = false;
+        options.animations = false;
+        options.events = ["click"];
+        options.devicePixelRatio = 1;
+        return options;
+    }
+
     // 全局变量存储播放来源图表实例
     let sourceChartInstance = null;
+    let sourceChartSignature = "";
+    let trendChartSignature = "";
+    let artistChartSignature = "";
+    let albumChartSignature = "";
+    let genreChartSignature = "";
+    let artistChartInstance = null;
+    let albumChartInstance = null;
 
     // 未上报记录相关变量
     let currentUnscrobbledPage = 1;
@@ -3949,24 +4104,12 @@
 
     // 初始化播放来源扇形图
     function initSourceChart() {
-        const chartContainer =
-            document.getElementById("sourceChart").parentElement;
-
-        // 销毁之前的图表实例（如果存在）
-        if (sourceChartInstance) {
-            sourceChartInstance.destroy();
-            sourceChartInstance = null;
-        }
-
-        // 清理容器并重新创建canvas元素
-        chartContainer.innerHTML = '<canvas id="sourceChart"></canvas>';
         const canvas = document.getElementById("sourceChart");
         if (!canvas) {
             console.error("找不到ID为sourceChart的canvas元素");
             return;
         }
-
-        const ctx = canvas.getContext("2d");
+        const chartContainer = canvas.parentElement;
 
         // 从后端获取数据
         fetch("/api/dashboard/play-counts-by-source")
@@ -3981,8 +4124,18 @@
                 const darkModeOptions = getChartDarkModeOptions();
 
                 // 处理数据
-                const sources = Object.keys(data);
+                const sources = Object.keys(data).sort();
                 const counts = sources.map((source) => data[source]);
+                const nextSignature = stableSerialize({
+                    theme: getThemeSignature(),
+                    sources: sources,
+                    counts: counts
+                });
+
+                if (sourceChartInstance && sourceChartSignature === nextSignature) {
+                    return;
+                }
+                sourceChartSignature = nextSignature;
 
                 // 定义颜色
                 const backgroundColors = [
@@ -3999,6 +4152,20 @@
                     "rgba(52, 152, 219, 1)",
                 ];
 
+                // 销毁之前的图表实例（如果存在）
+                if (sourceChartInstance) {
+                    sourceChartInstance.destroy();
+                    sourceChartInstance = null;
+                }
+
+                // 清理容器并重新创建canvas元素
+                chartContainer.innerHTML = '<canvas id="sourceChart"></canvas>';
+                const refreshedCanvas = document.getElementById("sourceChart");
+                if (!refreshedCanvas) {
+                    return;
+                }
+                const ctx = refreshedCanvas.getContext("2d");
+
                 // 创建扇形图并保存实例
                 sourceChartInstance = new Chart(ctx, {
                     type: "doughnut",
@@ -4013,7 +4180,7 @@
                             },
                         ],
                     },
-                    options: {
+                    options: applyLowEndChartOptions({
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
@@ -4044,21 +4211,11 @@
                             },
                         },
                         cutout: "60%",
-                    },
+                    }),
                 });
             })
             .catch((error) => {
                 console.error("获取播放来源数据失败:", error);
-                // 销毁之前的图表实例（如果存在）
-                if (sourceChartInstance) {
-                    sourceChartInstance.destroy();
-                    sourceChartInstance = null;
-                }
-                // 显示错误信息
-                const chartContainer =
-                    document.getElementById("sourceChart").parentElement;
-                chartContainer.innerHTML =
-                    '<div class="error">加载失败: ' + error.message + "</div>";
             });
     }
 
@@ -4193,19 +4350,13 @@
 
     // 初始化趋势图
     function initTrendChart(range = 30) {
-        const ctx = document.getElementById("trendChart").getContext("2d");
+        const trendCanvas = document.getElementById("trendChart");
+        if (!trendCanvas) {
+            console.error("找不到ID为trendChart的canvas元素");
+            return;
+        }
         const rangeDays = parseInt(range, 10) || 30;
-
-        // 显示加载状态
-        const chartContainer =
-            document.querySelector("#trendChart").parentElement;
-        chartContainer.innerHTML = '<div class="loading">加载中...</div>';
-
-        // 重新创建canvas元素
-        const canvas = document.createElement("canvas");
-        canvas.id = "trendChart";
-        chartContainer.appendChild(canvas);
-        const newCtx = canvas.getContext("2d");
+        const chartContainer = trendCanvas.parentElement;
 
         // 从后端获取数据，添加时间范围参数
         fetch(`/api/dashboard/trend?range=${range}`)
@@ -4216,11 +4367,26 @@
                 return response.json();
             })
             .then((data) => {
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
+                const nextSignature = stableSerialize({
+                    theme: getThemeSignature(),
+                    range: rangeDays,
+                    daily: data.daily || {},
+                    hourly: data.hourly || {}
+                });
+                if (window.trendChartInstance && trendChartSignature === nextSignature) {
+                    return;
                 }
+                trendChartSignature = nextSignature;
+
+                if (window.trendChartInstance) {
+                    window.trendChartInstance.destroy();
+                    window.trendChartInstance = null;
+                }
+
+                chartContainer.innerHTML = '<canvas id="trendChart"></canvas>';
+                const canvas = document.getElementById("trendChart");
+                if (!canvas) return;
+                const newCtx = canvas.getContext("2d");
 
                 // 获取暗色模式配置
                 const darkModeOptions = getChartDarkModeOptions();
@@ -4232,9 +4398,11 @@
                 const hourlyMap = data.hourly || {};
 
                 // 先用 hourly 明细生成点
-                Object.keys(hourlyMap).forEach((date) => {
+                Object.keys(hourlyMap).sort().forEach((date) => {
                     const hourlyData = hourlyMap[date];
-                    Object.keys(hourlyData.hourly || {}).forEach((hour) => {
+                    Object.keys(hourlyData.hourly || {}).sort(function (a, b) {
+                        return Number(a) - Number(b);
+                    }).forEach((hour) => {
                         const playCount = hourlyData.hourly[hour];
                         if (playCount > -1) {
                             const dateObj = new Date(date);
@@ -4251,7 +4419,7 @@
                 });
 
                 // 对没有小时明细（key不存在或 hourly 为空）但有 daily 总量的日期，补一个“日聚合兜底点”
-                Object.keys(dailyTotals).forEach((date) => {
+                Object.keys(dailyTotals).sort().forEach((date) => {
                     const hasHourlyBreakdown =
                         hourlyMap[date] &&
                         hourlyMap[date].hourly &&
@@ -4273,6 +4441,17 @@
                         isDailyFallback: true,
                     });
                 });
+
+                // 低端设备降帧：限制趋势气泡点位数量，降低绘制负担
+                if (isLowEndMode() && bubbleData.length > 140) {
+                    const step = Math.ceil(bubbleData.length / 140);
+                    const sampled = [];
+                    for (let i = 0; i < bubbleData.length; i += step) {
+                        sampled.push(bubbleData[i]);
+                    }
+                    bubbleData.length = 0;
+                    Array.prototype.push.apply(bubbleData, sampled);
+                }
 
                 // 计算所有数据点中的最大播放次数，用于颜色映射
                 let maxPlayCount = 0;
@@ -4328,7 +4507,7 @@
                             },
                         ],
                     },
-                    options: {
+                    options: applyLowEndChartOptions({
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
@@ -4405,7 +4584,7 @@
                                 max: 24.99,
                                 ticks: {
                                     color: darkModeOptions.ticksColor, // 暗色模式下的刻度颜色
-                                    stepSize: 1,
+                                    stepSize: isLowEndMode() ? 2 : 1,
                                     maxRotation: 60,
                                     minRotation: 45,
                                     callback: function (value) {
@@ -4428,48 +4607,28 @@
                                 radius: function (context) {
                                     // 根据数据点的 r 值调整半径，添加缩放因子来调整大小
                                     const radius = context.raw.r;
-                                    return Math.max(radius * 3, 2); // 最小半径为2
+                                    return isLowEndMode()
+                                        ? Math.max(radius * 2, 2)
+                                        : Math.max(radius * 3, 2); // 最小半径为2
                                 },
                             },
                         },
-                    },
+                    }),
                 });
             })
             .catch((error) => {
                 console.error("获取趋势图数据失败:", error);
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-                // 销毁之前的图表实例（如果存在）
-                if (window.trendChartInstance) {
-                    window.trendChartInstance.destroy();
-                    window.trendChartInstance = null;
-                }
-                // 确保canvas元素存在后再替换innerHTML
-                const canvas = document.getElementById("trendChart");
-                if (canvas && canvas.parentElement) {
-                    canvas.parentElement.innerHTML =
-                        '<div class="error">加载失败: ' + error.message + "</div>";
-                }
             });
     }
 
     // 初始化艺术家图表
     function initArtistChart(type = "plays") {
-        const ctx = document.getElementById("artistChart").getContext("2d");
-
-        // 显示加载状态
-        const chartContainer =
-            document.querySelector("#artistChart").parentElement;
-        chartContainer.innerHTML = '<div class="loading">加载中...</div>';
-
-        // 重新创建canvas元素
-        const canvas = document.createElement("canvas");
-        canvas.id = "artistChart";
-        chartContainer.appendChild(canvas);
-        const newCtx = canvas.getContext("2d");
+        const artistCanvas = document.getElementById("artistChart");
+        if (!artistCanvas) {
+            console.error("找不到ID为artistChart的canvas元素");
+            return;
+        }
+        const chartContainer = artistCanvas.parentElement;
 
         // 根据类型选择不同的API端点
         const apiUrl =
@@ -4486,11 +4645,25 @@
                 return response.json();
             })
             .then((data) => {
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
+                const nextSignature = stableSerialize({
+                    theme: getThemeSignature(),
+                    type: type,
+                    data: data
+                });
+                if (artistChartInstance && artistChartSignature === nextSignature) {
+                    return;
                 }
+                artistChartSignature = nextSignature;
+
+                if (artistChartInstance) {
+                    artistChartInstance.destroy();
+                    artistChartInstance = null;
+                }
+
+                chartContainer.innerHTML = '<canvas id="artistChart"></canvas>';
+                const canvas = document.getElementById("artistChart");
+                if (!canvas) return;
+                const newCtx = canvas.getContext("2d");
 
                 // 处理数据
                 const artists = data.map((item) => item.artist);
@@ -4503,7 +4676,7 @@
                 // 获取暗色模式配置
                 const darkModeOptions = getChartDarkModeOptions();
 
-                new Chart(newCtx, {
+                artistChartInstance = new Chart(newCtx, {
                     type: "bar",
                     data: {
                         labels: artists,
@@ -4587,7 +4760,7 @@
                             },
                         ],
                     },
-                    options: {
+                    options: applyLowEndChartOptions({
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
@@ -4627,35 +4800,22 @@
                                 },
                             },
                         },
-                    },
+                    }),
                 });
             })
             .catch((error) => {
                 console.error("获取艺术家数据失败:", error);
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-                chartContainer.innerHTML =
-                    '<div class="error">加载失败: ' + error.message + "</div>";
             });
     }
 
     // 初始化热门专辑图表
     function initAlbumChart(days = 7) {
-        const ctx = document.getElementById("albumChart").getContext("2d");
-
-        // 显示加载状态
-        const chartContainer =
-            document.querySelector("#albumChart").parentElement;
-        chartContainer.innerHTML = '<div class="loading">加载中...</div>';
-
-        // 重新创建canvas元素
-        const canvas = document.createElement("canvas");
-        canvas.id = "albumChart";
-        chartContainer.appendChild(canvas);
-        const newCtx = canvas.getContext("2d");
+        const albumCanvas = document.getElementById("albumChart");
+        if (!albumCanvas) {
+            console.error("找不到ID为albumChart的canvas元素");
+            return;
+        }
+        const chartContainer = albumCanvas.parentElement;
 
         // 从后端获取数据
         fetch(`/api/dashboard/top-albums?days=${days}&limit=10`)
@@ -4666,11 +4826,25 @@
                 return response.json();
             })
             .then((data) => {
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
+                const nextSignature = stableSerialize({
+                    theme: getThemeSignature(),
+                    days: Number(days) || 0,
+                    data: data
+                });
+                if (albumChartInstance && albumChartSignature === nextSignature) {
+                    return;
                 }
+                albumChartSignature = nextSignature;
+
+                if (albumChartInstance) {
+                    albumChartInstance.destroy();
+                    albumChartInstance = null;
+                }
+
+                chartContainer.innerHTML = '<canvas id="albumChart"></canvas>';
+                const canvas = document.getElementById("albumChart");
+                if (!canvas) return;
+                const newCtx = canvas.getContext("2d");
 
                 // 处理数据
                 const albums = data.map((item) => item.album);
@@ -4680,7 +4854,7 @@
                 // 获取暗色模式配置
                 const darkModeOptions = getChartDarkModeOptions();
 
-                new Chart(newCtx, {
+                albumChartInstance = new Chart(newCtx, {
                     type: "bar",
                     data: {
                         labels: albums,
@@ -4716,7 +4890,7 @@
                             },
                         ],
                     },
-                    options: {
+                    options: applyLowEndChartOptions({
                         indexAxis: "y", // 👈 水平条形图
                         responsive: true,
                         maintainAspectRatio: false,
@@ -4775,18 +4949,11 @@
                                 },
                             },
                         },
-                    },
+                    }),
                 });
             })
             .catch((error) => {
                 console.error("获取专辑数据失败:", error);
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-                chartContainer.innerHTML =
-                    '<div class="error">加载失败: ' + error.message + "</div>";
             });
     }
 
@@ -4922,18 +5089,12 @@
 
     // 初始化热门流派图表
     function initGenreChart() {
-        const ctx = document.getElementById("genreChart").getContext("2d");
-
-        // 显示加载状态
-        const chartContainer =
-            document.querySelector("#genreChart").parentElement;
-        chartContainer.innerHTML = '<div class="loading">加载中...</div>';
-
-        // 重新创建canvas元素
-        const canvas = document.createElement("canvas");
-        canvas.id = "genreChart";
-        chartContainer.appendChild(canvas);
-        const newCtx = canvas.getContext("2d");
+        const genreCanvas = document.getElementById("genreChart");
+        if (!genreCanvas) {
+            console.error("找不到ID为genreChart的canvas元素");
+            return;
+        }
+        const chartContainer = genreCanvas.parentElement;
 
         // 从后端获取数据
         fetch("/api/dashboard/top-genres?limit=10")
@@ -4944,11 +5105,24 @@
                 return response.json();
             })
             .then((data) => {
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
+                const nextSignature = stableSerialize({
+                    theme: getThemeSignature(),
+                    data: data
+                });
+                if (window.genreChartInstance && genreChartSignature === nextSignature) {
+                    return;
                 }
+                genreChartSignature = nextSignature;
+
+                if (window.genreChartInstance) {
+                    window.genreChartInstance.destroy();
+                    window.genreChartInstance = null;
+                }
+
+                chartContainer.innerHTML = '<canvas id="genreChart"></canvas>';
+                const canvas = document.getElementById("genreChart");
+                if (!canvas) return;
+                const newCtx = canvas.getContext("2d");
 
                 // 处理数据
                 const genres = data.map((item) => item.track_genre_name);
@@ -5022,7 +5196,7 @@
                             },
                         ],
                     },
-                    options: {
+                    options: applyLowEndChartOptions({
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
@@ -5066,34 +5240,146 @@
                                 // max: Math.max(...shuffledCounts) * 1.1, // 扩大 20% 半径
                             },
                         },
-                    },
+                    }),
                 });
             })
             .catch((error) => {
                 console.error("获取流派数据失败:", error);
-                // 移除加载状态
-                const loadingElement = chartContainer.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-                // 销毁之前的图表实例（如果存在）
-                if (window.genreChartInstance) {
-                    window.genreChartInstance.destroy();
-                    window.genreChartInstance = null;
-                }
-                // 确保canvas元素存在后再替换innerHTML
-                const canvas = document.getElementById("genreChart");
-                if (canvas && canvas.parentElement) {
-                    canvas.parentElement.innerHTML =
-                        '<div class="error">加载失败: ' + error.message + "</div>";
-                }
             });
+    }
+
+    let lastRecentPlaysSignature = "";
+    let lastRankingSignature = "";
+
+    function getSourceBadgeInfo(source) {
+        switch ((source || "").toLowerCase()) {
+            case "apple music":
+                return { sourceClass: "source-applemusic", sourceText: "AppleMusic" };
+            case "audirvana":
+            case "au":
+                return { sourceClass: "source-audirvana", sourceText: "Audirvana" };
+            case "roon":
+                return { sourceClass: "source-roon", sourceText: "Roon" };
+            default:
+                return { sourceClass: "", sourceText: source || "Unknown" };
+        }
+    }
+
+    function buildRecentPlaysSignature(data) {
+        return JSON.stringify((data || []).map((item) => [
+            item.play_time,
+            item.track,
+            item.artist,
+            item.album,
+            item.source
+        ]));
+    }
+
+    function buildRankingSignature(rankingType, keyword, data) {
+        return JSON.stringify({
+            rankingType: rankingType,
+            keyword: keyword || "",
+            items: (data || []).map((item) => [item.track, item.artist, item.album, item.play_count])
+        });
+    }
+
+    function renderRecentPlaysList(data, force) {
+        const recentPlaysList = document.getElementById("recentPlaysList");
+        const signature = buildRecentPlaysSignature(data);
+        if (!force && signature === lastRecentPlaysSignature) {
+            return;
+        }
+        lastRecentPlaysSignature = signature;
+        recentPlaysList.innerHTML = "";
+
+        if (!data || data.length === 0) {
+            recentPlaysList.innerHTML = '<div class="loading">暂无数据</div>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        data.forEach((item, index) => {
+            const rankingItem = document.createElement("li");
+            rankingItem.className = "ranking-item";
+            rankingItem.style.cursor = "pointer";
+            rankingItem.dataset.artist = item.artist || "";
+            rankingItem.dataset.album = item.album || "";
+            rankingItem.dataset.track = item.track || "";
+
+            const playTime = new Date(item.play_time);
+            const timeString = playTime.toLocaleTimeString("zh-CN", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+            });
+
+            const sourceBadge = getSourceBadgeInfo(item.source);
+            rankingItem.innerHTML = `
+                <div class="rank-number rank-other">${index + 1}</div>
+                <div class="track-info">
+                    <div class="track-title">${item.track}</div>
+                    <div class="track-artist">${item.artist} - ${item.album}</div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px;">
+                  <div class="play-source ${sourceBadge.sourceClass}">${sourceBadge.sourceText}</div>
+                  <div class="play-count">${timeString}</div>
+                </div>
+            `;
+            fragment.appendChild(rankingItem);
+        });
+        recentPlaysList.appendChild(fragment);
+        adjustRankingListsHeight();
+    }
+
+    function renderRankingList(rankingType, keyword, data, force) {
+        const rankingList = document.getElementById("rankingList");
+        const signature = buildRankingSignature(rankingType, keyword, data);
+        if (!force && signature === lastRankingSignature) {
+            return;
+        }
+        lastRankingSignature = signature;
+        rankingList.innerHTML = "";
+
+        if (!data || data.length === 0) {
+            rankingList.innerHTML = '<div class="loading">暂无数据</div>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        data.forEach((item, index) => {
+            const rankingItem = document.createElement("li");
+            rankingItem.className = "ranking-item";
+            rankingItem.style.cursor = "pointer";
+            rankingItem.dataset.artist = item.artist || "";
+            rankingItem.dataset.album = item.album || "";
+            rankingItem.dataset.track = item.track || "";
+
+            const rank = index + 1;
+            let rankClass = "rank-other";
+            if (rank === 1) rankClass = "rank-1";
+            else if (rank === 2) rankClass = "rank-2";
+            else if (rank === 3) rankClass = "rank-3";
+
+            rankingItem.innerHTML = `
+                <div class="rank-number ${rankClass}">${rank}</div>
+                <div class="track-info">
+                    <div class="track-title">${item.track}</div>
+                    <div class="track-artist">${item.artist} - ${item.album}</div>
+                </div>
+                <div class="play-count">${item.play_count} 次</div>
+            `;
+            fragment.appendChild(rankingItem);
+        });
+        rankingList.appendChild(fragment);
+        adjustRankingListsHeight();
     }
 
     // 初始化最近播放列表
     function initRecentPlays() {
         const recentPlaysList = document.getElementById("recentPlaysList");
-        recentPlaysList.innerHTML = '<div class="loading">加载中...</div>';
+        if (!recentPlaysList.children.length) {
+            recentPlaysList.innerHTML = '<div class="loading">加载中...</div>';
+        }
 
         fetch("/api/recent-plays?limit=10")
             .then((response) => {
@@ -5103,87 +5389,10 @@
                 return response.json();
             })
             .then((data) => {
-                // 移除加载状态
-                const loadingElement = recentPlaysList.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-
-                if (data.length === 0) {
-                    recentPlaysList.innerHTML = '<div class="loading">暂无数据</div>';
-                    return;
-                }
-
-                data.forEach((item, index) => {
-                    const rankingItem = document.createElement("li");
-                    rankingItem.className = "ranking-item";
-
-                    const playTime = new Date(item.play_time);
-                    const timeString = playTime.toLocaleTimeString("zh-CN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                    });
-
-                    // 根据来源设置样式
-                    let sourceClass = "";
-                    let sourceText = "";
-                    switch (item.source?.toLowerCase()) {
-                        case "apple music":
-                            sourceClass = "source-applemusic";
-                            sourceText = "AppleMusic";
-                            break;
-                        case "audirvana":
-                        case "au":
-                            sourceClass = "source-audirvana";
-                            sourceText = "Audirvana";
-                            break;
-                        case "roon":
-                            sourceClass = "source-roon";
-                            sourceText = "Roon";
-                            break;
-                        default:
-                            sourceClass = "";
-                            sourceText = item.source || "Unknown";
-                    }
-
-                    rankingItem.innerHTML = `
-                                  <div class="rank-number rank-other">${
-                        index + 1
-                    }</div>
-                                  <div class="track-info">
-                                      <div class="track-title">${
-                        item.track
-                    }</div>
-                                      <div class="track-artist">${
-                        item.artist
-                    } - ${item.album}</div>
-                                  </div>
-                                  <div style="display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px;">
-                                    <div class="play-source ${sourceClass}">${sourceText}</div>
-                                    <div class="play-count">${timeString}</div>
-                                  </div>
-                              `;
-
-                    // 添加点击事件处理
-                    rankingItem.addEventListener('click', function () {
-                        showTrackDetails(item.artist, item.album, item.track);
-                    });
-                    rankingItem.style.cursor = 'pointer';
-
-                    recentPlaysList.appendChild(rankingItem);
-                });
-
-                // 调整两个列表的高度
-                adjustRankingListsHeight();
+                renderRecentPlaysList(data, true);
             })
             .catch((error) => {
                 console.error("获取最近播放数据失败:", error);
-                // 移除加载状态
-                const loadingElement = recentPlaysList.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
                 recentPlaysList.innerHTML =
                     '<div class="error">加载失败: ' + error.message + "</div>";
             });
@@ -5191,8 +5400,6 @@
 
     // 定期刷新最近播放列表
     function refreshRecentPlays() {
-        const recentPlaysList = document.getElementById("recentPlaysList");
-
         fetch("/api/recent-plays?limit=10")
             .then((response) => {
                 if (!response.ok) {
@@ -5201,75 +5408,7 @@
                 return response.json();
             })
             .then((data) => {
-                recentPlaysList.innerHTML = "";
-
-                if (data.length === 0) {
-                    recentPlaysList.innerHTML = '<div class="loading">暂无数据</div>';
-                    return;
-                }
-
-                data.forEach((item, index) => {
-                    const rankingItem = document.createElement("li");
-                    rankingItem.className = "ranking-item";
-
-                    const playTime = new Date(item.play_time);
-                    const timeString = playTime.toLocaleTimeString("zh-CN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                    });
-
-                    // 根据来源设置样式
-                    let sourceClass = "";
-                    let sourceText = "";
-                    switch (item.source?.toLowerCase()) {
-                        case "apple music":
-                            sourceClass = "source-applemusic";
-                            sourceText = "AppleMusic";
-                            break;
-                        case "audirvana":
-                        case "au":
-                            sourceClass = "source-audirvana";
-                            sourceText = "Audirvana";
-                            break;
-                        case "roon":
-                            sourceClass = "source-roon";
-                            sourceText = "Roon";
-                            break;
-                        default:
-                            sourceClass = "";
-                            sourceText = item.source || "Unknown";
-                    }
-
-                    rankingItem.innerHTML = `
-                                  <div class="rank-number rank-other">${
-                        index + 1
-                    }</div>
-                                  <div class="track-info">
-                                      <div class="track-title">${
-                        item.track
-                    }</div>
-                                      <div class="track-artist">${
-                        item.artist
-                    } - ${item.album}</div>
-                                  </div>
-                                  <div style="display: flex; flex-direction: column; align-items: flex-end; margin-left: 10px;">
-                                    <div class="play-source ${sourceClass}">${sourceText}</div>
-                                    <div class="play-count">${timeString}</div>
-                                  </div>
-                              `;
-
-                    // 添加点击事件处理
-                    rankingItem.addEventListener('click', function () {
-                        showTrackDetails(item.artist, item.album, item.track);
-                    });
-                    rankingItem.style.cursor = 'pointer';
-
-                    recentPlaysList.appendChild(rankingItem);
-                });
-
-                // 调整两个列表的高度
-                adjustRankingListsHeight();
+                renderRecentPlaysList(data, false);
             })
             .catch((error) => {
                 console.error("刷新最近播放数据失败:", error);
@@ -5280,17 +5419,17 @@
     function initRanking(rankingType = "all", keyword = "") {
         currentRankingType = rankingType;
         rankingSearchKeyword = keyword;
-        
+
         const rankingList = document.getElementById("rankingList");
-        rankingList.innerHTML = '<div class="loading">加载中...</div>';
+        if (!rankingList.children.length) {
+            rankingList.innerHTML = '<div class="loading">加载中...</div>';
+        }
 
         // 根据排名类型调整API请求
         let apiUrl = `/api/track-play-counts?limit=10&offset=0${keyword ? '&keyword=' + encodeURIComponent(keyword) : ''}`;
         if (rankingType === "month") {
-            // 月排行榜
             apiUrl = `/api/track-play-counts/period?limit=10&offset=0&period=month${keyword ? '&keyword=' + encodeURIComponent(keyword) : ''}`;
         } else if (rankingType === "week") {
-            // 周排行榜
             apiUrl = `/api/track-play-counts/period?limit=10&offset=0&period=week${keyword ? '&keyword=' + encodeURIComponent(keyword) : ''}`;
         }
 
@@ -5302,55 +5441,10 @@
                 return response.json();
             })
             .then((data) => {
-                // 移除加载状态
-                const loadingElement = rankingList.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
-
-                if (data.length === 0) {
-                    rankingList.innerHTML = '<div class="loading">暂无数据</div>';
-                    return;
-                }
-
-                data.forEach((item, index) => {
-                    const rankingItem = document.createElement("li");
-                    rankingItem.className = "ranking-item";
-
-                    const rank = index + 1;
-                    let rankClass = "rank-other";
-                    if (rank === 1) rankClass = "rank-1";
-                    else if (rank === 2) rankClass = "rank-2";
-                    else if (rank === 3) rankClass = "rank-3";
-
-                    rankingItem.innerHTML = `
-                                  <div class="rank-number ${rankClass}">${rank}</div>
-                                  <div class="track-info">
-                                      <div class="track-title">${item.track}</div>
-                                      <div class="track-artist">${item.artist} - ${item.album}</div>
-                                  </div>
-                                  <div class="play-count">${item.play_count} 次</div>
-                              `;
-
-                    // 添加点击事件处理
-                    rankingItem.addEventListener('click', function () {
-                        showTrackDetails(item.artist, item.album, item.track);
-                    });
-                    rankingItem.style.cursor = 'pointer';
-
-                    rankingList.appendChild(rankingItem);
-                });
-
-                // 调整两个列表的高度
-                adjustRankingListsHeight();
+                renderRankingList(rankingType, keyword, data, false);
             })
             .catch((error) => {
                 console.error("获取排行榜数据失败:", error);
-                // 移除加载状态
-                const loadingElement = rankingList.querySelector(".loading");
-                if (loadingElement) {
-                    loadingElement.remove();
-                }
                 rankingList.innerHTML =
                     '<div class="error">加载失败: ' + error.message + "</div>";
             });
@@ -5458,7 +5552,7 @@
             // 根据来源设置样式
             let sourceClass = "";
             let sourceText = "";
-            switch (record.source?.toLowerCase()) {
+            switch ((record.source || "").toLowerCase()) {
                 case "apple music":
                     sourceClass = "source-applemusic";
                     sourceText = "AppleMusic";
@@ -5800,7 +5894,42 @@
 
     // 定时更新函数
     function createAutoUpdater(fetchFunction, interval = 60000) {
-        return setInterval(fetchFunction, interval);
+        let running = false;
+        return setInterval(function () {
+            if (running) return;
+            if (document.hidden) return;
+
+            running = true;
+            let result;
+            try {
+                result = fetchFunction();
+            } catch (e) {
+                console.error("自动更新失败:", e);
+                running = false;
+                return;
+            }
+            Promise.resolve(result).then(
+                function () {
+                    running = false;
+                },
+                function (e) {
+                    console.error("自动更新失败:", e);
+                    running = false;
+                }
+            );
+        }, interval);
+    }
+
+    function getActiveFilterValue(selector, attrName, defaultValue) {
+        const el = document.querySelector(selector);
+        if (!el) return defaultValue;
+        const value = el.getAttribute(attrName);
+        return value || defaultValue;
+    }
+
+    function isMainDashboardVisible() {
+        const statsContainer = document.querySelector(".stats-container");
+        return !!statsContainer && statsContainer.style.display !== "none";
     }
 
     // 公共的定时更新函数
@@ -5836,6 +5965,8 @@
 
     // 页面加载完成后初始化
     document.addEventListener("DOMContentLoaded", function () {
+        enablePerformanceModeIfNeeded();
+
         // 自动切换日夜模式
         toggleDarkModeBasedOnSystem();
 
@@ -5859,54 +5990,82 @@
         dashboardUpdater.clearAllTimers();
 
         // 设置定时器，每5秒刷新一次各个组件
-        dashboardUpdater.addTimer(createAutoUpdater(initStats, 60000)); // 每60秒更新统计卡片
-        dashboardUpdater.addTimer(createAutoUpdater(initSourceChart, 60000)); // 每60秒更新播放来源扇形图
+        dashboardUpdater.addTimer(createAutoUpdater(() => {
+            if (!isMainDashboardVisible()) return;
+            initStats();
+        }, getPollingInterval(60000))); // 每60秒更新统计卡片
+        dashboardUpdater.addTimer(createAutoUpdater(() => {
+            if (!isMainDashboardVisible()) return;
+            initSourceChart();
+        }, getPollingInterval(60000))); // 每60秒更新播放来源扇形图
         dashboardUpdater.addTimer(
             createAutoUpdater(
-                () =>
+                () => {
+                    if (!isMainDashboardVisible()) return;
                     initTrendChart(
-                        document
-                            .querySelector(".time-filter.active[data-range]")
-                            .getAttribute("data-range") || 30
-                    ),
-                60000
+                        getActiveFilterValue(
+                            ".time-filter.active[data-range]",
+                            "data-range",
+                            30
+                        )
+                    );
+                },
+                getPollingInterval(60000)
             )
         ); // 每60秒更新趋势图
         dashboardUpdater.addTimer(
             createAutoUpdater(
-                () =>
+                () => {
+                    if (!isMainDashboardVisible()) return;
                     initArtistChart(
-                        document
-                            .querySelector(".time-filter.active[data-type]")
-                            .getAttribute("data-type") || "plays"
-                    ),
-                60000
+                        getActiveFilterValue(
+                            ".time-filter.active[data-type]",
+                            "data-type",
+                            "plays"
+                        )
+                    );
+                },
+                getPollingInterval(60000)
             )
         ); // 每60秒更新艺术家图表
         dashboardUpdater.addTimer(
             createAutoUpdater(
-                () =>
+                () => {
+                    if (!isMainDashboardVisible()) return;
                     initAlbumChart(
-                        document
-                            .querySelector(".time-filter.active[data-days]")
-                            .getAttribute("data-days") || 30
-                    ),
-                60000
+                        getActiveFilterValue(
+                            ".time-filter.active[data-days]",
+                            "data-days",
+                            30
+                        )
+                    );
+                },
+                getPollingInterval(60000)
             )
         ); // 每60秒更新专辑图表
-        dashboardUpdater.addTimer(createAutoUpdater(initGenreChart, 60000)); // 每60秒更新流派图表
+        dashboardUpdater.addTimer(createAutoUpdater(() => {
+            if (!isMainDashboardVisible()) return;
+            initGenreChart();
+        }, getPollingInterval(60000))); // 每60秒更新流派图表
         dashboardUpdater.addTimer(
             createAutoUpdater(
-                () =>
+                () => {
+                    if (!isMainDashboardVisible()) return;
                     initRanking(
-                        document
-                            .querySelector(".time-filter.active[data-ranking]")
-                            .getAttribute("data-ranking") || "all"
-                    ),
-                60000
+                        getActiveFilterValue(
+                            ".time-filter.active[data-ranking]",
+                            "data-ranking",
+                            "all"
+                        )
+                    );
+                },
+                getPollingInterval(60000)
             )
         ); // 每60秒更新排行榜
-        dashboardUpdater.addTimer(createAutoUpdater(refreshRecentPlays, 60000)); // 每60秒更新最近播放列表
+        dashboardUpdater.addTimer(createAutoUpdater(() => {
+            if (!isMainDashboardVisible()) return;
+            refreshRecentPlays();
+        }, getPollingInterval(60000))); // 每60秒更新最近播放列表
 
         // 添加时间过滤器点击事件
         document.querySelectorAll(".time-filter").forEach((filter) => {
@@ -5989,6 +6148,37 @@
         // 初始化歌词按钮和拖动功能
         initLyricsButton();
         initLyricsDrag();
+
+        // 列表点击事件委托：避免每次刷新都重复绑定每行点击监听器
+        const recentPlaysList = document.getElementById("recentPlaysList");
+        if (recentPlaysList && !recentPlaysList.dataset.clickBound) {
+            recentPlaysList.addEventListener("click", function (e) {
+                const item = e.target.closest(".ranking-item");
+                if (!item || !recentPlaysList.contains(item)) return;
+                const artist = item.dataset.artist || "";
+                const album = item.dataset.album || "";
+                const track = item.dataset.track || "";
+                if (artist && track) {
+                    showTrackDetails(artist, album, track);
+                }
+            });
+            recentPlaysList.dataset.clickBound = "1";
+        }
+
+        const rankingList = document.getElementById("rankingList");
+        if (rankingList && !rankingList.dataset.clickBound) {
+            rankingList.addEventListener("click", function (e) {
+                const item = e.target.closest(".ranking-item");
+                if (!item || !rankingList.contains(item)) return;
+                const artist = item.dataset.artist || "";
+                const album = item.dataset.album || "";
+                const track = item.dataset.track || "";
+                if (artist && track) {
+                    showTrackDetails(artist, album, track);
+                }
+            });
+            rankingList.dataset.clickBound = "1";
+        }
 
         // 未上报标签页点击事件
         document
@@ -6277,7 +6467,7 @@
 
             let sourceClass = "";
             let sourceText = "";
-            switch (track.source?.toLowerCase()) {
+            switch ((track.source || "").toLowerCase()) {
                 case "apple music":
                     sourceClass = "source-applemusic";
                     sourceText = "AppleMusic";
@@ -6324,11 +6514,21 @@
                 .then(r => r.json())
                 .then(lyricsData => {
                     if (lyricsData.lyrics) {
-                        bodyContent.innerHTML = `
-                  <div class="lyrics-container" style="padding: 20px; font-family: sans-serif; line-height: 1.8; text-align: center;">
-                    <div class="lyrics-text" style="white-space: pre-wrap;">${lyricsData.lyrics}</div>
-                  </div>
-                `;
+                        bodyContent.innerHTML = "";
+                        const lyricsContainer = document.createElement("div");
+                        lyricsContainer.className = "lyrics-container";
+                        lyricsContainer.style.padding = "20px";
+                        lyricsContainer.style.fontFamily = "sans-serif";
+                        lyricsContainer.style.lineHeight = "1.8";
+                        lyricsContainer.style.textAlign = "center";
+
+                        const lyricsText = document.createElement("div");
+                        lyricsText.className = "lyrics-text";
+                        lyricsText.style.whiteSpace = "pre-wrap";
+                        lyricsText.textContent = lyricsData.lyrics;
+
+                        lyricsContainer.appendChild(lyricsText);
+                        bodyContent.appendChild(lyricsContainer);
                     } else {
                         bodyContent.innerHTML = `
                   <div style="text-align: center; padding: 40px 20px;">
@@ -6433,6 +6633,8 @@
             // 这里调用的是相同的接口，但由于之前查询结果为空，点击此按钮通常由于用户想手动触发搜索
             const resp = await fetch(`/api/track-lyrics?artist=${encodeURIComponent(track.artist)}&album=${encodeURIComponent(track.album || '')}&track=${encodeURIComponent(track.track)}&force=true`);
             const data = await resp.json();
+            const cacheKey = buildLyricsCacheKey(track.artist, track.album || '', track.track);
+            lyricsCache[cacheKey] = { ts: Date.now(), data: data };
 
             if (data.lyrics) {
                 statusEl.textContent = "找到歌词！正在刷新...";
