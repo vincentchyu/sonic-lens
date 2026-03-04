@@ -8,7 +8,7 @@ dashboard:
   heavyStatOnlyOnNewPlay: true                  # 仅在有新播放记录时刷新 top_*/trend_*，默认 true
   topN: 10                                      # 统计榜单每类保留条数，默认10
   trendDays: 180                                # 趋势统计保留天数，默认180天
-  hourlyTrendDays: 30                           # 小时趋势保留天数，默认30天(更早历史仅保留日趋势)
+  hourlyTrendDays: 0                            # 小时趋势保留天数，<=0 表示跟随 trendDays（推荐）
 
 cloudflare:
   account_id: "your_cloudflare_account_id"      # Cloudflare Account ID

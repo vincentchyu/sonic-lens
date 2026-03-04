@@ -18,7 +18,6 @@ const (
 	defaultDashboardHeavyRefreshMinutes = 60
 	defaultDashboardTopN                = 10
 	defaultDashboardTrendDays           = 180
-	defaultDashboardHourlyTrendDays     = 30
 )
 
 var dashboardAlbumPeriods = []int{7, 30, 90, 365}
@@ -158,7 +157,8 @@ func GetDashboardStatRuntimeConfig() DashboardStatRuntimeConfig {
 		runtimeCfg.TrendDays = defaultDashboardTrendDays
 	}
 	if runtimeCfg.HourlyTrendDays = cfg.HourlyTrendDays; runtimeCfg.HourlyTrendDays <= 0 {
-		runtimeCfg.HourlyTrendDays = defaultDashboardHourlyTrendDays
+		// 未显式配置时，小时趋势窗口与日趋势窗口保持一致，避免口径不一致。
+		runtimeCfg.HourlyTrendDays = runtimeCfg.TrendDays
 	}
 	if runtimeCfg.HourlyTrendDays > runtimeCfg.TrendDays {
 		runtimeCfg.HourlyTrendDays = runtimeCfg.TrendDays
@@ -621,8 +621,9 @@ func refreshTopGenreStats(tx *gorm.DB, topN int) error {
 }
 
 func refreshTrendStats(tx *gorm.DB, trendDays, hourlyTrendDays int) error {
-	startDaily := time.Now().AddDate(0, 0, -trendDays)
-	startHourly := time.Now().AddDate(0, 0, -hourlyTrendDays)
+	now := time.Now()
+	startDaily := startOfDay(now.AddDate(0, 0, -trendDays))
+	startHourly := startOfDay(now.AddDate(0, 0, -hourlyTrendDays))
 
 	type dailyRow struct {
 		StatDate  string
@@ -697,6 +698,10 @@ func refreshTrendStats(tx *gorm.DB, trendDays, hourlyTrendDays int) error {
 	}
 
 	return nil
+}
+
+func startOfDay(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
 func HasNewTrackPlayRecordsSince(ctx context.Context, since time.Time) (bool, time.Time, error) {
@@ -1032,17 +1037,34 @@ func GetPlayTrendFromStatByDays(ctx context.Context, days int) (
 	hourly := make(map[string]*HourlyPlayTrendData, len(hourlyRows))
 
 	for _, row := range dailyRows {
-		daily[row.StatDate] = int(row.PlayCount)
-		if _, ok := hourly[row.StatDate]; !ok {
-			hourly[row.StatDate] = &HourlyPlayTrendData{
-				Date:   row.StatDate,
-				Total:  int(row.PlayCount),
+		normalizedDate := normalizeTrendDateKey(row.StatDate)
+		if normalizedDate == "" {
+			continue
+		}
+		playCount := int(row.PlayCount)
+		if playCount < 0 {
+			playCount = 0
+		}
+		// 合并同一天的重复键（如 2026-02-01 与 2026-02-01T00:00:00+08:00）
+		if old, exists := daily[normalizedDate]; !exists || playCount > old {
+			daily[normalizedDate] = playCount
+		}
+		if _, ok := hourly[normalizedDate]; !ok {
+			hourly[normalizedDate] = &HourlyPlayTrendData{
+				Date:   normalizedDate,
+				Total:  daily[normalizedDate],
 				Hourly: make(map[int]int),
 			}
+		} else {
+			hourly[normalizedDate].Total = daily[normalizedDate]
 		}
 	}
 
 	for _, row := range hourlyRows {
+		normalizedDate := normalizeTrendDateKey(row.StatDate)
+		if normalizedDate == "" {
+			continue
+		}
 		h := row.Hour
 		if h < 0 {
 			h = 0
@@ -1050,19 +1072,40 @@ func GetPlayTrendFromStatByDays(ctx context.Context, days int) (
 		if h > 23 {
 			h = 23
 		}
-		dateObj, ok := hourly[row.StatDate]
+		playCount := int(row.PlayCount)
+		if playCount <= 0 {
+			continue
+		}
+		dateObj, ok := hourly[normalizedDate]
 		if !ok {
 			dateObj = &HourlyPlayTrendData{
-				Date:   row.StatDate,
-				Total:  0,
+				Date:   normalizedDate,
+				Total:  daily[normalizedDate],
 				Hourly: make(map[int]int),
 			}
-			hourly[row.StatDate] = dateObj
+			hourly[normalizedDate] = dateObj
 		}
-		dateObj.Hourly[h] = int(row.PlayCount)
+		// 重复小时记录时使用较大值，避免脏数据重复叠加
+		if old, exists := dateObj.Hourly[h]; !exists || playCount > old {
+			dateObj.Hourly[h] = playCount
+		}
 	}
 
 	return daily, hourly, nil
+}
+
+func normalizeTrendDateKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if d, err := parseDateOnly(raw); err == nil {
+		return d.Format("2006-01-02")
+	}
+	if len(raw) >= 10 {
+		return raw[:10]
+	}
+	return raw
 }
 
 func IsDashboardStatReady(ctx context.Context) bool {

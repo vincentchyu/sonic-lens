@@ -621,11 +621,6 @@
             .charts-container {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
-
-            #genreChartCard,
-            #trendChartCard {
-                grid-column: 1 / -1;
-            }
         }
 
         .chart-card {
@@ -4199,6 +4194,7 @@
     // 初始化趋势图
     function initTrendChart(range = 30) {
         const ctx = document.getElementById("trendChart").getContext("2d");
+        const rangeDays = parseInt(range, 10) || 30;
 
         // 显示加载状态
         const chartContainer =
@@ -4231,30 +4227,50 @@
 
                 // 处理新的API响应格式，将数据转换为气泡图所需格式
                 const bubbleData = [];
-                // 存储每天的总播放次数，用于tooltip显示
-                const dailyTotals = {};
+                // 存储每天的总播放次数，用于tooltip显示。优先使用 daily，避免小时数据窗口较短时丢天数。
+                const dailyTotals = data.daily || {};
+                const hourlyMap = data.hourly || {};
 
-                // 遍历hourly数据生成气泡图数据点
-                Object.keys(data.hourly).forEach((date) => {
-                    const hourlyData = data.hourly[date];
-                    // 计算当天总播放次数
-                    dailyTotals[date] = hourlyData.total;
-
-                    Object.keys(hourlyData.hourly).forEach((hour) => {
+                // 先用 hourly 明细生成点
+                Object.keys(hourlyMap).forEach((date) => {
+                    const hourlyData = hourlyMap[date];
+                    Object.keys(hourlyData.hourly || {}).forEach((hour) => {
                         const playCount = hourlyData.hourly[hour];
-                        // 只有播放次数大于0的数据才显示
                         if (playCount > -1) {
-                            // 确保日期格式正确，使用Date构造函数解析日期字符串
                             const dateObj = new Date(date);
-                            // 调整到当天的中午12:00，避免时区问题导致的日期偏移
                             dateObj.setHours(12, 0, 0, 0);
                             bubbleData.push({
-                                x: dateObj, // 使用Date对象而不是时间戳
-                                y: parseInt(hour), // 小时（0-23）
-                                r: playCount, // 播放次数作为气泡半径
-                                date: date, // 添加原始日期字符串用于tooltip
+                                x: dateObj,
+                                y: parseInt(hour, 10),
+                                r: playCount,
+                                date: date,
+                                isDailyFallback: false,
                             });
                         }
+                    });
+                });
+
+                // 对没有小时明细（key不存在或 hourly 为空）但有 daily 总量的日期，补一个“日聚合兜底点”
+                Object.keys(dailyTotals).forEach((date) => {
+                    const hasHourlyBreakdown =
+                        hourlyMap[date] &&
+                        hourlyMap[date].hourly &&
+                        Object.keys(hourlyMap[date].hourly).length > 0;
+                    if (hasHourlyBreakdown) {
+                        return;
+                    }
+                    const count = Number(dailyTotals[date] || 0);
+                    if (count <= 0) {
+                        return;
+                    }
+                    const dateObj = new Date(date);
+                    dateObj.setHours(12, 0, 0, 0);
+                    bubbleData.push({
+                        x: dateObj,
+                        y: 12, // 无小时明细时放在中午位置，表示日聚合
+                        r: count,
+                        date: date,
+                        isDailyFallback: true,
                     });
                 });
 
@@ -4283,6 +4299,13 @@
                         border: `rgba(${r}, ${g}, ${b}, 1)`,
                     };
                 }
+
+                // 固定 x 轴窗口，确保选择 90 天时不会只显示 30 天范围
+                const now = new Date();
+                const xAxisMax = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+                const xAxisMin = new Date(xAxisMax);
+                xAxisMin.setDate(xAxisMin.getDate() - (rangeDays - 1));
+                xAxisMin.setHours(0, 0, 0, 0);
 
                 // 保存图表实例以便全屏时重新渲染
                 window.trendChartInstance = new Chart(newCtx, {
@@ -4352,6 +4375,8 @@
                                     // 确保时间轴从数据的最小值开始
                                     minUnit: "day",
                                 },
+                                min: xAxisMin,
+                                max: xAxisMax,
                                 title: {
                                     display: true,
                                     text: "日期",
