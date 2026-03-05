@@ -71,9 +71,10 @@ func (p *OllamaProvider) AnalyzeTrack(
 
 	ollamaReq := &api.GenerateRequest{
 		Model:  p.model,
-		Prompt: prompt,
+		System: prompt,
 		Stream: new(bool), // set streaming to false
 		Think:  &api.ThinkValue{Value: "medium"},
+		Prompt: "由于本地模型的能力有限，不做analysis_by_section.appreciate_analysis字段的填充和分析",
 	}
 
 	var fullResponse strings.Builder

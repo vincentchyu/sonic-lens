@@ -79,6 +79,26 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	// 全屏歌词简化页
+	r.GET(
+		"/lyrics-live", func(c *gin.Context) {
+			tmplPath := filepath.Join("templates", "lyrics_live.html")
+			tmpl, err := template.New("lyrics_live.html").ParseFiles(tmplPath)
+			if err != nil {
+				log.Error(c.Request.Context(), "Failed to parse template", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load template"})
+				return
+			}
+
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			if err := tmpl.Execute(c.Writer, nil); err != nil {
+				log.Error(c.Request.Context(), "Failed to execute template", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template"})
+				return
+			}
+		},
+	)
+
 	// Get track play counts with pagination
 	trackService := track.NewTrackService()
 	// AI 歌词解析服务

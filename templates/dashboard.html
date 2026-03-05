@@ -1919,6 +1919,23 @@
             color: var(--accent-color);
         }
 
+        .lyrics-fullscreen-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 2px 8px;
+            line-height: 1.4;
+            transition: all 0.2s ease;
+        }
+
+        .lyrics-fullscreen-btn:hover {
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
         /* 歌词滚动容器 */
         .lyrics-container {
             max-height: 400px;
@@ -1957,6 +1974,20 @@
             transition: all 0.3s ease;
             color: var(--text-secondary);
             font-size: 0.95rem;
+        }
+
+        .lyrics-line-original {
+            display: block;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .lyrics-line-translation {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            font-weight: 500;
         }
 
         .lyrics-line.active {
@@ -2070,6 +2101,7 @@
     <div class="lyrics-header">
         <h4>歌词</h4>
         <div class="lyrics-controls">
+            <button class="lyrics-fullscreen-btn" id="lyricsFullscreenBtn">全屏</button>
             <button class="lyrics-close-btn" id="lyricsCloseBtn">×</button>
         </div>
     </div>
@@ -3816,6 +3848,74 @@
         return lrcData;
     }
 
+    function parseTaggedLyricLine(text) {
+        const clean = (text || '').replace(/\\n/g, '\n').trim();
+        const originalMatch = clean.match(/<original>([\s\S]*?)<(?:\/)?original>/i);
+        const translationMatch = clean.match(/<translation>([\s\S]*?)<(?:\/)?translation>/i);
+        if (!originalMatch && !translationMatch) {
+            return { original: clean, translation: '', hasTag: false };
+        }
+        return {
+            original: originalMatch ? originalMatch[1].trim() : '',
+            translation: translationMatch ? translationMatch[1].trim() : '',
+            hasTag: true
+        };
+    }
+
+    function parseTaggedLyricRows(text) {
+        const clean = (text || '').replace(/\\n/g, '\n');
+        const regex = /<(original|translation)>([\s\S]*?)<(?:\/)?\1>/gi;
+        const rows = [];
+        let matched = false;
+        let match;
+        while ((match = regex.exec(clean)) !== null) {
+            matched = true;
+            const tag = (match[1] || '').toLowerCase();
+            const content = (match[2] || '').trim();
+            if (tag === 'original') {
+                rows.push({ original: content, translation: '' });
+            } else if (tag === 'translation') {
+                if (!rows.length) {
+                    rows.push({ original: '', translation: content });
+                } else {
+                    rows[rows.length - 1].translation = content;
+                }
+            }
+        }
+        if (!matched) return null;
+        return rows;
+    }
+
+    function renderPlainLyrics(container, text) {
+        container.innerHTML = '';
+        const taggedRows = parseTaggedLyricRows(text);
+        if (taggedRows && taggedRows.length) {
+            const fragment = document.createDocumentFragment();
+            taggedRows.forEach(row => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'lyrics-line';
+                const originalDiv = document.createElement('div');
+                originalDiv.className = 'lyrics-line-original';
+                originalDiv.textContent = row.original || ' ';
+                lineDiv.appendChild(originalDiv);
+                if (row.translation) {
+                    const translationDiv = document.createElement('div');
+                    translationDiv.className = 'lyrics-line-translation';
+                    translationDiv.textContent = row.translation;
+                    lineDiv.appendChild(translationDiv);
+                }
+                fragment.appendChild(lineDiv);
+            });
+            container.appendChild(fragment);
+            return;
+        }
+
+        const plainLyrics = document.createElement('div');
+        plainLyrics.className = 'lyrics-text';
+        plainLyrics.textContent = text;
+        container.appendChild(plainLyrics);
+    }
+
     async function fetchLyrics(artist, album, track) {
         try {
             const cacheKey = buildLyricsCacheKey(artist, album, track);
@@ -3871,11 +3971,7 @@
                 renderLRCLyrics(currentLyricsData);
                 startLyricsSync();
             } else {
-                lyricsContainer.innerHTML = "";
-                const plainLyrics = document.createElement("div");
-                plainLyrics.className = "lyrics-text";
-                plainLyrics.textContent = lyricsData.lyrics;
-                lyricsContainer.appendChild(plainLyrics);
+                renderPlainLyrics(lyricsContainer, lyricsData.lyrics);
                 currentLyricsData = null;
                 stopLyricsSync();
             }
@@ -3896,7 +3992,22 @@
         lrcData.forEach((item, index) => {
             const lineDiv = document.createElement('div');
             lineDiv.className = 'lyrics-line';
-            lineDiv.textContent = item.text;
+            const pair = parseTaggedLyricLine(item.text);
+            if (pair.hasTag) {
+                const originalDiv = document.createElement('div');
+                originalDiv.className = 'lyrics-line-original';
+                originalDiv.textContent = pair.original || ' ';
+                lineDiv.appendChild(originalDiv);
+
+                if (pair.translation) {
+                    const translationDiv = document.createElement('div');
+                    translationDiv.className = 'lyrics-line-translation';
+                    translationDiv.textContent = pair.translation;
+                    lineDiv.appendChild(translationDiv);
+                }
+            } else {
+                lineDiv.textContent = pair.original || item.text;
+            }
             lineDiv.dataset.time = item.time;
             lineDiv.dataset.index = index;
             lyricsLineElements.push(lineDiv);
@@ -3961,13 +4072,14 @@
         const lyricsFloating = document.getElementById('lyricsFloating');
         const header = document.querySelector('.lyrics-header');
         const closeBtn = document.getElementById('lyricsCloseBtn');
+        const fullscreenBtn = document.getElementById('lyricsFullscreenBtn');
         if (!lyricsFloating || !header || !closeBtn) return;
 
         let isDragging = false;
         let offsetX, offsetY;
 
         header.addEventListener('mousedown', function (e) {
-            if (e.target === closeBtn) return;
+            if (e.target === closeBtn || e.target === fullscreenBtn) return;
             isDragging = true;
             lyricsFloating.classList.add('dragging');
             const rect = lyricsFloating.getBoundingClientRect();
@@ -3995,8 +4107,46 @@
     function initLyricsButton() {
         const lyricsButton = document.getElementById('lyricsButton');
         if (lyricsButton) {
-            lyricsButton.addEventListener('click', showLyrics);
+            lyricsButton.addEventListener('click', function () {
+                // 低端设备直接进入简化全屏歌词页
+                if (isLowEndMode()) {
+                    openLyricsLivePage();
+                    return;
+                }
+                showLyrics();
+            });
         }
+    }
+
+    function openLyricsLivePage() {
+        const params = new URLSearchParams();
+        if (isLowEndMode()) {
+            params.set("lowEnd", "1");
+            try {
+                localStorage.setItem("lyricsLiveLowEnd", "1");
+            } catch (e) {
+            }
+        } else {
+            try {
+                localStorage.removeItem("lyricsLiveLowEnd");
+            } catch (e) {
+            }
+        }
+        if (currentTrackInfo) {
+            params.set("artist", currentTrackInfo.artist || "");
+            params.set("album", currentTrackInfo.album || "");
+            params.set("track", currentTrackInfo.title || currentTrackInfo.track || "");
+            params.set("position", String(currentPosition || 0));
+            params.set("duration", String(trackDuration || 0));
+            params.set("source", currentSource || "");
+        }
+        window.location.href = "/lyrics-live?" + params.toString();
+    }
+
+    function initLyricsFullscreenButton() {
+        const btn = document.getElementById("lyricsFullscreenBtn");
+        if (!btn) return;
+        btn.addEventListener("click", openLyricsLivePage);
     }
 
     // ========== 歌词功能结束 ==========
@@ -6147,6 +6297,7 @@
         initAiInsightButton();
         // 初始化歌词按钮和拖动功能
         initLyricsButton();
+        initLyricsFullscreenButton();
         initLyricsDrag();
 
         // 列表点击事件委托：避免每次刷新都重复绑定每行点击监听器
@@ -6521,13 +6672,7 @@
                         lyricsContainer.style.fontFamily = "sans-serif";
                         lyricsContainer.style.lineHeight = "1.8";
                         lyricsContainer.style.textAlign = "center";
-
-                        const lyricsText = document.createElement("div");
-                        lyricsText.className = "lyrics-text";
-                        lyricsText.style.whiteSpace = "pre-wrap";
-                        lyricsText.textContent = lyricsData.lyrics;
-
-                        lyricsContainer.appendChild(lyricsText);
+                        renderPlainLyrics(lyricsContainer, lyricsData.lyrics);
                         bodyContent.appendChild(lyricsContainer);
                     } else {
                         bodyContent.innerHTML = `

@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>全屏歌词</title>
+    <style>
+        :root {
+            --bg: #f6f8fb;
+            --fg: #1f2937;
+            --muted: #6b7280;
+            --card: rgba(255, 255, 255, 0.42);
+            --accent: #2563eb;
+            --active-bg: rgba(37, 99, 235, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.55);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f141b;
+                --fg: #e5e7eb;
+                --muted: #94a3b8;
+                --card: rgba(18, 24, 34, 0.42);
+                --accent: #60a5fa;
+                --active-bg: rgba(96, 165, 250, 0.18);
+                --glass-border: rgba(148, 163, 184, 0.25);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+        }
+
+        .ambient-background {
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            overflow: hidden;
+            pointer-events: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .ambient-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(110px);
+            opacity: 0.42;
+            animation: float-orb 20s infinite ease-in-out alternate;
+        }
+
+        .orb-a {
+            width: 52vw;
+            height: 52vw;
+            left: -12vw;
+            top: -16vh;
+            background: rgba(141, 162, 251, 0.55);
+        }
+
+        .orb-b {
+            width: 45vw;
+            height: 45vw;
+            right: -10vw;
+            bottom: -18vh;
+            background: rgba(118, 75, 162, 0.52);
+            animation-duration: 26s;
+        }
+
+        .orb-c {
+            width: 38vw;
+            height: 38vw;
+            left: 38vw;
+            top: 26vh;
+            background: rgba(76, 132, 245, 0.38);
+            animation-duration: 30s;
+        }
+
+        @keyframes float-orb {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+            50% {
+                transform: translate(5vw, 6vh) scale(1.08);
+            }
+            100% {
+                transform: translate(-4vw, 8vh) scale(0.94);
+            }
+        }
+
+        .page {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 12px;
+        }
+
+        .top {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            gap: 10px;
+            flex: 0 0 auto;
+            background: var(--card);
+            border-radius: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(18px) saturate(150%);
+            -webkit-backdrop-filter: blur(18px) saturate(150%);
+        }
+
+        .title-wrap {
+            min-width: 0;
+            text-align: center;
+            grid-column: 2;
+        }
+
+        .track {
+            font-size: clamp(1.05rem, 2vw, 1.5rem);
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .meta {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: clamp(0.88rem, 1.2vw, 1rem);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex: 0 0 auto;
+            grid-column: 3;
+            justify-self: end;
+        }
+
+        .btn {
+            border: 1px solid rgba(127, 140, 141, 0.3);
+            background: transparent;
+            color: var(--fg);
+            border-radius: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .lyrics {
+            flex: 1 1 auto;
+            min-height: 0;
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            overflow-y: auto;
+            padding: 18px 14px;
+            scroll-behavior: smooth;
+            backdrop-filter: blur(18px) saturate(145%);
+            -webkit-backdrop-filter: blur(18px) saturate(145%);
+        }
+
+        .content {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            gap: 12px;
+        }
+
+        .panel {
+            min-width: 0;
+            min-height: 0;
+            transition: flex 0.22s ease, transform 0.22s ease;
+        }
+
+        .lyrics.panel {
+            flex: 1;
+        }
+
+        .insight {
+            flex: 0;
+            width: 0;
+            overflow: hidden;
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(18px) saturate(145%);
+            -webkit-backdrop-filter: blur(18px) saturate(145%);
+            opacity: 0;
+        }
+
+        .content.split .insight {
+            flex: 1;
+            width: auto;
+            opacity: 1;
+            overflow-y: auto;
+            padding: 18px 14px;
+        }
+
+        .content.split .lyrics.panel {
+            flex: 1;
+        }
+
+        .content.split.focus-lyrics .lyrics.panel {
+            flex: 1.35;
+            transform: translateX(0);
+            box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.38);
+        }
+
+        .content.split.focus-lyrics .insight {
+            flex: 0.75;
+        }
+
+        .content.split.focus-insight .lyrics.panel {
+            flex: 0.75;
+        }
+
+        .content.split.focus-insight .insight {
+            flex: 1.35;
+            box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.38);
+        }
+
+        .insight-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 12px;
+        }
+
+        .insight-meta {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 10px;
+        }
+
+        .insight-block {
+            margin-bottom: 14px;
+            padding: 10px 12px;
+            border: 1px solid rgba(127, 140, 141, 0.2);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.12);
+            line-height: 1.75;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .insight-block-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--fg);
+        }
+
+        .insight-section-title {
+            margin: 10px 0 6px;
+            font-weight: 700;
+            color: var(--fg);
+        }
+
+        .insight-text-block {
+            margin-bottom: 8px;
+        }
+
+        .insight-explain-block {
+            margin: 8px 0 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px dashed rgba(127, 140, 141, 0.35);
+            background: rgba(255, 255, 255, 0.06);
+            line-height: 1.75;
+        }
+
+        .insight-lyrics-group {
+            margin-bottom: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(127, 140, 141, 0.18);
+        }
+
+        .insight-lyrics-row {
+            padding: 6px 0;
+        }
+
+        .insight-lyrics-original {
+            display: block;
+            font-weight: 650;
+            color: var(--fg);
+            line-height: 1.6;
+        }
+
+        .insight-lyrics-translation {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 980px) {
+            .content.split {
+                flex-direction: column;
+            }
+            .content.split .lyrics.panel,
+            .content.split .insight,
+            .content.split.focus-lyrics .lyrics.panel,
+            .content.split.focus-lyrics .insight,
+            .content.split.focus-insight .lyrics.panel,
+            .content.split.focus-insight .insight {
+                flex: none;
+                width: 100%;
+            }
+            .content.split .lyrics.panel {
+                min-height: 42%;
+            }
+            .content.split .insight {
+                min-height: 58%;
+            }
+        }
+
+        .line {
+            font-size: clamp(1.05rem, 2vw, 1.5rem);
+            line-height: 1.9;
+            opacity: 0.68;
+            padding: 5px 8px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            word-break: break-word;
+            text-align: center;
+        }
+
+        .line-original {
+            display: block;
+            font-weight: 600;
+        }
+
+        .line-translation {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.88em;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        /* 仅低端设备放大字体（720p/1080p 电视盒子） */
+        body.low-end .ambient-background {
+            display: none;
+        }
+
+        body.low-end .track {
+            font-size: clamp(1.35rem, 2.6vw, 2.1rem);
+        }
+
+        body.low-end .meta {
+            font-size: clamp(1rem, 1.7vw, 1.35rem);
+        }
+
+        body.low-end .line {
+            font-size: clamp(1.6rem, 3.6vw, 3.2rem);
+            line-height: 1.7;
+            padding: 8px 10px;
+        }
+
+        body.low-end .top,
+        body.low-end .lyrics,
+        body.low-end .insight {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border-color: rgba(127, 140, 141, 0.25);
+        }
+
+        .line.active {
+            opacity: 1;
+            color: var(--accent);
+            background: var(--active-bg);
+            font-weight: 700;
+        }
+
+        .placeholder {
+            text-align: center;
+            color: var(--muted);
+            margin-top: 25vh;
+            font-size: 1.05rem;
+        }
+    </style>
+</head>
+<body>
+<div class="ambient-background" aria-hidden="true">
+    <div class="ambient-orb orb-a"></div>
+    <div class="ambient-orb orb-b"></div>
+    <div class="ambient-orb orb-c"></div>
+</div>
+<div class="page">
+    <div class="top">
+        <div class="title-wrap">
+            <div class="track" id="trackTitle">等待播放中...</div>
+            <div class="meta" id="trackMeta">连接中</div>
+        </div>
+        <div class="actions">
+            <button class="btn" id="toggleInsightBtn" style="display:none;">赏析</button>
+            <button class="btn" id="backBtn">返回看板</button>
+            <button class="btn" id="refreshLyricsBtn">刷新歌词</button>
+        </div>
+    </div>
+    <div class="content" id="contentRoot">
+        <div class="lyrics panel" id="lyricsContainer">
+            <div class="placeholder">暂无歌词</div>
+        </div>
+        <div class="insight panel" id="insightPanel"></div>
+    </div>
+</div>
+
+<script>
+    let ws = null;
+    let currentTrackInfo = null;
+    let currentPosition = 0;
+    let trackDuration = 0;
+    let progressInterval = null;
+    let lyricSyncInterval = null;
+    let currentLyricsData = null;
+    let lyricsLines = [];
+    let activeLyricIndex = -1;
+    let currentInsight = null;
+    let splitMode = false;
+    const lyricsCache = {};
+    const insightCache = {};
+    const LYRICS_CACHE_TTL_MS = 5 * 60 * 1000;
+    const INSIGHT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+    function cacheKey(artist, album, track) {
+        return (artist || "") + "::" + (album || "") + "::" + (track || "");
+    }
+
+    function setSplitMode(enabled) {
+        splitMode = enabled;
+        const root = document.getElementById("contentRoot");
+        const btn = document.getElementById("toggleInsightBtn");
+        if (!root || !btn) return;
+        if (enabled) {
+            root.classList.add("split");
+            root.classList.remove("focus-insight");
+            root.classList.add("focus-lyrics");
+            btn.textContent = "仅歌词";
+        } else {
+            root.classList.remove("split");
+            root.classList.remove("focus-insight");
+            root.classList.remove("focus-lyrics");
+            btn.textContent = "赏析";
+        }
+    }
+
+    function setFocusedPanel(name) {
+        if (!splitMode) return;
+        const root = document.getElementById("contentRoot");
+        if (!root) return;
+        root.classList.remove("focus-lyrics", "focus-insight");
+        root.classList.add(name === "insight" ? "focus-insight" : "focus-lyrics");
+    }
+
+    function parseSectionBlocks(sections) {
+        if (!sections) return [];
+        let parsed = sections;
+        if (typeof parsed === "string") {
+            try {
+                parsed = JSON.parse(parsed);
+            } catch (e) {
+                return [{title: "分段解析", content: sections}];
+            }
+        }
+        if (typeof parsed !== "object") return [];
+        const map = {
+            literary_analysis: "文学解读",
+            musical_analysis: "乐评分析",
+            cultural_context: "文化背景",
+            translation_notes: "翻译说明",
+            appreciate_analysis: "分句赏析"
+        };
+        const blocks = [];
+        Object.keys(parsed).forEach(function (key) {
+            const title = map[key] || key;
+            const val = typeof parsed[key] === "string" ? parsed[key] : JSON.stringify(parsed[key], null, 2);
+            if (val && val.trim()) {
+                blocks.push({title: title, content: val});
+            }
+        });
+        return blocks;
+    }
+
+    function escapeHtml(text) {
+        if (text == null) return "";
+        return String(text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function textBlockHtml(text) {
+        return escapeHtml(text).replace(/\n/g, "<br>");
+    }
+
+    function parseTaggedSegments(text) {
+        const clean = (text || "").replace(/\\n/g, "\n");
+        const regex = /<(original|translation|explain)>([\s\S]*?)<(?:\/)?\1>/gi;
+        const segments = [];
+        const rows = [];
+        let matched = false;
+        let lastIndex = 0;
+        let m;
+
+        function flushRows() {
+            if (rows.length) {
+                segments.push({type: "rows", rows: rows.slice()});
+                rows.length = 0;
+            }
+        }
+
+        while ((m = regex.exec(clean)) !== null) {
+            matched = true;
+            const before = clean.slice(lastIndex, m.index).trim();
+            if (before) {
+                flushRows();
+                segments.push({type: "text", text: before});
+            }
+
+            const tag = (m[1] || "").toLowerCase();
+            const content = (m[2] || "").trim();
+            if (tag === "original") {
+                rows.push({original: content, translation: ""});
+            } else if (tag === "translation") {
+                if (!rows.length || rows[rows.length - 1].translation) {
+                    rows.push({original: "", translation: content});
+                } else {
+                    rows[rows.length - 1].translation = content;
+                }
+            } else if (tag === "explain") {
+                flushRows();
+                if (content) {
+                    segments.push({type: "explain", text: content});
+                }
+            }
+            lastIndex = regex.lastIndex;
+        }
+
+        const tail = clean.slice(lastIndex).trim();
+        if (tail) {
+            flushRows();
+            segments.push({type: "text", text: tail});
+        } else {
+            flushRows();
+        }
+
+        if (!matched) return null;
+        return segments;
+    }
+
+    function renderTaggedContentHtml(text) {
+        const segments = parseTaggedSegments(text);
+        if (!segments) return textBlockHtml(text);
+        let html = "";
+        segments.forEach(function (seg) {
+            if (seg.type === "text") {
+                html += '<div class="insight-text-block">' + textBlockHtml(seg.text) + "</div>";
+                return;
+            }
+            if (seg.type === "rows") {
+                html += '<div class="insight-lyrics-group">';
+                seg.rows.forEach(function (row) {
+                    html += '<div class="insight-lyrics-row">';
+                    html += '<span class="insight-lyrics-original">' + escapeHtml(row.original || " ") + "</span>";
+                    if (row.translation) {
+                        html += '<span class="insight-lyrics-translation">' + escapeHtml(row.translation) + "</span>";
+                    }
+                    html += "</div>";
+                });
+                html += "</div>";
+                return;
+            }
+            if (seg.type === "explain") {
+                html += '<div class="insight-explain-block">' + textBlockHtml(seg.text) + "</div>";
+            }
+        });
+        return html || textBlockHtml(text);
+    }
+
+    function renderInsight(insight) {
+        const panel = document.getElementById("insightPanel");
+        if (!panel) return;
+        if (!insight) {
+            panel.innerHTML = '<div class="placeholder" style="margin-top: 14vh;">暂无音眸赏析</div>';
+            return;
+        }
+        const createdAt = insight.created_at ? new Date(insight.created_at).toLocaleString("zh-CN") : "";
+        const sectionBlocks = parseSectionBlocks(insight.analysis_by_section);
+        const summary = (insight.analysis_summary || "").replace(/\\n/g, "\n");
+        const lyricsTranslation = (insight.lyrics_translation || "").replace(/\\n/g, "\n");
+        const bg = insight.background_info || "";
+        const era = insight.era_context || "";
+        const provider = insight.llm_provider || "AI";
+
+        let html = '<div class="insight-title">音眸赏析</div>';
+        html += '<div class="insight-meta">' + escapeHtml(provider) + (createdAt ? (" · " + escapeHtml(createdAt)) : "") + '</div>';
+        if (summary) {
+            html += '<div class="insight-block"><div class="insight-block-title">曲目解读</div>' + renderTaggedContentHtml(summary) + '</div>';
+        }
+        if (lyricsTranslation) {
+            html += '<div class="insight-block"><div class="insight-block-title">歌词对照</div>' + renderTaggedContentHtml(lyricsTranslation) + '</div>';
+        }
+        if (sectionBlocks && sectionBlocks.length) {
+            html += '<div class="insight-block"><div class="insight-block-title">分段解析</div>';
+            sectionBlocks.forEach(function (item) {
+                html += '<div class="insight-section-title">【' + escapeHtml(item.title || "") + "】</div>";
+                html += renderTaggedContentHtml(item.content || "");
+            });
+            html += "</div>";
+        }
+        if (bg) {
+            html += '<div class="insight-block"><div class="insight-block-title">背景信息</div>' + renderTaggedContentHtml(bg) + '</div>';
+        }
+        if (era) {
+            html += '<div class="insight-block"><div class="insight-block-title">时代语境</div>' + renderTaggedContentHtml(era) + '</div>';
+        }
+        if (!summary && !lyricsTranslation && (!sectionBlocks || !sectionBlocks.length) && !bg && !era) {
+            html += '<div class="placeholder" style="margin-top: 14vh;">暂无可展示内容</div>';
+        }
+        panel.innerHTML = html;
+    }
+
+    async function fetchInsight(artist, album, track) {
+        const key = cacheKey(artist, album, track);
+        const cached = insightCache[key];
+        if (cached && Date.now() - cached.ts < INSIGHT_CACHE_TTL_MS) {
+            return cached.data;
+        }
+        const params = new URLSearchParams({
+            artist: artist || "",
+            album: album || "",
+            track: track || ""
+        });
+        const resp = await fetch("/api/track-insight?" + params.toString());
+        if (!resp.ok) throw new Error("获取赏析失败");
+        const data = await resp.json();
+        let insight = null;
+        if (data && Array.isArray(data.insights) && data.insights.length > 0) {
+            insight = data.insights[0];
+        } else if (Array.isArray(data) && data.length > 0) {
+            insight = data[0];
+        }
+        insightCache[key] = {ts: Date.now(), data: insight};
+        return insight;
+    }
+
+    function enableLowEndTypographyIfNeeded() {
+        const qs = new URLSearchParams(window.location.search);
+        if (qs.get("lowEnd") === "1") {
+            document.body.classList.add("low-end");
+            try {
+                localStorage.setItem("lyricsLiveLowEnd", "1");
+            } catch (e) {
+            }
+            return;
+        }
+        if (qs.get("lowEnd") === "0") {
+            document.body.classList.remove("low-end");
+            try {
+                localStorage.removeItem("lyricsLiveLowEnd");
+            } catch (e) {
+            }
+            return;
+        }
+
+        try {
+            if (localStorage.getItem("lyricsLiveLowEnd") === "1") {
+                document.body.classList.add("low-end");
+                return;
+            }
+        } catch (e) {
+        }
+
+        const nav = window.navigator || {};
+        const ua = nav.userAgent || "";
+        const hardwareConcurrency = nav.hardwareConcurrency || 0;
+        const deviceMemory = nav.deviceMemory || 0;
+        const width = Math.max(window.innerWidth || 0, window.screen ? window.screen.width : 0);
+        const height = Math.max(window.innerHeight || 0, window.screen ? window.screen.height : 0);
+        const minSide = Math.min(width, height);
+        const maxSide = Math.max(width, height);
+        const isAndroid = /Android/i.test(ua);
+        const isTvLike = /(TV|AFT|BRAVIA|MiBOX|MiTV|SmartTV|GoogleTV|HbbTV)/i.test(ua);
+        const lowCpu = hardwareConcurrency > 0 && hardwareConcurrency <= 4;
+        const lowMem = deviceMemory > 0 && deviceMemory <= 2;
+        const tvLikeResolution = maxSide <= 1920 && minSide >= 600;
+        const likelyLandscape = width >= height;
+        const androidBoxLike = isAndroid && tvLikeResolution && likelyLandscape;
+
+        const androidTvLike = isAndroid && isTvLike && tvLikeResolution;
+        if (androidTvLike || androidBoxLike || lowCpu || lowMem) {
+            document.body.classList.add("low-end");
+        }
+    }
+
+    function parseLRC(lrcText) {
+        const lines = lrcText.split("\n");
+        const lrcData = [];
+        const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+
+        lines.forEach(function (line) {
+            const matches = [];
+            let match;
+            while ((match = timeRegex.exec(line)) !== null) {
+                matches.push(match);
+            }
+            timeRegex.lastIndex = 0;
+            const text = line.replace(timeRegex, "").trim();
+            if (!text || !matches.length) return;
+
+            // 支持一行多个时间标签，例如 [00:10.00][00:20.00]同一行歌词
+            matches.forEach(function (m) {
+                const minutes = parseInt(m[1], 10);
+                const seconds = parseInt(m[2], 10);
+                let milliseconds = 0;
+                if (m[3]) {
+                    let msText = m[3];
+                    while (msText.length < 3) msText += "0";
+                    milliseconds = parseInt(msText, 10);
+                }
+                lrcData.push({
+                    time: minutes * 60 + seconds + milliseconds / 1000,
+                    text: text
+                });
+            });
+        });
+
+        lrcData.sort(function (a, b) {
+            return a.time - b.time;
+        });
+        return lrcData;
+    }
+
+    function parseTaggedLyricLine(text) {
+        const clean = (text || "").replace(/\\n/g, "\n").trim();
+        const originalMatch = clean.match(/<original>([\s\S]*?)<(?:\/)?original>/i);
+        const translationMatch = clean.match(/<translation>([\s\S]*?)<(?:\/)?translation>/i);
+        if (!originalMatch && !translationMatch) {
+            return {
+                original: clean,
+                translation: "",
+                hasTag: false
+            };
+        }
+        return {
+            original: originalMatch ? originalMatch[1].trim() : "",
+            translation: translationMatch ? translationMatch[1].trim() : "",
+            hasTag: true
+        };
+    }
+
+    function parseTaggedLyricRows(text) {
+        const clean = (text || "").replace(/\\n/g, "\n");
+        const regex = /<(original|translation)>([\s\S]*?)<(?:\/)?\1>/gi;
+        const rows = [];
+        let matched = false;
+        let m;
+        while ((m = regex.exec(clean)) !== null) {
+            matched = true;
+            const tag = (m[1] || "").toLowerCase();
+            const content = (m[2] || "").trim();
+            if (tag === "original") {
+                rows.push({original: content, translation: ""});
+            } else if (tag === "translation") {
+                if (!rows.length) {
+                    rows.push({original: "", translation: content});
+                } else {
+                    rows[rows.length - 1].translation = content;
+                }
+            }
+        }
+        if (!matched) return null;
+        return rows;
+    }
+
+    function renderLRC(lrcData) {
+        const container = document.getElementById("lyricsContainer");
+        container.innerHTML = "";
+        const fragment = document.createDocumentFragment();
+        lyricsLines = [];
+        activeLyricIndex = -1;
+
+        lrcData.forEach(function (item, index) {
+            const line = document.createElement("div");
+            line.className = "line";
+            line.dataset.index = index;
+            const pair = parseTaggedLyricLine(item.text);
+            if (pair.hasTag) {
+                const originalEl = document.createElement("span");
+                originalEl.className = "line-original";
+                originalEl.textContent = pair.original || " ";
+                line.appendChild(originalEl);
+
+                if (pair.translation) {
+                    const translationEl = document.createElement("span");
+                    translationEl.className = "line-translation";
+                    translationEl.textContent = pair.translation;
+                    line.appendChild(translationEl);
+                }
+            } else {
+                line.textContent = pair.original || item.text;
+            }
+            lyricsLines.push(line);
+            fragment.appendChild(line);
+        });
+        container.appendChild(fragment);
+    }
+
+    function renderPlain(text) {
+        const container = document.getElementById("lyricsContainer");
+        container.innerHTML = "";
+        const taggedRows = parseTaggedLyricRows(text);
+        if (taggedRows && taggedRows.length) {
+            const fragment = document.createDocumentFragment();
+            taggedRows.forEach(function (row) {
+                const line = document.createElement("div");
+                line.className = "line";
+                line.style.opacity = "1";
+                const originalEl = document.createElement("span");
+                originalEl.className = "line-original";
+                originalEl.textContent = row.original || " ";
+                line.appendChild(originalEl);
+                if (row.translation) {
+                    const translationEl = document.createElement("span");
+                    translationEl.className = "line-translation";
+                    translationEl.textContent = row.translation;
+                    line.appendChild(translationEl);
+                }
+                fragment.appendChild(line);
+            });
+            container.appendChild(fragment);
+            return;
+        }
+
+        const line = document.createElement("div");
+        line.className = "line";
+        line.style.opacity = "1";
+        line.style.whiteSpace = "pre-wrap";
+        line.textContent = text || "暂无歌词";
+        container.appendChild(line);
+    }
+
+    function setTrackInfo(data, source) {
+        const title = document.getElementById("trackTitle");
+        const meta = document.getElementById("trackMeta");
+        const artist = data.artist || "";
+        const album = data.album || "";
+        const track = data.title || data.track || "未知曲目";
+        title.textContent = track;
+        meta.textContent = artist + (album ? " · " + album : "") + (source ? " · " + source : "");
+    }
+
+    async function syncInsightForCurrentTrack() {
+        const btn = document.getElementById("toggleInsightBtn");
+        if (!btn || !currentTrackInfo) return;
+        const artist = currentTrackInfo.artist || "";
+        const album = currentTrackInfo.album || "";
+        const track = currentTrackInfo.title || currentTrackInfo.track || "";
+        if (!artist || !track) {
+            currentInsight = null;
+            btn.style.display = "none";
+            setSplitMode(false);
+            return;
+        }
+        try {
+            currentInsight = await fetchInsight(artist, album, track);
+        } catch (e) {
+            currentInsight = null;
+        }
+        if (currentInsight) {
+            btn.style.display = "";
+            renderInsight(currentInsight);
+        } else {
+            btn.style.display = "none";
+            setSplitMode(false);
+            renderInsight(null);
+        }
+    }
+
+    function startProgress() {
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
+        if (trackDuration <= 0) return;
+        progressInterval = setInterval(function () {
+            currentPosition += 1;
+            if (currentPosition >= trackDuration) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }, 1000);
+    }
+
+    function startLyricSync() {
+        if (lyricSyncInterval) {
+            clearInterval(lyricSyncInterval);
+            lyricSyncInterval = null;
+        }
+        if (!currentLyricsData || !currentLyricsData.length) return;
+        lyricSyncInterval = setInterval(function () {
+            if (!currentLyricsData || !currentLyricsData.length) return;
+            let next = -1;
+            for (let i = 0; i < currentLyricsData.length; i++) {
+                if (currentLyricsData[i].time <= currentPosition) next = i;
+                else break;
+            }
+            if (next === activeLyricIndex) return;
+            if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
+                lyricsLines[activeLyricIndex].classList.remove("active");
+            }
+            activeLyricIndex = next;
+            if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
+                const line = lyricsLines[activeLyricIndex];
+                line.classList.add("active");
+                line.scrollIntoView({block: "center"});
+            }
+        }, 220);
+    }
+
+    async function fetchLyrics(artist, album, track) {
+        const key = cacheKey(artist, album, track);
+        const cached = lyricsCache[key];
+        if (cached && Date.now() - cached.ts < LYRICS_CACHE_TTL_MS) return cached.data;
+
+        const params = new URLSearchParams({
+            artist: artist || "",
+            album: album || "",
+            track: track || ""
+        });
+        const resp = await fetch("/api/track-lyrics?" + params.toString());
+        if (!resp.ok) throw new Error("获取歌词失败");
+        const data = await resp.json();
+        lyricsCache[key] = {ts: Date.now(), data: data};
+        return data;
+    }
+
+    async function loadLyricsForCurrentTrack(force) {
+        if (!currentTrackInfo) return;
+        const artist = currentTrackInfo.artist || "";
+        const album = currentTrackInfo.album || "";
+        const track = currentTrackInfo.title || currentTrackInfo.track || "";
+        if (!artist || !track) return;
+
+        const container = document.getElementById("lyricsContainer");
+        container.innerHTML = '<div class="placeholder">正在加载歌词...</div>';
+
+        try {
+            let data;
+            if (force) {
+                const params = new URLSearchParams({artist: artist, album: album, track: track, force: "true"});
+                const resp = await fetch("/api/track-lyrics?" + params.toString());
+                if (!resp.ok) throw new Error("刷新歌词失败");
+                data = await resp.json();
+                lyricsCache[cacheKey(artist, album, track)] = {ts: Date.now(), data: data};
+            } else {
+                data = await fetchLyrics(artist, album, track);
+            }
+
+            if (!data.lyrics) {
+                renderPlain("暂无歌词");
+                currentLyricsData = null;
+                return;
+            }
+
+            if (data.has_lrc) {
+                currentLyricsData = parseLRC(data.lyrics);
+                if (!currentLyricsData.length) {
+                    renderPlain(data.lyrics);
+                    return;
+                }
+                renderLRC(currentLyricsData);
+                startLyricSync();
+            } else {
+                currentLyricsData = null;
+                renderPlain(data.lyrics);
+                if (lyricSyncInterval) {
+                    clearInterval(lyricSyncInterval);
+                    lyricSyncInterval = null;
+                }
+            }
+        } catch (e) {
+            renderPlain("歌词加载失败，请稍后重试");
+        }
+    }
+
+    function connectWebSocket() {
+        const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+        ws = new WebSocket(protocol + window.location.host + "/ws");
+
+        ws.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            if (data.type === "now_playing") {
+                const prevKey = currentTrackInfo ? (currentTrackInfo.artist + "::" + (currentTrackInfo.title || currentTrackInfo.track || "")) : "";
+                const nextKey = (data.data.artist || "") + "::" + (data.data.title || data.data.track || "");
+                const changed = prevKey !== nextKey;
+                currentTrackInfo = data.data || {};
+                currentPosition = currentTrackInfo.position || 0;
+                trackDuration = currentTrackInfo.duration || 0;
+                setTrackInfo(currentTrackInfo, data.source || "");
+                startProgress();
+                if (changed) {
+                    loadLyricsForCurrentTrack(false);
+                    syncInsightForCurrentTrack();
+                }
+            } else if (data.type === "stop") {
+                currentTrackInfo = null;
+                document.getElementById("trackTitle").textContent = "等待播放中...";
+                document.getElementById("trackMeta").textContent = "暂无播放";
+                renderPlain("暂无歌词");
+                currentInsight = null;
+                renderInsight(null);
+                document.getElementById("toggleInsightBtn").style.display = "none";
+                setSplitMode(false);
+            }
+        };
+
+        ws.onclose = function () {
+            setTimeout(connectWebSocket, 3000);
+        };
+    }
+
+    function parseInitialTrackFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const artist = params.get("artist") || "";
+        const album = params.get("album") || "";
+        const track = params.get("track") || "";
+        const source = params.get("source") || "";
+        const position = parseInt(params.get("position") || "0", 10);
+        const duration = parseInt(params.get("duration") || "0", 10);
+        if (!artist || !track) return;
+
+        currentTrackInfo = {
+            artist: artist,
+            album: album,
+            title: track,
+            position: position,
+            duration: duration
+        };
+        currentPosition = position || 0;
+        trackDuration = duration || 0;
+        setTrackInfo(currentTrackInfo, source);
+        startProgress();
+        loadLyricsForCurrentTrack(false);
+        syncInsightForCurrentTrack();
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        enableLowEndTypographyIfNeeded();
+
+        document.getElementById("backBtn").addEventListener("click", function () {
+            window.location.href = "/";
+        });
+        document.getElementById("refreshLyricsBtn").addEventListener("click", function () {
+            loadLyricsForCurrentTrack(true);
+        });
+        document.getElementById("toggleInsightBtn").addEventListener("click", function () {
+            if (!currentInsight) return;
+            setSplitMode(!splitMode);
+            if (splitMode) {
+                renderInsight(currentInsight);
+            }
+        });
+        document.getElementById("lyricsContainer").addEventListener("click", function () {
+            setFocusedPanel("lyrics");
+        });
+        document.getElementById("insightPanel").addEventListener("click", function () {
+            setFocusedPanel("insight");
+        });
+
+        parseInitialTrackFromQuery();
+        renderInsight(null);
+        connectWebSocket();
+    });
+</script>
+</body>
+</html>
