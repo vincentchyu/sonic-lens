@@ -67,7 +67,7 @@ func (p *OllamaProvider) AnalyzeTrack(
 	ctx context.Context, req TrackAnalysisRequest,
 ) (*TrackAnalysisResult, error) {
 	startTime := time.Now()
-	prompt := buildTrackInsightUserPrompt(req)
+	prompt := buildTrackInsightMergedPrompt(req)
 
 	ollamaReq := &api.GenerateRequest{
 		Model:  p.model,
@@ -133,7 +133,7 @@ SUCCESS:
 // AnalyzeTrackStream 实现流式输出
 func (p *OllamaProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalysisRequest) (<-chan string, error) {
 	startTime := time.Now()
-	prompt := buildTrackInsightUserPrompt(req)
+	prompt := buildTrackInsightMergedPrompt(req)
 	ollamaReq := &api.GenerateRequest{
 		Model:  p.model,
 		Prompt: prompt,

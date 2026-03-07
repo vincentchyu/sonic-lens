@@ -32,7 +32,7 @@ ai:
   gemini:
     apiKey: ""                                  # 预留字段
     baseUrl: ""                                 # 预留字段
-    model: ""                                   # 预留字段
+    model: "gemini-3-flash-preview"             # 预留字段
 
   # 本地 Ollama 配置（已实现，使用前请先启动 Ollama 并拉取模型）
   ollama:

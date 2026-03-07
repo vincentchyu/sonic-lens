@@ -11,8 +11,14 @@
             --muted: #6b7280;
             --card: rgba(255, 255, 255, 0.42);
             --accent: #2563eb;
+            --accent-strong: #1d4ed8;
             --active-bg: rgba(37, 99, 235, 0.1);
             --glass-border: rgba(255, 255, 255, 0.55);
+            --progress-track: rgba(31, 41, 55, 0.12);
+            --progress-fill: linear-gradient(90deg, #2563eb 0%, #60a5fa 100%);
+            --progress-meta-bg: rgba(255, 255, 255, 0.9);
+            --progress-meta-border: rgba(15, 23, 42, 0.08);
+            --progress-meta-fg: #0f172a;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -22,8 +28,14 @@
                 --muted: #94a3b8;
                 --card: rgba(18, 24, 34, 0.42);
                 --accent: #60a5fa;
+                --accent-strong: #93c5fd;
                 --active-bg: rgba(96, 165, 250, 0.18);
                 --glass-border: rgba(148, 163, 184, 0.25);
+                --progress-track: rgba(148, 163, 184, 0.2);
+                --progress-fill: linear-gradient(90deg, #60a5fa 0%, #93c5fd 100%);
+                --progress-meta-bg: rgba(15, 23, 42, 0.78);
+                --progress-meta-border: rgba(148, 163, 184, 0.18);
+                --progress-meta-fg: #e2e8f0;
             }
         }
 
@@ -100,7 +112,7 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            padding: 16px;
+            padding: 16px 16px 28px;
             gap: 12px;
         }
 
@@ -150,18 +162,38 @@
         }
 
         .btn {
-            border: 1px solid rgba(127, 140, 141, 0.3);
-            background: transparent;
+            border: 1px solid rgba(127, 140, 141, 0.24);
+            background: rgba(255, 255, 255, 0.08);
             color: var(--fg);
-            border-radius: 8px;
-            padding: 8px 10px;
+            border-radius: 999px;
+            padding: 9px 12px;
             cursor: pointer;
             font-size: 0.85rem;
+            transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.2s ease;
         }
 
         .btn:hover {
             border-color: var(--accent);
             color: var(--accent);
+            background: rgba(255, 255, 255, 0.16);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: default;
+            transform: none;
+        }
+
+        .favorite-btn {
+            min-width: 88px;
+            font-weight: 600;
+        }
+
+        .favorite-btn.liked {
+            color: var(--accent-strong);
+            border-color: rgba(37, 99, 235, 0.28);
+            background: rgba(37, 99, 235, 0.12);
         }
 
         .lyrics {
@@ -399,6 +431,69 @@
             margin-top: 25vh;
             font-size: 1.05rem;
         }
+
+        .player-progress-shell {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .player-progress {
+            width: 100%;
+            height: 3px;
+            background: var(--progress-track);
+            overflow: hidden;
+        }
+
+        .player-progress-fill {
+            width: 0;
+            height: 100%;
+            background: var(--progress-fill);
+            box-shadow: 0 0 18px rgba(96, 165, 250, 0.42);
+            transition: width 0.35s ease;
+        }
+
+        .player-progress-meta {
+            position: absolute;
+            right: 12px;
+            bottom: 10px;
+            display: flex;
+            gap: 6px;
+            font-size: 0.74rem;
+            color: var(--progress-meta-fg);
+            letter-spacing: 0.04em;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--progress-meta-border);
+            background: var(--progress-meta-bg);
+            box-shadow: 0 8px 30px rgba(15, 23, 42, 0.12);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            white-space: nowrap;
+        }
+
+        .player-progress-shell:hover .player-progress-meta,
+        .player-progress-shell.progress-detail-visible .player-progress-meta {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .player-progress-hover-zone {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 64px;
+            z-index: 11;
+            background: transparent;
+        }
     </style>
 </head>
 <body>
@@ -414,6 +509,7 @@
             <div class="meta" id="trackMeta">连接中</div>
         </div>
         <div class="actions">
+            <button class="btn favorite-btn" id="favoriteBtn" disabled>☆ 收藏</button>
             <button class="btn" id="toggleInsightBtn" style="display:none;">赏析</button>
             <button class="btn" id="backBtn">返回看板</button>
             <button class="btn" id="refreshLyricsBtn">刷新歌词</button>
@@ -426,10 +522,21 @@
         <div class="insight panel" id="insightPanel"></div>
     </div>
 </div>
+<div class="player-progress-shell" aria-hidden="true">
+    <div class="player-progress">
+        <div class="player-progress-fill" id="playerProgressFill"></div>
+    </div>
+    <div class="player-progress-meta">
+        <span id="playerCurrentTime">00:00</span>
+        <span id="playerTotalTime">00:00</span>
+    </div>
+</div>
+<div class="player-progress-hover-zone" id="playerProgressHoverZone" aria-hidden="true"></div>
 
 <script>
     let ws = null;
     let currentTrackInfo = null;
+    let currentSource = "";
     let currentPosition = 0;
     let trackDuration = 0;
     let progressInterval = null;
@@ -443,6 +550,84 @@
     const insightCache = {};
     const LYRICS_CACHE_TTL_MS = 5 * 60 * 1000;
     const INSIGHT_CACHE_TTL_MS = 5 * 60 * 1000;
+    let progressDetailHideTimer = null;
+
+    function formatTime(seconds) {
+        const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+        const mins = Math.floor(safe / 60);
+        const secs = safe % 60;
+        return String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
+    }
+
+    function updateProgressDisplay() {
+        const fill = document.getElementById("playerProgressFill");
+        const current = document.getElementById("playerCurrentTime");
+        const total = document.getElementById("playerTotalTime");
+        if (!fill || !current || !total) return;
+
+        const percent = trackDuration > 0 ? Math.min((currentPosition / trackDuration) * 100, 100) : 0;
+        fill.style.width = percent + "%";
+        current.textContent = formatTime(currentPosition);
+        total.textContent = formatTime(trackDuration);
+    }
+
+    function setProgressDetailVisible(visible) {
+        const shell = document.querySelector(".player-progress-shell");
+        if (!shell) return;
+        shell.classList.toggle("progress-detail-visible", !!visible);
+    }
+
+    function scheduleProgressDetailHide() {
+        if (progressDetailHideTimer) {
+            clearTimeout(progressDetailHideTimer);
+        }
+        progressDetailHideTimer = setTimeout(function () {
+            setProgressDetailVisible(false);
+        }, 220);
+    }
+
+    function updateFavoriteButtonState(isLiked) {
+        const btn = document.getElementById("favoriteBtn");
+        if (!btn) return;
+        btn.disabled = !currentTrackInfo || !currentSource;
+        btn.classList.toggle("liked", !!isLiked);
+        btn.textContent = isLiked ? "★ 已收藏" : "☆ 收藏";
+        btn.title = isLiked ? "已添加到喜欢" : "添加到喜欢";
+    }
+
+    async function handleFavoriteButtonClick() {
+        if (!currentTrackInfo || !currentSource) return;
+        const btn = document.getElementById("favoriteBtn");
+        const isCurrentlyLiked = btn.classList.contains("liked");
+        if (isCurrentlyLiked) return;
+
+        updateFavoriteButtonState(true);
+        try {
+            const resp = await fetch("/api/favorite", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    artist: currentTrackInfo.artist,
+                    album: currentTrackInfo.album,
+                    track: currentTrackInfo.title || currentTrackInfo.track,
+                    source: currentSource,
+                    favorite: true
+                })
+            });
+            if (!resp.ok) throw new Error("收藏失败");
+            const data = await resp.json();
+            if (currentTrackInfo) {
+                currentTrackInfo.apple_music = !!data.apple_music;
+                currentTrackInfo.lastfm = !!data.lastfm;
+            }
+            updateFavoriteButtonState(!!data.apple_music);
+        } catch (e) {
+            updateFavoriteButtonState(false);
+            window.alert("收藏操作失败，请稍后重试");
+        }
+    }
 
     function cacheKey(artist, album, track) {
         return (artist || "") + "::" + (album || "") + "::" + (track || "");
@@ -906,9 +1091,11 @@
             clearInterval(progressInterval);
             progressInterval = null;
         }
+        updateProgressDisplay();
         if (trackDuration <= 0) return;
         progressInterval = setInterval(function () {
             currentPosition += 1;
+            updateProgressDisplay();
             if (currentPosition >= trackDuration) {
                 clearInterval(progressInterval);
                 progressInterval = null;
@@ -1019,9 +1206,11 @@
                 const nextKey = (data.data.artist || "") + "::" + (data.data.title || data.data.track || "");
                 const changed = prevKey !== nextKey;
                 currentTrackInfo = data.data || {};
+                currentSource = data.source || "";
                 currentPosition = currentTrackInfo.position || 0;
                 trackDuration = currentTrackInfo.duration || 0;
                 setTrackInfo(currentTrackInfo, data.source || "");
+                updateFavoriteButtonState(!!currentTrackInfo.apple_music);
                 startProgress();
                 if (changed) {
                     loadLyricsForCurrentTrack(false);
@@ -1029,6 +1218,9 @@
                 }
             } else if (data.type === "stop") {
                 currentTrackInfo = null;
+                currentSource = "";
+                currentPosition = 0;
+                trackDuration = 0;
                 document.getElementById("trackTitle").textContent = "等待播放中...";
                 document.getElementById("trackMeta").textContent = "暂无播放";
                 renderPlain("暂无歌词");
@@ -1036,6 +1228,8 @@
                 renderInsight(null);
                 document.getElementById("toggleInsightBtn").style.display = "none";
                 setSplitMode(false);
+                updateFavoriteButtonState(false);
+                updateProgressDisplay();
             }
         };
 
@@ -1058,12 +1252,16 @@
             artist: artist,
             album: album,
             title: track,
+            apple_music: false,
+            lastfm: false,
             position: position,
             duration: duration
         };
+        currentSource = source;
         currentPosition = position || 0;
         trackDuration = duration || 0;
         setTrackInfo(currentTrackInfo, source);
+        updateFavoriteButtonState(false);
         startProgress();
         loadLyricsForCurrentTrack(false);
         syncInsightForCurrentTrack();
@@ -1077,6 +1275,18 @@
         });
         document.getElementById("refreshLyricsBtn").addEventListener("click", function () {
             loadLyricsForCurrentTrack(true);
+        });
+        document.getElementById("favoriteBtn").addEventListener("click", handleFavoriteButtonClick);
+        const progressHoverZone = document.getElementById("playerProgressHoverZone");
+        progressHoverZone.addEventListener("mouseenter", function () {
+            if (progressDetailHideTimer) {
+                clearTimeout(progressDetailHideTimer);
+                progressDetailHideTimer = null;
+            }
+            setProgressDetailVisible(true);
+        });
+        progressHoverZone.addEventListener("mouseleave", function () {
+            scheduleProgressDetailHide();
         });
         document.getElementById("toggleInsightBtn").addEventListener("click", function () {
             if (!currentInsight) return;
@@ -1094,6 +1304,8 @@
 
         parseInitialTrackFromQuery();
         renderInsight(null);
+        updateProgressDisplay();
+        updateFavoriteButtonState(false);
         connectWebSocket();
     });
 </script>

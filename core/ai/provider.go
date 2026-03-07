@@ -57,7 +57,7 @@ func NewProviderByName(name string) (LLMProvider, error) {
 	case "openai":
 		return newOpenAIProviderFromConfigOrEnv(aiCfg.OpenAI)
 	case "gemini":
-		return nil, errors.New("Gemini Provider 暂未实现，请先使用 openai provider")
+		return newGeminiProvider(aiCfg.Gemini)
 	case "ollama":
 		return newOllamaProvider(aiCfg.Ollama)
 	case "doubao":

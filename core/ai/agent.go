@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json/v2"
+	"fmt"
 )
 
 /*
@@ -143,33 +144,16 @@ var (
 • 给出欣赏这首歌的建议视角
 
 ═══════════════════════════════════════════
-【输出格式 - 严格遵守】
-═══════════════════════════════════════════
-
-必须输出以下 JSON 结构，不要包含任何 Markdown 或自然语言：
-
-{
-  "lyrics_translation": "逐行双语对照结果（非中文歌曲）或原文（中文歌曲）",
-  "analysis_summary": "综合分析师的整体评价（200-300字）",
-  "analysis_by_section": {
-    "literary_analysis": "文学翻译家的深度解读（意象、修辞、叙事）",
-    "appreciate_analysis": "分段、句进行赏析和解读",
-    "musical_analysis": "乐评人的专业评价（风格、编曲、演唱）",
-    "cultural_context": "文化史学家的背景与时代分析",
-    "translation_notes": "翻译难点说明或语言特色分析"
-  },
-  "background_info": "创作背景信息",
-  "era_context": "时代文化语境",
-  "metadata": {
-    "analysis_depth": "深度分析",
-    "model_size": "模型id"
-  }
-}
-
-═══════════════════════════════════════════
 【重要约束】
 ═══════════════════════════════════════════
 
+【JSON Schema】
+{"type":"object","properties":{"lyrics_translation":{"type":"string","description":"必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"},"analysis_summary":{"type":"string"},"analysis_by_section":{"type":"object","properties":{"appreciate_analysis":{"type":"string","description":"分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"}},"required":["appreciate_analysis"],"additionalProperties":{"type":"string"}},"background_info":{"type":"string"},"era_context":{"type":"string"},"metadata":{"type":"object","additionalProperties":true}},"required":["lyrics_translation","analysis_summary","analysis_by_section"],"additionalProperties":false}
+
+【JSON 注解含义】
+{"lyrics_translation":"逐 行双语对照结果（非中文歌曲）或原文（中文歌曲）","analysis_summary":"综合分析师的整体评价（200-300字）","analysis_by_section":{"literary_analysis":"文学翻译家的深度解读（意象、修辞、叙事）","appreciate_analysis":"分段、句进行赏析和解读","musical_analysis":"乐评人的专业评价（风格、编曲、演唱）","cultural_context":"文化史学家的背景与时代分析","translation_notes":"翻译难点说明或语言特色分析"},"background_info":"创作背景信息","era_context":"时代文化语境","metadata":{"analysis_depth":"深度分析","model_size":"模型id"}}
+
+【JSON 重要约束清单】
 1. 只能输出 JSON，不要 Markdown 代码块标记
 2. 所有字符串使用 UTF-8 编码
 3. 如信息不足，在相关字段填入"背景信息有限"
@@ -186,57 +170,13 @@ var (
 - 不允许 JSON inside JSON
 
 请根据以下歌曲信息进行深度分析：`
-	trackInsightUserPromptJsonSchema = `{
-  "type": "object",
-  "properties": {
-    "lyrics_translation": {
-      "type": "string",
-      "description": "必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"
-    },
-    "analysis_summary": {
-      "type": "string"
-    },
-    "analysis_by_section": {
-      "type": "object",
-      "properties": {
-        "appreciate_analysis": {
-          "type": "string",
-          "description": "分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"
-        }
-      },
-      "required": ["appreciate_analysis"],
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
-    "background_info": {
-      "type": "string"
-    },
-    "era_context": {
-      "type": "string"
-    },
-    "metadata": {
-      "type": "object",
-      "additionalProperties": true
-    }
-  },
-  "required": [
-    "lyrics_translation",
-    "analysis_summary",
-    "analysis_by_section"
-  ],
-  "additionalProperties": false
-}`
+
+	trackInsightUserPromptJsonSchema = `{"type":"object","properties":{"lyrics_translation":{"type":"string","description":"必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"},"analysis_summary":{"type":"string"},"analysis_by_section":{"type":"object","properties":{"appreciate_analysis":{"type":"string","description":"分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"}},"required":["appreciate_analysis"],"additionalProperties":{"type":"string"}},"background_info":{"type":"string"},"era_context":{"type":"string"},"metadata":{"type":"object","additionalProperties":true}},"required":["lyrics_translation","analysis_summary","analysis_by_section"],"additionalProperties":false}`
 )
 
 // buildTrackInsightSystemPrompt 提供与 Ollama 一致的系统提示词
-func buildTrackInsightSystemPrompt(feedbackContext string) string {
-	feedbackSection := ""
-	if feedbackContext != "" {
-		feedbackSection = trackInsightSystemPromptFeedbackSectionFmt1 + feedbackContext + trackInsightSystemPromptFeedbackSectionFmt2
-	}
-
-	return trackInsightSystemPromptFmt1 + feedbackSection + trackInsightSystemPromptFmt2
+func buildTrackInsightSystemPrompt() string {
+	return "系统提示：\n" + trackInsightSystemPromptFmt1 + trackInsightSystemPromptFmt2 + "\n"
 }
 
 // buildTrackInsightUserPrompt 格式化用户输入数据
@@ -250,11 +190,18 @@ func buildTrackInsightUserPrompt(req TrackAnalysisRequest) string {
 		"lang_target": req.LangTarget,
 	}
 	userPromptBytes, _ := json.Marshal(userPromptData)
-	return "系统提示：\n" + buildTrackInsightSystemPrompt("") + "\n\n输入数据（JSON）：\n" +
-		string(userPromptBytes) +
-		"\n\n请严格按照如下 JSON Schema 输出解析结果：" +
-		trackInsightUserPromptJsonSchema +
-		"\n\n注意：只能输出 JSON，不要 Markdown 或自然语言解释。"
+	str := fmt.Sprintf("输入数据（JSON）：\n%s\n请严格按照【重要约束】输出解析结果\n", userPromptBytes)
+
+	if req.FeedbackContext != "" {
+		feedbackSection := trackInsightSystemPromptFeedbackSectionFmt1 + req.FeedbackContext + trackInsightSystemPromptFeedbackSectionFmt2
+		str = str + feedbackSection
+	}
+
+	return str
+}
+
+func buildTrackInsightMergedPrompt(req TrackAnalysisRequest) string {
+	return buildTrackInsightSystemPrompt() + buildTrackInsightUserPrompt(req)
 }
 
 /*

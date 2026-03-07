@@ -60,7 +60,7 @@ func (p *DoubaoProvider) AnalyzeTrack(
 			{
 				Role: model.ChatMessageRoleSystem,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightSystemPrompt(req.FeedbackContext)),
+					StringValue: volcengine.String(buildTrackInsightSystemPrompt()),
 				},
 			},
 			{
@@ -144,7 +144,7 @@ func (p *DoubaoProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalys
 			{
 				Role: model.ChatMessageRoleSystem,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightSystemPrompt(req.FeedbackContext)),
+					StringValue: volcengine.String(buildTrackInsightSystemPrompt()),
 				},
 			},
 			{
