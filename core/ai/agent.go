@@ -147,13 +147,7 @@ var (
 【重要约束】
 ═══════════════════════════════════════════
 
-【JSON Schema】
-{"type":"object","properties":{"lyrics_translation":{"type":"string","description":"必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"},"analysis_summary":{"type":"string"},"analysis_by_section":{"type":"object","properties":{"appreciate_analysis":{"type":"string","description":"分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"}},"required":["appreciate_analysis"],"additionalProperties":{"type":"string"}},"background_info":{"type":"string"},"era_context":{"type":"string"},"metadata":{"type":"object","additionalProperties":true}},"required":["lyrics_translation","analysis_summary","analysis_by_section"],"additionalProperties":false}
-
-【JSON 注解含义】
-{"lyrics_translation":"逐 行双语对照结果（非中文歌曲）或原文（中文歌曲）","analysis_summary":"综合分析师的整体评价（200-300字）","analysis_by_section":{"literary_analysis":"文学翻译家的深度解读（意象、修辞、叙事）","appreciate_analysis":"分段、句进行赏析和解读","musical_analysis":"乐评人的专业评价（风格、编曲、演唱）","cultural_context":"文化史学家的背景与时代分析","translation_notes":"翻译难点说明或语言特色分析"},"background_info":"创作背景信息","era_context":"时代文化语境","metadata":{"analysis_depth":"深度分析","model_size":"模型id"}}
-
-【JSON 重要约束清单】
+【约束清单】
 1. 只能输出 JSON，不要 Markdown 代码块标记
 2. 所有字符串使用 UTF-8 编码
 3. 如信息不足，在相关字段填入"背景信息有限"
@@ -162,21 +156,89 @@ var (
 6. 不要输出任何思考过程，只输出最终 JSON
 
 【标签输出规则】
-- 所有歌词标签必须直接输出为 XML 标签：<original> <translation> <explain>
+- 所有歌词标签必须直接输出标签：<original> <translation> <explain>
 - 严禁使用 Unicode 转义（如 \u003c \u003e）
 - 严禁将包含标签的内容作为 JSON 字符串再嵌套
 - lyrics_translation 和 analysis_by_section.appreciate_analysis 必须为纯文本字段
 - 不允许 Markdown 代码块
 - 不允许 JSON inside JSON
+`
 
+	trackInsightSystemPromptFmt3 = `
+【JSON Schema】
+{"type":"object","properties":{"lyrics_translation":{"type":"string","description":"必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"},"analysis_summary":{"type":"string"},"analysis_by_section":{"type":"object","properties":{"appreciate_analysis":{"type":"string","description":"分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"}},"required":["appreciate_analysis"],"additionalProperties":{"type":"string"}},"background_info":{"type":"string"},"era_context":{"type":"string"},"metadata":{"type":"object","additionalProperties":true}},"required":["lyrics_translation","analysis_summary","analysis_by_section"],"additionalProperties":false}
+
+【JSON 注解含义】
+{"lyrics_translation":"逐 行双语对照结果（非中文歌曲）或原文（中文歌曲）","analysis_summary":"综合分析师的整体评价（200-300字）","analysis_by_section":{"literary_analysis":"文学翻译家的深度解读（意象、修辞、叙事）","appreciate_analysis":"分段、句进行赏析和解读","musical_analysis":"乐评人的专业评价（风格、编曲、演唱）","cultural_context":"文化史学家的背景与时代分析","translation_notes":"翻译难点说明或语言特色分析"},"background_info":"创作背景信息","era_context":"时代文化语境","metadata":{"analysis_depth":"深度分析","model_size":"模型id"}}
+`
+	trackInsightSystemPromptFmt4 = `
 请根据以下歌曲信息进行深度分析：`
-
-	trackInsightUserPromptJsonSchema = `{"type":"object","properties":{"lyrics_translation":{"type":"string","description":"必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义"},"analysis_summary":{"type":"string"},"analysis_by_section":{"type":"object","properties":{"appreciate_analysis":{"type":"string","description":"分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义"}},"required":["appreciate_analysis"],"additionalProperties":{"type":"string"}},"background_info":{"type":"string"},"era_context":{"type":"string"},"metadata":{"type":"object","additionalProperties":true}},"required":["lyrics_translation","analysis_summary","analysis_by_section"],"additionalProperties":false}`
 )
+
+// GetTrackInsightSchema 返回用于歌曲分析的结构化 JSON Schema 对象
+func GetTrackInsightSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"lyrics_translation": map[string]any{
+				"type":        "string",
+				"description": "逐行双语对照结果（非中文歌曲）或原文（中文歌曲）。必须为纯文本，包含 <original> <translation> 标签，禁止 JSON 字符串包裹，禁止 \\u003c 转义",
+			},
+			"analysis_summary": map[string]any{
+				"type":        "string",
+				"description": "综合分析师的整体评价",
+			},
+			"analysis_by_section": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"appreciate_analysis": map[string]any{
+						"type":        "string",
+						"description": "分段赏析，必须包含完整歌词原文标签，使用 <original> <translation> <explain>，不得转义",
+					},
+					"literary_analysis": map[string]any{
+						"type":        "string",
+						"description": "文学翻译家的深度解读（意象、修辞、叙事）",
+					},
+					"musical_analysis": map[string]any{
+						"type":        "string",
+						"description": "乐评人的专业评价（风格、编曲、演唱",
+					},
+					"cultural_context": map[string]any{
+						"type":        "string",
+						"description": "文化史学家的背景与时代分析",
+					},
+					"translation_notes": map[string]any{
+						"type":        "string",
+						"description": "翻译难点说明或语言特色分析",
+					},
+				},
+				"required":             []string{"appreciate_analysis"},
+				"additionalProperties": map[string]any{"type": "string"},
+			},
+			"background_info": map[string]any{
+				"type":        "string",
+				"description": "创作背景信息",
+			},
+			"era_context": map[string]any{
+				"type":        "string",
+				"description": "时代文化语境",
+			},
+			"metadata": map[string]any{
+				"type":                 "object",
+				"additionalProperties": true,
+			},
+		},
+		"required":             []string{"lyrics_translation", "analysis_summary", "analysis_by_section"},
+		"additionalProperties": false,
+	}
+}
 
 // buildTrackInsightSystemPrompt 提供与 Ollama 一致的系统提示词
 func buildTrackInsightSystemPrompt() string {
-	return "系统提示：\n" + trackInsightSystemPromptFmt1 + trackInsightSystemPromptFmt2 + "\n"
+	return "系统提示：\n" + trackInsightSystemPromptFmt1 + trackInsightSystemPromptFmt2 + trackInsightSystemPromptFmt4 + "\n"
+}
+func buildTrackInsightSystemPromptAll() string {
+	return "系统提示：\n" + trackInsightSystemPromptFmt1 + trackInsightSystemPromptFmt2 + trackInsightSystemPromptFmt3 + trackInsightSystemPromptFmt4 + "\n"
 }
 
 // buildTrackInsightUserPrompt 格式化用户输入数据
@@ -201,9 +263,20 @@ func buildTrackInsightUserPrompt(req TrackAnalysisRequest) string {
 }
 
 func buildTrackInsightMergedPrompt(req TrackAnalysisRequest) string {
-	return buildTrackInsightSystemPrompt() + buildTrackInsightUserPrompt(req)
+	return buildTrackInsightSystemPromptAll() + buildTrackInsightUserPrompt(req)
 }
 
 /*
+	AlbumInsight
+	TODO：
+		根据专辑中歌曲的顺序，
+		搜索当前专辑下全部的音眸分析，每首歌只保留最高分或者最新的分析数据，
+		汇总大模型上下文数据，专辑分析
+		聚焦（时代意义、文学解读、作者动机、哲学反思）
+		缺少专辑表、专辑歌曲关联表（可以在track中得到，使用trackId进行关联）、专辑分析表（专辑id关联）
+*/
+
+/*
 	xxInsight
+	规划：
 */

@@ -60,7 +60,7 @@ func (p *DoubaoProvider) AnalyzeTrack(
 			{
 				Role: model.ChatMessageRoleSystem,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightSystemPrompt()),
+					StringValue: volcengine.String(buildTrackInsightSystemPromptAll()),
 				},
 			},
 			{
@@ -71,8 +71,17 @@ func (p *DoubaoProvider) AnalyzeTrack(
 			},
 		},
 		Thinking: &model.Thinking{
-			Type: model.ThinkingTypeEnabled, // 禁用深度思考以加快响应
+			Type: model.ThinkingTypeAuto,
 		},
+		/*ResponseFormat: &model.ResponseFormat{
+			Type: model.ResponseFormatJsonObject,
+			JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
+				Name:        "track_analysis",
+				Description: "Deep analysis of a music track including lyrics translation and literary appreciation.",
+				Schema:      GetTrackInsightSchema(),
+				Strict:      true,
+			},
+		},*/
 	}
 
 	// 打印请求体
@@ -81,18 +90,45 @@ func (p *DoubaoProvider) AnalyzeTrack(
 
 	// 调用豆包 API
 	resp, err := p.client.CreateChatCompletion(ctx, dReq)
-
 	// 异步保存调用流水
 	var respJSON string
 	if err == nil {
 		rb, _ := json.Marshal(resp)
 		respJSON = string(rb)
 	}
-
 	if err != nil {
 		log.Error(ctx, "调用豆包 API 失败", zap.Error(err))
 		return nil, err
 	}
+
+	/*responsesRequest := responses.ResponsesRequest{
+		Input:              nil,
+		Model:              "",
+		MaxOutputTokens:    nil,
+		PreviousResponseId: nil,
+		Thinking:           nil,
+		ServiceTier:        nil,
+		Store:              nil,
+		Stream:             nil,
+		Temperature:        nil,
+		Tools:              nil,
+		TopP:               nil,
+		Instructions:       nil,
+		Include:            nil,
+		Caching:            nil,
+		Text:               nil,
+		ExpireAt:           nil,
+		ToolChoice:         nil,
+		ParallelToolCalls:  nil,
+		MaxToolCalls:       nil,
+		Reasoning:          nil,
+		ContextManagement:  nil,
+	}
+	createResponses, err := p.client.CreateResponses(ctx, &responsesRequest)
+	if err != nil {
+		log.Error(ctx, "调用豆包 API 失败", zap.Error(err))
+		return nil, err
+	}*/
 
 	// 打印响应体
 	log.Debug(ctx, "豆包响应体", zap.String("body", respJSON))
@@ -144,7 +180,7 @@ func (p *DoubaoProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalys
 			{
 				Role: model.ChatMessageRoleSystem,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightSystemPrompt()),
+					StringValue: volcengine.String(buildTrackInsightSystemPromptAll()),
 				},
 			},
 			{

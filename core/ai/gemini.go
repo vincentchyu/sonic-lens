@@ -72,9 +72,11 @@ func (p *GeminiProvider) AnalyzeTrack(
 			ThinkingConfig: &genai.ThinkingConfig{
 				IncludeThoughts: true,
 				ThinkingBudget:  nil,
-				ThinkingLevel:   genai.ThinkingLevelHigh,
+				ThinkingLevel:   genai.ThinkingLevelMedium,
 			},
-			SystemInstruction: genai.NewContentFromText(insightSystemPrompt, genai.RoleUser),
+			SystemInstruction:  genai.NewContentFromText(insightSystemPrompt, genai.RoleUser),
+			ResponseMIMEType:   "application/json",
+			ResponseJsonSchema: GetTrackInsightSchema(),
 		},
 	)
 	if err != nil {

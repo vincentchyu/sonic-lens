@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -116,6 +117,15 @@ func (s *serviceImpl) GetInsightOnly(ctx context.Context, artist, album, track s
 			TotalScore:   scoreMap[ins.ID],
 		}
 	}
+	// 排序：高分优先；同分时，按创建时间降序（最新优先）
+	sort.Slice(
+		result, func(i, j int) bool {
+			if result[i].TotalScore != result[j].TotalScore {
+				return result[i].TotalScore > result[j].TotalScore
+			}
+			return result[i].CreatedAt.After(result[j].CreatedAt)
+		},
+	)
 	return result, nil
 }
 
@@ -481,7 +491,9 @@ func detectLanguage(text string) string {
 }
 
 // GetAllInsights 分页获取所有解析记录
-func (s *serviceImpl) GetAllInsights(ctx context.Context, limit, offset int, keyword string) ([]*model.TrackInsight, int64, error) {
+func (s *serviceImpl) GetAllInsights(ctx context.Context, limit, offset int, keyword string) (
+	[]*model.TrackInsight, int64, error,
+) {
 	return model.GetAllTrackInsights(ctx, limit, offset, keyword)
 }
 
