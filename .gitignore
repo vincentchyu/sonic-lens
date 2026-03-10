@@ -8,7 +8,7 @@
 /.tmp/
 /shell/bin/nowplaying-cli-mac
 /venv/
-internal/model/ddl
+internal/model/sql/
 frontend/node_modules
 /node_modules/
 /config/config.yaml

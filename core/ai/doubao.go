@@ -71,7 +71,7 @@ func (p *DoubaoProvider) AnalyzeTrack(
 			},
 		},
 		Thinking: &model.Thinking{
-			Type: model.ThinkingTypeAuto,
+			Type: model.ThinkingTypeEnabled,
 		},
 		/*ResponseFormat: &model.ResponseFormat{
 			Type: model.ResponseFormatJsonObject,

@@ -83,6 +83,7 @@ type TrackPlayRecord struct {
 	AlbumArtist   string    `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
 	Track         string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
 	Album         string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
+	AlbumID       int64     `gorm:"column:album_id;type:bigint;default:0;index:idx_track_play_records_album_id" json:"album_id"`
 	Duration      int64     `gorm:"column:duration;type:int" json:"duration"`
 	PlayTime      time.Time `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"play_time"`
 	Scrobbled     bool      `gorm:"column:scrobbled;type:tinyint(1);not null;default:0;index:idx_track_play_records_scrobbled" json:"scrobbled"`
@@ -113,7 +114,29 @@ func InsertTrackPlayRecord(ctx context.Context, record *TrackPlayRecord) error {
 		record.PlayTime = time.Now()
 	}
 
+	// 自动填充 AlbumID
+	if record.AlbumID == 0 {
+		record.AlbumID = getAlbumIDByTrackInfo(ctx, record.Artist, record.Album, record.Track)
+	}
+
 	return GetDB().WithContext(ctx).Create(record).Error
+}
+
+// getAlbumIDByTrackInfo 通过 Track -> TrackAlbum 关联获取 AlbumID
+func getAlbumIDByTrackInfo(ctx context.Context, artist, album, track string) int64 {
+	var trackObj Track
+	err := GetDB().WithContext(ctx).Where("artist = ? AND album = ? AND track = ?", artist, album, track).First(&trackObj).Error
+	if err != nil {
+		return 0
+	}
+
+	// 从 TrackAlbum 获取 album_id
+	var trackAlbum TrackAlbum
+	err = GetDB().WithContext(ctx).Where("track_id = ?", trackObj.ID).First(&trackAlbum).Error
+	if err != nil {
+		return 0
+	}
+	return trackAlbum.AlbumID
 }
 
 func UpdateScrobbledStatus(ctx context.Context, id int64, scrobbled bool) error {
@@ -243,8 +266,8 @@ func GetPlayCountsBySource(ctx context.Context) (map[string]int64, error) {
 	return sourceCounts, nil
 }
 
-// GetTopAlbumsByPlayCount 获取按播放次数统计的热门专辑
 type TopAlbum struct {
+	AlbumID   int64  `json:"album_id"`
 	Album     string `json:"album"`
 	Artist    string `json:"artist"`
 	PlayCount int    `json:"play_count"`
@@ -256,7 +279,12 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 		return statRows, nil
 	}
 
-	var result []*TopAlbum
+	type topAlbumRow struct {
+		Album     string
+		Artist    string
+		PlayCount int
+	}
+	var rows []topAlbumRow
 
 	// 计算时间范围
 	var startTime time.Time
@@ -276,10 +304,27 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 		Group("album").
 		Order("play_count DESC").
 		Limit(limit).
-		Find(&result).Error
+		Find(&rows).Error
 
 	if err != nil {
 		return nil, err
 	}
+
+	result := make([]*TopAlbum, 0, len(rows))
+	for _, row := range rows {
+		var albumObj Album
+		albumID := int64(0)
+		if err := GetDB().WithContext(ctx).Where("name = ? AND artist = ?", row.Album, row.Artist).First(&albumObj).Error; err == nil {
+			albumID = albumObj.ID
+		}
+
+		result = append(result, &TopAlbum{
+			AlbumID:   albumID,
+			Album:     row.Album,
+			Artist:    row.Artist,
+			PlayCount: row.PlayCount,
+		})
+	}
+
 	return result, nil
 }

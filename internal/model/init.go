@@ -63,6 +63,10 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err = GlobalDBForSqlLite.AutoMigrate(&LLMCallLog{}); err != nil {
 			return err
 		}
+		// Auto migrate MusicBrainz related tables
+		if err = GlobalDBForSqlLite.AutoMigrate(&Album{}, &TrackAlbum{}, &ReleaseMB{}, &AlbumReleaseMB{}); err != nil {
+			return err
+		}
 	case string(common.DatabaseTypeMySQL):
 		// Open MySQL database with custom logger
 		GlobalDBForMysql, err = gorm.Open(
@@ -95,6 +99,10 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			}
 			// Auto migrate the schema for LLM call log table
 			if err = GlobalDBForMysql.AutoMigrate(&LLMCallLog{}); err != nil {
+				return err
+			}
+			// Auto migrate MusicBrainz related tables
+			if err = GlobalDBForMysql.AutoMigrate(&Album{}, &TrackAlbum{}, &ReleaseMB{}, &AlbumReleaseMB{}); err != nil {
 				return err
 			}
 		}

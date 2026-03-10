@@ -24,6 +24,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/internal/logic/analysis"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
+	"github.com/vincentchyu/sonic-lens/internal/logic/musicbrainz"
 	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
@@ -232,7 +233,30 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			c.JSON(http.StatusOK, record)
+			// 通过 TrackAlbum 查询 album_id
+			albumID := int64(0)
+			if record.ID > 0 {
+				var ta model.TrackAlbum
+				if err := model.GetDB().WithContext(c.Request.Context()).Where("track_id = ?", record.ID).First(&ta).Error; err == nil {
+					albumID = ta.AlbumID
+				}
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"id":                 record.ID,
+				"artist":             record.Artist,
+				"album":              record.Album,
+				"track":              record.Track,
+				"play_count":         record.PlayCount,
+				"album_id":           albumID,
+				"duration":           record.Duration,
+				"track_number":       record.TrackNumber,
+				"genre":              record.Genre,
+				"is_apple_music_fav": record.IsAppleMusicFav,
+				"is_last_fm_fav":     record.IsLastFmFav,
+				"source":             record.Source,
+				"updated_at":         record.UpdatedAt,
+			})
 		},
 	)
 
@@ -608,6 +632,69 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	// --- MusicBrainz 相关接口 ---
+
+	// 1. 搜索补全（初选候选）
+	r.GET("/api/musicbrainz/search-releases/:album_id", func(c *gin.Context) {
+		albumID, _ := strconv.ParseInt(c.Param("album_id"), 10, 64)
+		if albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+			return
+		}
+		if err := musicbrainz.SearchAndCacheReleases(c.Request.Context(), albumID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// 获取已缓存的候选结果
+	r.GET("/api/musicbrainz/candidates/:album_id", func(c *gin.Context) {
+		albumID, _ := strconv.ParseInt(c.Param("album_id"), 10, 64)
+		if albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+			return
+		}
+		candidates, err := model.GetReleasesByAlbumID(c.Request.Context(), albumID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, candidates)
+	})
+
+	// 2. 确认关联（用户选定 MBID）
+	r.POST("/api/musicbrainz/link-album", func(c *gin.Context) {
+		var req struct {
+			AlbumID     int64  `json:"album_id"`
+			ReleaseMBID int64  `json:"release_mb_id"`
+			MBID        string `json:"mbid"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "params error"})
+			return
+		}
+		if err := model.LinkAlbumToMBID(c.Request.Context(), req.AlbumID, req.ReleaseMBID, req.MBID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// 3. 深度维护与轨道修正（精选）
+	r.POST("/api/musicbrainz/deep-maintenance/:album_id", func(c *gin.Context) {
+		albumID, _ := strconv.ParseInt(c.Param("album_id"), 10, 64)
+		if albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+			return
+		}
+		if err := musicbrainz.DeepingMaintenance(c.Request.Context(), albumID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
 	// Generate music preference report
 	musicAnalysisService := analysis.NewMusicAnalysisService()
 
@@ -777,6 +864,50 @@ func setupRouter(name string) *gin.Engine {
 			}
 
 			c.JSON(http.StatusOK, artists)
+		},
+	)
+	// 获取专辑详情（含歌曲列表）
+	r.GET(
+		"/api/albums/:id", func(c *gin.Context) {
+			idStr := c.Param("id")
+			albumID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的专辑 ID"})
+				return
+			}
+
+			detail, err := model.GetAlbumWithTracks(c.Request.Context(), albumID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, detail)
+		},
+	)
+
+	// 解除 TrackAlbum 关联（人工修复用）
+	r.POST(
+		"/api/track-album/unlink", func(c *gin.Context) {
+			var req struct {
+				TrackID int64 `json:"track_id"`
+				AlbumID int64 `json:"album_id"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+				return
+			}
+			if req.TrackID <= 0 || req.AlbumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "track_id and album_id are required"})
+				return
+			}
+
+			// 删除关联记录
+			if err := model.GetDB().WithContext(c.Request.Context()).Where("track_id = ? AND album_id = ?", req.TrackID, req.AlbumID).Delete(&model.TrackAlbum{}).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		},
 	)
 

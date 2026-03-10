@@ -12,6 +12,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/cmd"
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/musicbrainz"
 	"github.com/vincentchyu/sonic-lens/core/redis"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/cache"
@@ -71,7 +72,8 @@ func initServer() error {
 
 	// Initialize Redis
 	redis.InitRedis(config.ConfigObj.Redis, redisLogger)
-
+	// Initialize Musicbrainz
+	musicbrainz.InitClient()
 	// Initialize database
 	if err := model.InitDB(config.ConfigObj.Database.Path, dbLogger); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -95,8 +97,10 @@ func initServer() error {
 
 	fmt.Println("system exiting")
 	defer func() {
+		ctx := context.Background()
 		cancelFuncCacheInitializeGenreCache()
-		err := telemetry.Shutdown(context.Background())
+		musicbrainz.Close(ctx)
+		err := telemetry.Shutdown(ctx)
 		if err != nil {
 			panic(err)
 		}

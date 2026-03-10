@@ -63,6 +63,7 @@ func (TopArtistStat) TableName() string {
 type TopAlbumStat struct {
 	ID         int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	PeriodDays int       `gorm:"column:period_days;type:int;not null" json:"period_days"`
+	AlbumID    int64     `gorm:"column:album_id;type:bigint;index" json:"album_id"` // 新增关联
 	Album      string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
 	Artist     string    `gorm:"column:artist;type:varchar(255);default:''" json:"artist"`
 	PlayCount  int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
@@ -194,7 +195,7 @@ func EnsureDashboardStatSchema(ctx context.Context) error {
 		return err
 	}
 	if err := ensureTableAndColumns(
-		migrator, &TopAlbumStat{}, []string{"ID", "PeriodDays", "Album", "Artist", "PlayCount", "Rank", "UpdatedAt"},
+		migrator, &TopAlbumStat{}, []string{"ID", "PeriodDays", "AlbumID", "Album", "Artist", "PlayCount", "Rank", "UpdatedAt"},
 	); err != nil {
 		return err
 	}
@@ -517,6 +518,7 @@ func refreshTopArtistStats(tx *gorm.DB, topN int) error {
 
 func refreshTopAlbumStats(tx *gorm.DB, topN int) error {
 	type topAlbumRow struct {
+		AlbumID   int64
 		Album     string
 		Artist    string
 		PlayCount int64
@@ -528,8 +530,9 @@ func refreshTopAlbumStats(tx *gorm.DB, topN int) error {
 		var rows []topAlbumRow
 		if err := tx.Model(&TrackPlayRecord{}).
 			Where("play_time >= ?", startTime).
-			Select("album, MIN(artist) as artist, COUNT(*) as play_count").
-			Group("album").
+			Select("album_id, MIN(album) as album, MIN(artist) as artist, COUNT(*) as play_count").
+			Group("album_id").
+			Having("album_id > 0").
 			Order("play_count DESC").
 			Limit(topN).
 			Find(&rows).Error; err != nil {
@@ -545,13 +548,11 @@ func refreshTopAlbumStats(tx *gorm.DB, topN int) error {
 
 		items := make([]TopAlbumStat, 0, len(rows))
 		for i, row := range rows {
-			if row.Album == "" {
-				continue
-			}
 			items = append(
 				items,
 				TopAlbumStat{
 					PeriodDays: days,
+					AlbumID:    row.AlbumID,
 					Album:      row.Album,
 					Artist:     row.Artist,
 					PlayCount:  row.PlayCount,
@@ -967,6 +968,7 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 		result = append(
 			result,
 			&TopAlbum{
+				AlbumID:   row.AlbumID,
 				Album:     row.Album,
 				Artist:    row.Artist,
 				PlayCount: int(row.PlayCount),

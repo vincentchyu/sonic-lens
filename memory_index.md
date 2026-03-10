@@ -1,5 +1,11 @@
 # 记忆索引
 
+## 2026-03-09
+
+- **日期**: 2026-03-09
+    - **特性摘要**: 专辑管理系统与 MusicBrainz 深度集成，实现数据精准补全、轨道序号校正及详情页样式重构
+    - **链接**: [专辑管理与 MusicBrainz 深度集成特性清单](memory/2026-03-09/album_and_musicbrainz_integration_feature_manifest.md)
+
 ## 2026-02-21
 
 - **日期**: 2026-02-21

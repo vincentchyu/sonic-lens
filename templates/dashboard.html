@@ -1615,6 +1615,16 @@
             max-height: 85vh;
         }
 
+        /* 专辑详情模态框：与歌曲详情保持一致的风格 */
+        #albumDetailsModal .modal-content {
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15);
+        }
+
         #trackDetailsModal .modal-header {
             flex-shrink: 0;
         }
@@ -1724,12 +1734,14 @@
             color: var(--text-secondary);
             font-size: 0.9rem;
             font-style: italic;
+            white-space: pre-wrap;
         }
 
         .lyrics-translated {
             color: var(--primary-color);
             font-weight: 500;
             margin-top: 2px;
+            white-space: pre-wrap;
         }
 
         .analysis-text {
@@ -3092,8 +3104,8 @@
               <div style="font-size: 12px; line-height: 1.8;">`;
                 lyrics.forEach(item => {
                     html += `<div style="margin-bottom: 8px;">
-                <div style="opacity: 0.7; font-style: italic;">${item.original}</div>
-                ${item.translation ? `<div style="font-weight: 500;">${item.translation}</div>` : ''}
+                <div style="opacity: 0.7; font-style: italic; white-space: pre-wrap;">${item.original}</div>
+                ${item.translation ? `<div style="font-weight: 500; white-space: pre-wrap;">${item.translation}</div>` : ''}
               </div>`;
                 });
                 html += `</div></div>`;
@@ -3142,8 +3154,8 @@
                                 }
                                 group.items.forEach(item => {
                                     html += `<div style="margin-bottom: 4px; font-size: 11px;">
-                                <div style="opacity: 0.7; font-style: italic;">${item.original}</div>
-                                ${item.translation ? `<div style="font-weight: 500;">${item.translation}</div>` : ''}
+                                <div style="opacity: 0.7; font-style: italic; white-space: pre-wrap;">${item.original}</div>
+                                ${item.translation ? `<div style="font-weight: 500; white-space: pre-wrap;">${item.translation}</div>` : ''}
                               </div>`;
                                 });
                                 if (group.explain) {
@@ -3168,14 +3180,14 @@
         if (insight.background_info && insight.background_info.length > 5) {
             html += `<div style="margin-bottom: 20px;">
             <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 10px 0; opacity: 0.9;">🎨 创作背景</h3>
-            <div style="font-size: 12px; line-height: 1.8;">${insight.background_info}</div>
+            <div style="font-size: 12px; line-height: 1.8; white-space: pre-wrap;">${insight.background_info.replace(/\\n/g, '\n')}</div>
           </div>`;
         }
 
         if (insight.era_context) {
             html += `<div style="margin-bottom: 16px;">
             <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 10px 0; opacity: 0.9;">🌍 时代语境</h3>
-            <div style="font-size: 12px; line-height: 1.8;">${insight.era_context}</div>
+            <div style="font-size: 12px; line-height: 1.8; white-space: pre-wrap;">${insight.era_context.replace(/\\n/g, '\n')}</div>
           </div>`;
         }
 
@@ -3663,7 +3675,7 @@
             html += `
             <div class="insight-section">
               <h3><span>🎨</span> 创作背景</h3>
-              <div class="analysis-text">${insight.background_info}</div>
+              <div class="analysis-text">${insight.background_info.replace(/\\n/g, '\n')}</div>
             </div>
           `;
         }
@@ -3672,7 +3684,7 @@
             html += `
             <div class="insight-section">
               <h3><span>🌍</span> 时代语境</h3>
-              <div class="analysis-text">${insight.era_context}</div>
+              <div class="analysis-text">${insight.era_context.replace(/\\n/g, '\n')}</div>
             </div>
           `;
         }
@@ -5041,6 +5053,24 @@
                         ],
                     },
                     options: applyLowEndChartOptions({
+                        onClick: (event, elements) => {
+                            if (elements && elements.length > 0) {
+                                const index = elements[0].index;
+                                const albumData = data[index];
+                                if (albumData && albumData.album_id) {
+                                    // 假设跳转到专辑详情页或弹出详情框
+                                    // 这里我们采用弹出详情框的逻辑，如果项目有专门的专辑页也可以修改为 location.href
+                                    // 考虑到这是一个 Dashboard 仪表盘，我们跳转到 /albums/:id 或者执行现有的 showAlbumDetails(id)
+                                    if (typeof showAlbumDetails === 'function') {
+                                        showAlbumDetails(albumData.album_id);
+                                    } else {
+                                        // 如果没有现成的函数，则跳转或提示
+                                        console.log("跳转到专辑 ID:", albumData.album_id);
+                                        // window.location.href = `/album/${albumData.album_id}`;
+                                    }
+                                }
+                            }
+                        },
                         indexAxis: "y", // 👈 水平条形图
                         responsive: true,
                         maintainAspectRatio: false,
@@ -6243,13 +6273,20 @@
                 this.classList.add("active");
 
                 // 根据过滤器更新数据
-                const filterType = parent.classList.contains("card-header")
-                    ? parent.parentElement.querySelector(".card-title").textContent
-                    : parent.closest(".chart-card")
-                        ? parent.closest(".chart-card").querySelector(".card-title")
-                            .textContent
-                        : parent.closest(".ranking-card").querySelector(".card-title")
-                            .textContent;
+                let filterType = "";
+                const cardHeader = parent.classList.contains("card-header") ? parent : null;
+                const chartCard = parent.closest(".chart-card");
+                const rankingCard = parent.closest(".ranking-card");
+
+                if (cardHeader) {
+                    filterType = cardHeader.parentElement.querySelector(".card-title").textContent;
+                } else if (chartCard) {
+                    filterType = chartCard.querySelector(".card-title").textContent;
+                } else if (rankingCard) {
+                    filterType = rankingCard.querySelector(".card-title").textContent;
+                }
+
+                if (!filterType) return;
 
                 if (filterType.includes("播放趋势")) {
                     // 更新趋势图
@@ -6640,7 +6677,7 @@
             bodyContent.innerHTML = `
             <div class="track-info">
               <p><strong>艺术家:</strong> ${track.artist}</p>
-              <p><strong>专辑:</strong> ${track.album}</p>
+              <p><strong>专辑:</strong> ${track.album_id ? `<a href="javascript:void(0)" onclick="hideModal('trackDetailsModal'); showAlbumDetails(${track.album_id})" style="color: var(--primary-color); text-decoration: underline; cursor: pointer;">${track.album}</a>` : track.album}</p>
               <p><strong>播放次数:</strong> ${track.play_count || 0}</p>
               ${track.duration ? `<p><strong>时长:</strong> ${formatDuration(track.duration)}</p>` : ''}
               ${track.track_number ? `<p><strong>曲目编号:</strong> ${track.track_number}</p>` : ''}
@@ -6810,7 +6847,630 @@
         }
     }
 
+    /**
+     * 显示专辑详情模态框
+     * @param {number} id 专辑 ID
+     */
+    /**
+     * 显示专辑详情模态框
+     * @param {number} id 专辑 ID
+     */
+    function showAlbumDetails(id) {
+        if (!id) return;
+        window.currentAlbumID = id; // 记录当前处理的专辑 ID
+        
+        // 检测当前主题
+        const isDark = document.body.classList.contains("dark-mode");
+        const itemBorder = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
+        const itemHover = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
+        
+        const modal = document.getElementById('albumDetailsModal');
+        const trackList = document.getElementById('albumTrackList');
+        const nameEl = document.getElementById('ad-name');
+        const artistEl = document.getElementById('ad-artist');
+        const releaseEl = document.getElementById('ad-release');
+        const genreEl = document.getElementById('ad-genre');
+        const countryEl = document.getElementById('ad-country');
+        const statusEl = document.getElementById('ad-status');
+        const packagingEl = document.getElementById('ad-packaging');
+        const barcodeEl = document.getElementById('ad-barcode');
+        const mbidEl = document.getElementById('ad-mbid');
+        const mbSearchBtn = document.getElementById('mbSearchBtn');
+        const mbDeepBtn = document.getElementById('mbDeepBtn');
+        const candidateList = document.getElementById('mbCandidateList');
+        
+        // 显示模态框并重置状态
+        modal.style.display = 'block';
+        trackList.innerHTML = '<div class="loading">加载中...</div>';
+        nameEl.textContent = '加载中...';
+        artistEl.textContent = '-';
+        releaseEl.textContent = '-';
+        genreEl.textContent = '-';
+        if (countryEl) countryEl.textContent = '-';
+        if (statusEl) statusEl.textContent = '-';
+        if (packagingEl) packagingEl.textContent = '-';
+        if (barcodeEl) barcodeEl.textContent = '-';
+        if (mbidEl) mbidEl.textContent = '-';
+        mbSearchBtn.style.display = 'block';
+        mbDeepBtn.style.display = 'none';
+        candidateList.style.display = 'none';
+        
+        fetch(`/api/albums/${id}`)
+            .then(resp => {
+                if (!resp.ok) throw new Error('API 响应失败');
+                return resp.json();
+            })
+            .then(data => {
+                nameEl.textContent = data.name || '未知专辑';
+                nameEl.title = data.name || '未知专辑';
+                artistEl.textContent = data.artist || '未知艺术家';
+                artistEl.title = data.artist || '未知艺术家';
+                releaseEl.textContent = data.release_date || '-';
+                releaseEl.title = data.release_date || '-';
+                genreEl.textContent = data.genre || '-';
+                genreEl.title = data.genre || '-';
+                if (countryEl) {
+                    countryEl.textContent = data.country || '-';
+                    countryEl.title = data.country || '-';
+                }
+                if (statusEl) {
+                    statusEl.textContent = data.status || '-';
+                    statusEl.title = data.status || '-';
+                }
+                if (packagingEl) {
+                    packagingEl.textContent = data.packaging || '-';
+                    packagingEl.title = data.packaging || '-';
+                }
+                if (barcodeEl) {
+                    barcodeEl.textContent = data.barcode || '-';
+                    barcodeEl.title = data.barcode || '-';
+                }
+                if (mbidEl) {
+                    const mbid = (data.release_mb && data.release_mb.mbid) ? data.release_mb.mbid : '-';
+                    mbidEl.textContent = mbid;
+                    mbidEl.title = mbid;
+                }
+                
+                // 根据同步状态更新 UI 按钮和候选列表
+                updateMBUI(data.sync_status || 0);
+                
+                if (data.tracks && data.tracks.length > 0) {
+                    let html = '';
+                    const taMap = {};
+                    if (data.track_album) {
+                        data.track_album.forEach(ta => {
+                            if (ta.track_id) taMap[ta.track_id] = ta;
+                        });
+                    }
+
+                    data.tracks.forEach((track, index) => {
+                        const ta = taMap[track.id] || {};
+                        const mbTrackName = ta.track || '';
+                        const mbRecordingID = ta.mb_recording_id || '';
+                        const hasDiff = mbTrackName && mbTrackName.toLowerCase() !== track.track.toLowerCase();
+                        const hasLink = track.id && track.id > 0;
+
+                        html += `
+                            <li class="ranking-item" style="display: flex; gap: 15px; padding: 12px 0; border-bottom: 1px solid ${itemBorder};" 
+                                ${hasLink ? `onclick="showTrackDetails('${track.artist.replace(/'/g, "\\'")}', '${track.album.replace(/'/g, "\\'")}', '${track.track.replace(/'/g, "\\'")}')"` : ''}
+                                onmouseover="this.style.background='${itemHover}'" 
+                                onmouseout="this.style.background='transparent'">
+                                
+                                <div style="width: 28px; font-weight: 700; opacity: 0.3; font-size: 0.9em; flex-shrink: 0; align-self: center; color: var(--text-secondary); text-align: center;">${track.track_number || (index + 1)}</div>
+                                
+                                <!-- 本地信息 -->
+                                <div style="flex: 1; min-width: 0; overflow: hidden;">
+                                    <div style="font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1em;" title="${track.track}">${track.track}</div>
+                                    <div style="font-size: 0.85em; opacity: 0.6; margin-top: 2px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${track.artist || '-'}">${track.artist || '-'}</div>
+                                    <div style="font-size: 0.8em; opacity: 0.4; margin-top: 4px; color: var(--text-secondary);">${track.play_count} 次播放</div>
+                                </div>
+
+                                <!-- MB 信息 (右侧对齐，等宽) -->
+                                <div style="flex: 1; min-width: 0; font-size: 0.8em; padding-left: 15px; border-left: 1px solid ${itemBorder};">
+                                    ${mbRecordingID ? `
+                                    <div style="display: flex; gap: 5px; margin-bottom: 2px;">
+                                        <span style="color: var(--primary-color); opacity: 0.8; flex-shrink: 0;">MB:</span>
+                                        <span style="color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${mbTrackName}">${mbTrackName} ${hasDiff ? '<b style="color:var(--accent-color); font-weight: 800;">!</b>' : ''}</span>
+                                    </div>
+                                    <div style="display: flex; gap: 5px; opacity: 0.4;">
+                                        <span style="flex-shrink: 0; color: var(--text-secondary);">Rec:</span>
+                                        <span style="font-family: monospace; font-size: 0.9em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${mbRecordingID}">${mbRecordingID}</span>
+                                    </div>
+                                    ` : `
+                                    <div style="color: var(--text-secondary); opacity: 0.3; font-style: italic;">未匹配</div>
+                                    `}
+                                </div>
+
+                                <!-- 解除关联按钮 -->
+                                ${hasLink ? `
+                                <div style="flex-shrink: 0; padding-left: 10px; display: flex; align-items: center;">
+                                    <button onclick="event.stopPropagation(); unlinkTrackAlbum(${track.id}, ${window.currentAlbumID}, '${track.track.replace(/'/g, "\\'")}')" 
+                                        style="padding: 4px 8px; font-size: 0.7em; border: 1px solid var(--accent-color); background: transparent; color: var(--accent-color); border-radius: 4px; cursor: pointer; opacity: 0.6;"
+                                        onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">解除</button>
+                                </div>
+                                ` : ''}
+                            </li>
+                        `;
+                    });
+                    trackList.innerHTML = html;
+                } else {
+                    trackList.innerHTML = '<div style="padding: 40px; text-align: center; opacity: 0.4; color: var(--text-secondary);">暂无曲目信息</div>';
+                }
+            })
+            .catch(err => {
+                console.error('获取专辑详情失败:', err);
+                trackList.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-color);">加载失败: ${err.message}</div>`;
+            });
+    }
+
+    /**
+     * 解除 TrackAlbum 关联（人工修复用）
+     */
+    function unlinkTrackAlbum(trackID, albumID, trackName) {
+        if (!confirm(`确定要解除曲目 "${trackName}" 的专辑关联吗？`)) {
+            return;
+        }
+        fetch('/api/track-album/unlink', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({track_id: trackID, album_id: albumID})
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.status === 'ok') {
+                alert('已解除关联');
+                showAlbumDetails(albumID); // 刷新专辑详情
+            } else {
+                alert('解除失败: ' + (res.error || '未知错误'));
+            }
+        })
+        .catch(err => {
+            alert('请求失败: ' + err.message);
+        });
+    }
+
+    /**
+     * 根据同步状态更新 UI 按钮
+     */
+    function updateMBUI(status) {
+        const mbSearchBtn = document.getElementById('mbSearchBtn');
+        const mbDeepBtn = document.getElementById('mbDeepBtn');
+        const candidateList = document.getElementById('mbCandidateList');
+        const initialMsg = document.getElementById('mbInitialMsg');
+        
+        if (status === 0) {
+            mbSearchBtn.textContent = '初选补全';
+            mbDeepBtn.style.display = 'none';
+            if (candidateList) candidateList.style.display = 'none';
+            if (initialMsg) initialMsg.style.display = 'flex';
+        } else {
+            mbSearchBtn.textContent = '重新搜索';
+            if (candidateList) candidateList.style.display = 'flex';
+            if (initialMsg) initialMsg.style.display = 'none';
+            
+            if (status === 1) {
+                mbDeepBtn.style.display = 'none';
+            } else if (status === 2) {
+                mbDeepBtn.style.display = 'block';
+                mbDeepBtn.textContent = '精选维护';
+                mbDeepBtn.style.background = 'var(--primary-color)';
+                mbDeepBtn.style.color = '#fff';
+            } else if (status === 3) {
+                mbDeepBtn.style.display = 'block';
+                mbDeepBtn.textContent = '再次精选维护';
+                mbDeepBtn.style.background = 'rgba(255,255,255,0.05)';
+                mbDeepBtn.style.color = 'var(--primary-color)';
+            }
+            
+            // 加载候选列表
+            loadMBCandidates(window.currentAlbumID, status);
+        }
+    }
+
+    /**
+     * 加载并展示 MB 候选（解析详细 JSON 数据）
+     */
+    function loadMBCandidates(albumID, currentStatus) {
+        const candidateList = document.getElementById('mbCandidateList');
+        const candidateContent = document.getElementById('mbCandidateContent');
+        
+        // 检测当前主题
+        const isDark = document.body.classList.contains("dark-mode");
+        const cardBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)';
+        const cardBorder = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
+        const textColor = isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)';
+        const subtleBorder = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
+        
+        // 如果已通过初选关联（状态>=2），则需要标出选中的版本
+        let selectedMBID = '';
+        
+        const renderList = (candidates) => {
+            if (!candidates || candidates.length === 0) {
+                candidateList.style.display = 'none';
+                return;
+            }
+            candidateList.style.display = 'block';
+            let html = '<div style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 20px;">';
+            candidates.forEach((item, index) => {
+                let detail = {};
+                try {
+                    detail = JSON.parse(item.json_data || '{}');
+                } catch(e) {}
+                
+                const isSelected = (selectedMBID === item.mbid);
+                const date = detail.date || '未知日期';
+                const country = detail.country || '未知国家';
+                const trackCount = (detail.media && detail.media[0]) ? detail.media[0]["track-count"] : '?';
+
+                html += `
+                    <div class="mb-candidate-card" style="padding: 15px; background: ${isSelected ? 'rgba(var(--primary-rgb), 0.15)' : cardBg}; border: 1px solid ${isSelected ? 'var(--primary-color)' : cardBorder}; border-radius: 14px; position: relative; transition: all 0.2s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="flex: 1; padding-right: 15px;">
+                                <div style="font-weight: 700; font-size: 1.05em; color: ${isSelected ? 'var(--primary-color)' : textColor}; margin-bottom: 6px;">
+                                    ${item.name}
+                                </div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8em; opacity: 0.6;">
+                                    <span>📅 ${date}</span>
+                                    <span>🌍 ${country}</span>
+                                    <span>🎵 ${trackCount}曲</span>
+                                </div>
+                            </div>
+                            <div style="flex-shrink: 0;">
+                                ${isSelected ? 
+                                    '<span style="background: var(--primary-color); color: #fff; font-size: 0.7em; padding: 2px 8px; border-radius: 5px; font-weight: 800; box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3);">已选定</span>' : 
+                                    `<button class="time-filter" style="font-size: 0.7em; padding: 4px 10px; border-radius: 6px;" onclick="selectCandidate(${item.id}, '${item.mbid}')">确认此版本</button>`
+                                }
+                            </div>
+                        </div>
+                        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid ${subtleBorder}; display: flex; justify-content: space-between; align-items: center;">
+                            <a href="javascript:void(0)" onclick="showCandidateDetail(${index})" style="font-size: 0.7em; opacity: 0.5; text-decoration: none; color: var(--text-secondary);">[VIEW DETAILS]</a>
+                            <span style="font-size: 0.65em; font-family: monospace; opacity: 0.3; color: var(--text-secondary);">${item.mbid.substring(0, 18)}...</span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            candidateContent.innerHTML = html;
+        };
+
+        // 并行处理：获取候选列表 + (可选)获取专辑当前选定的 MBID
+        fetch(`/api/musicbrainz/candidates/${albumID}`)
+            .then(resp => resp.json())
+            .then(candidates => {
+                window.currentCandidates = candidates;
+                if (currentStatus >= 2) {
+                    fetch(`/api/albums/${albumID}`)
+                        .then(r => r.json())
+                        .then(album => {
+                            if (album.release_mb && album.release_mb.mbid) {
+                                selectedMBID = album.release_mb.mbid;
+                            }
+                            renderList(candidates);
+                        });
+                } else {
+                    renderList(candidates);
+                }
+            });
+    }
+
+    /**
+     * 切换 MusicBrainz 详情模态框的 Tab
+     */
+    function switchMBDetailTab(tab) {
+        const detailPane = document.getElementById('mbDetailContent');
+        const jsonPane = document.getElementById('mbJsonContent');
+        const detailTab = document.getElementById('tab-mb-detail');
+        const jsonTab = document.getElementById('tab-mb-json');
+
+        if (tab === 'json') {
+            detailPane.style.display = 'none';
+            jsonPane.style.display = 'block';
+            detailTab.classList.remove('active');
+            jsonTab.classList.add('active');
+            detailTab.style.borderBottomColor = 'transparent';
+            detailTab.style.opacity = '0.6';
+            jsonTab.style.borderBottomColor = 'var(--primary-color)';
+            jsonTab.style.opacity = '1';
+        } else {
+            detailPane.style.display = 'block';
+            jsonPane.style.display = 'none';
+            detailTab.classList.add('active');
+            jsonTab.classList.remove('active');
+            detailTab.style.borderBottomColor = 'var(--primary-color)';
+            detailTab.style.opacity = '1';
+            jsonTab.style.borderBottomColor = 'transparent';
+            jsonTab.style.opacity = '0.6';
+        }
+    }
+
+    /**
+     * 显示候选版本的详细数据
+     */
+    function showCandidateDetail(index) {
+        if (!window.currentCandidates || !window.currentCandidates[index]) return;
+        const item = window.currentCandidates[index];
+        let detail = {};
+        try {
+            detail = JSON.parse(item.json_data || '{}');
+        } catch(e) { return; }
+
+        const modal = document.getElementById('mbCandidateDetailModal');
+        const content = document.getElementById('mbDetailContent');
+        const jsonPre = document.getElementById('mbJsonPre');
+        
+        // 重置 Tab 到详情页
+        switchMBDetailTab('detail');
+        modal.style.display = 'block';
+        
+        // 渲染 JSON 源码
+        jsonPre.textContent = JSON.stringify(detail, null, 4);
+
+        // 检测主题
+        const isDark = document.body.classList.contains("dark-mode");
+        const subtleBorder = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
+
+        // 从 release-events 获取国家信息
+        let countryText = detail.country || '-';
+        if (detail["release-events"] && detail["release-events"].length > 0) {
+            const event = detail["release-events"][0];
+            if (event.area && event.area.name) {
+                countryText = event.area.name + (event.date ? ` (${event.date})` : '');
+            }
+        }
+
+        // 渲染曲目信息
+        let trackHtml = `<div style="margin-top: 15px;"><strong style="color: var(--text-primary);">曲目摘要:</strong><div style="max-height: 300px; overflow-y: auto; margin-top: 10px; font-size: 0.85em; color: var(--text-primary);">`;
+        if (detail.media && detail.media[0]) {
+            const m = detail.media[0];
+            trackHtml += `<div style="opacity: 0.7;">该版本包含 ${m["track-count"] || 0} 首曲目 (格式: ${m.format || '未知'})</div>`;
+            if (m.tracks && m.tracks.length > 0) {
+                m.tracks.forEach(t => {
+                    const trackTitle = t.title || (t.recording ? t.recording.title : '-');
+                    const trackLength = t.length ? `${Math.floor(t.length/60000)}:${String(Math.floor((t.length%60000)/1000)).padStart(2, '0')}` : '-';
+                    trackHtml += `<div style="padding: 4px 0; border-bottom: 1px solid ${subtleBorder}; display: flex;">
+                        <span style="width: 30px; opacity: 0.5; color: var(--text-secondary);">${t.number || t.position}.</span>
+                        <span style="flex: 1; color: var(--text-primary);">${trackTitle}</span>
+                        <span style="opacity: 0.5; color: var(--text-secondary);">${trackLength}</span>
+                    </div>`;
+                });
+            } else {
+                trackHtml += '<div style="margin-top: 10px; opacity: 0.5; font-style: italic; color: var(--text-secondary);">注：该搜索结果页暂不包含完整曲目单。</div>';
+            }
+        } else {
+            trackHtml += '<div style="color: var(--text-secondary);">暂无曲目信息</div>';
+        }
+        trackHtml += '</div></div>';
+
+        // Label 信息
+        let labelHtml = '';
+        if (detail["label-info"] && detail["label-info"].length > 0) {
+            labelHtml = `<div style="margin-top: 20px;"><strong style="color: var(--text-primary);">厂牌信息:</strong><div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">`;
+            detail["label-info"].forEach(li => {
+                const labelName = li.label ? li.label.name : '-';
+                const catalogNo = li["catalog-number"] || '-';
+                labelHtml += `<div style="padding: 6px 12px; background: rgba(var(--primary-rgb), 0.1); border: 1px solid rgba(var(--primary-rgb), 0.3); border-radius: 6px; font-size: 0.85em;">
+                    <span style="color: var(--primary-color); font-weight: 600;">${labelName}</span>
+                    ${catalogNo !== '-' ? `<span style="opacity: 0.6; margin-left: 8px; color: var(--text-secondary);">#${catalogNo}</span>` : ''}
+                </div>`;
+            });
+            labelHtml += '</div></div>';
+        }
+
+        // 文字表示信息
+        let textRepHtml = '';
+        if (detail["text-representation"]) {
+            const tr = detail["text-representation"];
+            const lang = tr.language || '';
+            const script = tr.script || '';
+            if (lang || script) {
+                textRepHtml = `<div style="margin-top: 20px;"><strong style="color: var(--text-primary);">文字表示:</strong><div style="margin-top: 8px; display: flex; gap: 10px; font-size: 0.85em;">
+                    ${lang ? `<span style="padding: 4px 10px; background: rgba(var(--primary-rgb), 0.1); border-radius: 4px; color: var(--text-primary);">语言: ${lang}</span>` : ''}
+                    ${script ? `<span style="padding: 4px 10px; background: rgba(var(--primary-rgb), 0.1); border-radius: 4px; color: var(--text-primary);">文字: ${script}</span>` : ''}
+                </div></div>`;
+            }
+        }
+
+        // 封面艺术信息
+        let coverArtHtml = '';
+        if (detail["cover-art-archive"]) {
+            const ca = detail["cover-art-archive"];
+            if (ca.artwork || ca.front || ca.back) {
+                coverArtHtml = `<div style="margin-top: 20px;"><strong style="color: var(--text-primary);">封面:</strong><div style="margin-top: 8px; display: flex; gap: 10px; font-size: 0.85em;">
+                    ${ca.front ? '<span style="padding: 4px 10px; background: rgba(46, 204, 113, 0.2); border-radius: 4px; color: #2ecc71;">封面</span>' : ''}
+                    ${ca.back ? '<span style="padding: 4px 10px; background: rgba(46, 204, 113, 0.2); border-radius: 4px; color: #2ecc71;">封底</span>' : ''}
+                    ${ca.count ? `<span style="padding: 4px 10px; background: rgba(var(--primary-rgb), 0.1); border-radius: 4px; color: var(--text-secondary);">${ca.count} 张</span>` : ''}
+                </div></div>`;
+            }
+        }
+
+        content.innerHTML = `
+            <div style="font-size: 1.1em; font-weight: 600; margin-bottom: 15px; color: var(--text-primary);">${detail.title || item.name} <span style="font-weight: normal; opacity: 0.5; font-size: 0.8em;">(${detail.date || '?'})</span></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9em; color: var(--text-primary);">
+                <div><strong>国家/地区:</strong> ${countryText}</div>
+                <div><strong>发行状态:</strong> ${detail.status || '-'}</div>
+                <div><strong>包装形式:</strong> ${detail.packaging || '-'}</div>
+                <div><strong>条码:</strong> ${detail.barcode || '-'}</div>
+            </div>
+            ${textRepHtml}
+            ${coverArtHtml}
+            ${trackHtml}
+            ${labelHtml}
+            <div style="margin-top: 20px; font-family: monospace; font-size: 0.7em; opacity: 0.3; word-break: break-all; color: var(--text-secondary);">MBID: ${item.mbid}</div>
+        `;
+    }
+
+    /**
+     * 选定 MB 版本进行关联
+     */
+    function selectCandidate(rmbID, mbid) {
+        const albumID = window.currentAlbumID;
+        fetch('/api/musicbrainz/link-album', {
+            method: 'POST',
+            body: JSON.stringify({ album_id: albumID, release_mb_id: rmbID, mbid: mbid })
+        })
+        .then(resp => resp.json())
+        .then(res => {
+            if (res.status === 'ok') {
+                alert("关联成功，现在可以执行“精选维护”来精准核对曲目号。");
+                showAlbumDetails(albumID); // 刷新 UI
+            }
+        });
+    }
+
+    /**
+     * MusicBrainz 同步相关操作
+     */
+    function syncAlbumMB(mode) {
+        const id = window.currentAlbumID;
+        if (!id) return;
+
+        const searchBtn = document.getElementById('mbSearchBtn');
+        const deepBtn = document.getElementById('mbDeepBtn');
+
+        if (mode === 'search') {
+            searchBtn.disabled = true;
+            searchBtn.textContent = '搜索中...';
+            
+            fetch(`/api/musicbrainz/search-releases/${id}`)
+                .then(async resp => {
+                    if (!resp.ok) {
+                        const errData = await resp.json().catch(() => ({}));
+                        throw new Error(errData.error || `服务器响应异常 (${resp.status})`);
+                    }
+                    return resp.json();
+                })
+                .then(res => {
+                    searchBtn.disabled = false;
+                    searchBtn.textContent = '重新搜索';
+                    if (res.status === 'ok') {
+                        showAlbumDetails(id); // 刷新以展示候选
+                    }
+                })
+                .catch(err => {
+                    console.error("搜索失败:", err);
+                    alert("搜索失败: " + err.message);
+                    searchBtn.disabled = false;
+                    searchBtn.textContent = '重新搜索';
+                });
+        } else if (mode === 'deep') {
+            deepBtn.disabled = true;
+            deepBtn.textContent = '维护中...';
+            fetch(`/api/musicbrainz/deep-maintenance/${id}`, { method: 'POST' })
+                .then(resp => resp.json())
+                .then(res => {
+                    deepBtn.disabled = false;
+                    deepBtn.textContent = '精选维护';
+                    if (res.status === 'ok') {
+                        alert("深度维护完成，曲目序号已根据 MusicBrainz 自动校正。");
+                        showAlbumDetails(id); 
+                    } else {
+                        throw new Error(res.error || '维护失败');
+                    }
+                })
+                .catch(err => {
+                    alert("操作失败: " + err.message);
+                    deepBtn.disabled = false;
+                });
+        }
+    }
+
 </script>
+
+<!-- MusicBrainz 候选版本详情模态框 -->
+<div id="mbCandidateDetailModal" class="modal" style="z-index: 2100;">
+    <div class="modal-content" style="max-width: 500px; margin-top: 80px; background: var(--card-bg); border: 1px solid var(--border-color);">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
+            <h3 style="color: var(--text-primary);">候选版本详情</h3>
+            <span class="close" onclick="hideModal('mbCandidateDetailModal')" style="color: var(--text-secondary);">×</span>
+        </div>
+        <div class="tabs" style="display: flex; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--border-color); margin-bottom: 0;">
+            <div class="tab-item active" id="tab-mb-detail" onclick="switchMBDetailTab('detail')" style="padding: 10px 0; cursor: pointer; border-bottom: 2px solid var(--primary-color); font-size: 0.9em; color: var(--primary-color);">常规详情</div>
+            <div class="tab-item" id="tab-mb-json" onclick="switchMBDetailTab('json')" style="padding: 10px 0; cursor: pointer; border-bottom: 2px solid transparent; font-size: 0.9em; color: var(--text-secondary);">JSON 源码</div>
+        </div>
+        <div class="modal-body" style="padding: 0; color: var(--text-primary); max-height: 500px; overflow-y: auto;">
+            <div id="mbDetailContent" style="padding: 20px;">
+                <!-- 渲染后的 HTML -->
+            </div>
+            <div id="mbJsonContent" style="padding: 20px; display: none;">
+                <pre id="mbJsonPre" style="background: rgba(0,0,0,0.1); padding: 15px; border-radius: 6px; font-size: 0.75em; font-family: 'Fira Code', monospace; white-space: pre-wrap; word-break: break-all; color: var(--text-primary); border: 1px solid var(--border-color);"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 专辑详情模态框 -->
+<div id="albumDetailsModal" class="modal">
+    <div class="modal-content album-modal-content" style="max-width: 1250px; width: 95vw;">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 15px 25px;">
+            <h2 id="albumDetailTitle" style="font-size: 1.4em; font-weight: 700; color: var(--text-primary);">专辑详情</h2>
+            <span class="close" onclick="hideModal('albumDetailsModal')" style="font-size: 28px; color: var(--text-secondary); transition: opacity 0.2s; cursor: pointer;">&times;</span>
+        </div>
+        <div class="modal-body" id="albumDetailBody" style="padding: 25px; display: flex; gap: 24px; height: 78vh; align-items: stretch;">
+            <!-- 第一列：元数据与封面 -->
+            <div style="flex: 1; min-width: 280px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color);">
+                <div id="albumCoverPlaceholder" style="width: 100%; aspect-ratio: 1/1; background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 4em; opacity: 0.6; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">💿</div>
+                
+                <div id="albumDetailInfo" style="overflow-y: auto; flex: 1; margin-top: 20px;">
+                    <h3 id="ad-name" style="margin: 0; font-size: 1.25em; font-weight: 700; color: var(--text-primary); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</h3>
+                    <p id="ad-artist" style="margin: 5px 0 20px 0; opacity: 0.7; font-size: 0.95em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</p>
+                    
+                    <style>
+                        .meta-row { display: flex; margin-bottom: 12px; font-size: 0.9em; align-items: baseline; }
+                        .meta-label { width: 90px; color: var(--primary-color); font-weight: 600; font-size: 0.9em; flex-shrink: 0; }
+                        .meta-value { color: var(--text-primary); font-weight: 500; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+                        .meta-value:hover { white-space: normal; word-break: break-all; }
+                    </style>
+
+                    <div style="padding-top: 20px; border-top: 1px solid var(--border-color);">
+                        <div class="meta-row"><div class="meta-label">发行日期:</div><div class="meta-value" id="ad-release" title="-">-</div></div>
+                        <div class="meta-row"><div class="meta-label">风格流派:</div><div class="meta-value" id="ad-genre" title="-">-</div></div>
+                        <div class="meta-row"><div class="meta-label">国家区域:</div><div class="meta-value" id="ad-country" title="-">-</div></div>
+                        <div class="meta-row"><div class="meta-label">发行状态:</div><div class="meta-value" id="ad-status" title="-">-</div></div>
+                        <div class="meta-row"><div class="meta-label">包装形式:</div><div class="meta-value" id="ad-packaging" title="-">-</div></div>
+                        <div class="meta-row"><div class="meta-label">识别条码:</div><div class="meta-value" id="ad-barcode" title="-">-</div></div>
+                    </div>
+
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
+                        <div class="meta-label" style="margin-bottom: 6px; width: 100%;">MusicBrainz ID:</div>
+                        <div id="ad-mbid" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75em; opacity: 0.5; line-height: 1.4; word-break: break-all; color: var(--text-secondary); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default;" title="-">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 第二列：MusicBrainz 候选区 -->
+            <div style="flex: 1.4; min-width: 340px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h4 style="margin: 0; font-size: 0.9em; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px;">候选发行版本</h4>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="mbSearchBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="syncAlbumMB('search')">查询</button>
+                        <button id="mbDeepBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(var(--primary-rgb), 0.2);" onclick="syncAlbumMB('deep')">精选维护</button>
+                    </div>
+                </div>
+                
+                <div id="mbCandidateList" style="display: none; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                    <p style="font-size: 0.8em; margin-bottom: 15px; color: var(--text-secondary);">请点击版本进行关联校准：</p>
+                    <div id="mbCandidateContent" style="flex: 1; overflow-y: auto; padding-right: 5px;"></div>
+                </div>
+                <div id="mbInitialMsg" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; text-align: center;">
+                    <div style="font-size: 3em; margin-bottom: 10px;">🔍</div>
+                    <p style="font-size: 0.9em; color: var(--text-secondary);">点击"查询"获取权威库对应版本</p>
+                </div>
+            </div>
+
+            <!-- 第三列：本地曲目对账清单 -->
+            <div style="flex: 1.8; min-width: 420px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color);">
+                <h4 style="margin: 0 0 20px 0; font-size: 0.9em; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px;">专辑曲目</h4>
+                <div style="flex: 1; overflow-y: auto; padding-right: 5px;">
+                    <ul class="ranking-list" id="albumTrackList" style="padding: 0;">
+                        <!-- 由 JS 生成带对齐 Grid 的列表项 -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- 曲目详情模态框 -->
 <div id="trackDetailsModal" class="modal">
