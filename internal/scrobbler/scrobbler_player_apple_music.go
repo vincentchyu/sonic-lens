@@ -19,7 +19,7 @@ type AppleMusicTrackInfoWrapper struct {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetTitle() string {
-	return a.baseWrapper.ConversionSimplified(a.Title)
+	return a.baseWrapper.ConversionSimplified(common.UnityFixAll(common.TrackCustomFit(a.Title)))
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetAlbum() string {
@@ -81,6 +81,10 @@ func (a *AppleMusicTrackInfoWrapper) GetBundleID() string {
 
 func (a *AppleMusicTrackInfoWrapper) GetUniqueID() string {
 	return fmt.Sprintf("%d", a.DatabaseID)
+}
+
+func (a *AppleMusicTrackInfoWrapper) GetDiscNumber() int8 {
+	return int8(a.DiscNumber)
 }
 
 // AppleMusicPlayerController Apple Music播放器控制器

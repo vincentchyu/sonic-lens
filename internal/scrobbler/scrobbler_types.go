@@ -36,6 +36,7 @@ type PlayerInfoHandler interface {
 	GetSource() string        // 数据来源
 	GetBundleID() string      // 应用标识符
 	GetUniqueID() string      // 唯一标识符
+	GetDiscNumber() int8      // 盘位
 }
 
 // PlayerController 定义播放器控制接口

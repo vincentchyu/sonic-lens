@@ -8,5 +8,5 @@ type BaseWrapper struct {
 }
 
 func (m BaseWrapper) ConversionSimplified(target string) string {
-	return common.ConversionSimplifiedFx(common.CustomReplaceStringFunction(target))
+	return common.ConversionSimplifiedFx(target)
 }

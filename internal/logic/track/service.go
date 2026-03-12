@@ -61,10 +61,14 @@ type TrackService interface {
 	// GetTopAlbumsByPlayCount 获取按播放次数统计的热门专辑
 	GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*model.TopAlbum, error)
 	// Genre related methods
-	GetAllGenres(ctx context.Context, limit, offset int) ([]*model.Genre, error)
-	GetGenreByName(ctx context.Context, name string) (*model.Genre, error)
-	GetGenreCount(ctx context.Context) (int64, error)
-	GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error)
+	// GetAlbums 获取专辑列表（分页）
+	GetAlbums(ctx context.Context, limit, offset int, keyword string) ([]*model.Album, error)
+	// GetAlbumsCount 获取专辑总数
+	GetAlbumsCount(ctx context.Context, keyword string) (int64, error)
+	// GetTracksOrderedByAlbum 按专辑排序获取曲目列表（分页）
+	GetTracksOrderedByAlbum(ctx context.Context, limit, offset int, keyword string) ([]*model.Track, error)
+	// GetTracksOrderedByAlbumCount 获取按专辑排序的曲目总数
+	GetTracksOrderedByAlbumCount(ctx context.Context, keyword string) (int64, error)
 }
 
 // TrackServiceImpl 实现TrackService接口
@@ -263,10 +267,10 @@ func (s *TrackServiceImpl) GetLastFmFavorite(ctx context.Context, artist, album,
 func (s *TrackServiceImpl) SetTrackFavorite(
 	ctx context.Context, artist, album, track, source string, isFavorite bool, metadata model.TrackMetadata,
 ) (appleMusicFav bool, lastFmFav bool, err error) {
-	// 对于Apple Music来源，同时更新Apple Music和Last.fm的喜欢状态
+	// 无论来源是什么，只要涉及收藏操作，我们都尝试同步
+	// 对于 Apple Music 来源，同时更新 Apple Music 服务端的喜欢状态
 	if source == "Apple Music" {
-		// 更新Apple Music喜欢状态
-		if err = s.SetAppleMusicFavorite(
+		_ = s.SetAppleMusicFavorite(
 			model.SetFavoriteParams{
 				Ctx:           ctx,
 				Artist:        artist,
@@ -275,33 +279,10 @@ func (s *TrackServiceImpl) SetTrackFavorite(
 				IsFavorite:    isFavorite,
 				TrackMetadata: metadata,
 			},
-		); err != nil {
-			return false, false, err
-		}
-
-		// 更新Last.fm喜欢状态
-		if err = s.SetLastFmFavorite(
-			model.SetFavoriteParams{
-				Ctx:           ctx,
-				Artist:        artist,
-				Album:         album,
-				Track:         track,
-				IsFavorite:    isFavorite,
-				TrackMetadata: metadata,
-			},
-		); err != nil {
-			return false, false, err
-		}
-
-		// 获取更新后的状态
-		appleMusicFav, _ = s.GetAppleMusicFavorite(ctx, artist, album, track)
-		lastFmFav, _ = s.GetLastFmFavorite(ctx, artist, album, track)
-
-		return appleMusicFav, lastFmFav, nil
+		)
 	}
 
-	// 对于其他来源，只更新数据库中的喜欢状态
-	// 这里可以根据需要扩展对其他来源的支持 adirvana roon 支持上报lastfm喜欢状态
+	// 统一更新 Last.fm 收藏状态（Last.fm 是我们的通用收藏标记位）
 	_ = s.SetLastFmFavorite(
 		model.SetFavoriteParams{
 			Ctx:           ctx,
@@ -312,7 +293,12 @@ func (s *TrackServiceImpl) SetTrackFavorite(
 			TrackMetadata: metadata,
 		},
 	)
-	return false, false, nil
+
+	// 获取更新后的最终状态，确保返回给前端的数据是准确的
+	appleMusicFav, _ = s.GetAppleMusicFavorite(ctx, artist, album, track)
+	lastFmFav, _ = s.GetLastFmFavorite(ctx, artist, album, track)
+
+	return appleMusicFav, lastFmFav, nil
 }
 
 // GetAllGenres 获取所有流派（分页）
@@ -333,4 +319,24 @@ func (s *TrackServiceImpl) GetGenreCount(ctx context.Context) (int64, error) {
 // GetTopGenresByPlayCount 获取按播放次数排序的流派
 func (s *TrackServiceImpl) GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error) {
 	return model.GetTopGenresByPlayCount(ctx, limit)
+}
+
+// GetAlbums 获取专辑列表
+func (s *TrackServiceImpl) GetAlbums(ctx context.Context, limit, offset int, keyword string) ([]*model.Album, error) {
+	return model.GetAlbums(ctx, limit, offset, keyword)
+}
+
+// GetAlbumsCount 获取专辑总数
+func (s *TrackServiceImpl) GetAlbumsCount(ctx context.Context, keyword string) (int64, error) {
+	return model.GetAlbumsCount(ctx, keyword)
+}
+
+// GetTracksOrderedByAlbum 获取曲目列表
+func (s *TrackServiceImpl) GetTracksOrderedByAlbum(ctx context.Context, limit, offset int, keyword string) ([]*model.Track, error) {
+	return model.GetTracksOrderedByAlbum(ctx, limit, offset, keyword)
+}
+
+// GetTracksOrderedByAlbumCount 获取曲目总数
+func (s *TrackServiceImpl) GetTracksOrderedByAlbumCount(ctx context.Context, keyword string) (int64, error) {
+	return model.GetTracksOrderedByAlbumCount(ctx, keyword)
 }

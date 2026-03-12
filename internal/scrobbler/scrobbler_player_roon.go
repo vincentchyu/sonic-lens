@@ -15,8 +15,8 @@ type RoonTrackInfoWrapper struct {
 	baseWrapper BaseWrapper
 }
 
-func (r *RoonTrackInfoWrapper) GetTitle() string {
-	return r.baseWrapper.ConversionSimplified(r.Title)
+func (a *RoonTrackInfoWrapper) GetTitle() string {
+	return a.baseWrapper.ConversionSimplified(common.UnityFixAll(common.TrackCustomFit(a.Title)))
 }
 
 func (r *RoonTrackInfoWrapper) GetAlbum() string {
@@ -86,6 +86,10 @@ func (r *RoonTrackInfoWrapper) GetBundleID() string {
 func (r *RoonTrackInfoWrapper) GetUniqueID() string {
 	// Roon没有直接提供唯一标识符
 	return r.ContentItemIdentifier
+}
+func (r *RoonTrackInfoWrapper) GetDiscNumber() int8 {
+	// MediaControlNowPlayingInfo 不支持获取DiscNumber
+	return 1
 }
 
 // RoonPlayerController Roon播放器控制器

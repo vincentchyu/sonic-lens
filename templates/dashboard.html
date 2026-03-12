@@ -9,22 +9,38 @@
     <script src="../static/chart.js"></script>
     <script src="../static/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="../static/html2canvas.min.js"></script>
+    <!-- 引入 Tailwind & DaisyUI CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1',
+                    }
+                }
+            }
+        }
+    </script>
     <style>
         :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --primary-color: #667eea;
-            --secondary-color: #764ba2;
-            --background-color: #f0f2f5;
-            --accent-color: #e74c3c;
-            --text-primary: #2c3e50;
-            --text-secondary: #7f8c8d;
+            --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            --primary-color: #6366f1;
+            --secondary-color: #8b5cf6;
+            --background-color: #f8fafc;
+            --accent-color: #f43f5e;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
             --card-bg: rgba(255, 255, 255, 0.45);
-            --glass-border: rgba(255, 255, 255, 0.6);
-            --border-color: rgba(255, 255, 255, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --border-color: rgba(226, 232, 240, 0.5);
+            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
             /* 播放渠道颜色 */
-            --source-applemusic: #e74c3c;
-            --source-audirvana: #9b59b6;
-            --source-roon: #7f8c8d;
+            --source-applemusic: #f43f5e;
+            --source-audirvana: #a855f7;
+            --source-roon: #64748b;
         }
 
         /* AI Insight Tabs */
@@ -136,11 +152,11 @@
 
         /* 全局毛玻璃组件统一样式 */
         .navbar, .stat-card, .chart-card, .ranking-card, #nowPlaying, .ai-model-selector, .modal-content, #lyricsFloating, .insight-tabs, #recentTracksModal {
-            backdrop-filter: blur(24px) saturate(150%);
-            -webkit-backdrop-filter: blur(24px) saturate(150%);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
             background-color: var(--card-bg) !important;
             border: 1px solid var(--glass-border) !important;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+            box-shadow: var(--glass-shadow);
         }
 
         /* 性能模式：针对低性能设备/安卓盒子降低 GPU 压力 */
@@ -280,202 +296,26 @@
             padding: 20px;
         }
 
-        /* 悬浮侧边栏导航 */
-        .navbar {
-            position: fixed;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            height: auto;
-            padding: 20px 10px;
-            border-radius: 0 16px 16px 0;
-            z-index: 2000;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 200px;
-            border-right: 1px solid var(--glass-border);
+        /* 布局重构：使用全屏规避方案，确保居中与避挡并存 */
+        body {
+            transition: padding-left 0.5s ease-in-out;
+            padding-left: 260px; /* 默认展开宽度 */
+        }
+        body.collapsed-sidebar {
+            padding-left: 90px;
         }
 
-        /* 收起状态 */
-        .navbar.collapsed {
-            width: 80px;
-            transform: translateY(-50%) translateX(-60px); /* 只露出一小截或靠边 */
-        }
-
-        .navbar.collapsed:hover {
-            transform: translateY(-50%) translateX(0);
-        }
-
-        /* 切换按钮 */
-        .nav-toggle {
-            position: absolute;
-            right: -12px;
-            top: 20px;
-            width: 24px;
-            height: 24px;
-            background: var(--primary-color);
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            z-index: 2001;
-            transition: all 0.3s ease;
-            font-size: 12px;
-            border: 2px solid var(--glass-border);
-        }
-
-        .navbar.collapsed .nav-toggle {
-            transform: rotate(180deg);
-            right: 5px;
-        }
-
-        .navbar-content {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-            align-items: center;
-            width: 100%;
-            height: 100%;
-        }
-
-        .logo {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: var(--primary-color);
-            text-decoration: none;
-            margin-bottom: 30px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .logo-icon {
-            font-size: 1.8rem;
-        }
-
-        .logo-text {
-            opacity: 1;
-            font-size: 1rem;
-            transition: opacity 0.3s ease;
-            display: block;
-        }
-
-        .navbar.collapsed .logo-text {
-            opacity: 0;
-            display: none;
-        }
-
-        .nav-links {
-            display: flex;
-            flex-direction: column;
-            list-style: none;
-            width: 100%;
-            gap: 15px;
-        }
-
-        .nav-links li {
-            margin-left: 0;
-            width: 100%;
-        }
-
-        .nav-links a {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            text-decoration: none;
-            color: var(--text-primary);
-            font-weight: 500;
-            padding: 12px 10px;
-            padding-left: 20px;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .navbar.collapsed .nav-links a {
-            justify-content: center;
-            padding-left: 10px;
-        }
-
-        .nav-text {
-            margin-left: 10px;
-            opacity: 1;
-            white-space: nowrap;
-            transform: translateX(0);
-            transition: all 0.3s ease;
-            display: inline-block;
-        }
-
-        .navbar.collapsed .nav-text {
-            opacity: 0;
-            transform: translateX(-10px);
-            display: none;
-        }
-
-        .nav-links a:hover,
-        .nav-links a.active {
-            background-color: rgba(102, 126, 234, 0.15);
-            color: var(--primary-color);
-        }
-
-        .nav-links a.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 20%;
-            height: 60%;
-            width: 4px;
-            background-color: var(--primary-color);
-            border-radius: 0 4px 4px 0;
-        }
-
-        /* 调整主容器边距，避免被侧边栏遮挡 */
         .container {
             max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
-            margin-left: 220px; /* 默认展开时的左边距 */
-            transition: margin-left 0.4s ease;
+            width: 100%;
         }
 
-        .navbar.collapsed ~ .container {
-            margin-left: 100px;
-        }
-
-        @media (max-width: 1200px) {
-            .container {
-                margin-left: 80px; /* 较小屏幕下减少边距 */
-            }
-            .navbar {
-                width: 80px;
-                transform: translateY(-50%) translateX(-60px);
-            }
-            .navbar.collapsed {
-                transform: translateY(-50%) translateX(-60px);
-            }
-            .navbar .logo-text, .navbar .nav-text {
-                display: none;
-            }
-            .navbar:hover {
-                width: 200px;
-                transform: translateY(-50%) translateX(0);
-            }
-            .navbar:hover .logo-text, .navbar:hover .nav-text {
-                display: inline-block;
-                opacity: 1;
-            }
-            .nav-toggle {
-                display: none; /* 移动端或窄屏隐藏切换按钮 */
-            }
+        @media (max-width: 1024px) {
+            body { padding-left: 0 !important; }
+            .container { padding: 15px !important; }
+            .navbar { display: none; }
         }
 
         /* 统计卡片 */
@@ -1582,11 +1422,11 @@
             color: var(--text-secondary);
         }
 
-        /* 模态框样式 */
-        .modal {
+        /* 模态框样式 - 重命名以避开 DaisyUI 冲突并提升层级 */
+        .custom-modal {
             display: none;
             position: fixed;
-            z-index: 2000;
+            z-index: 3000;
             left: 0;
             top: 0;
             width: 100%;
@@ -2122,21 +1962,60 @@
     </div>
 </div>
 
-<!-- 悬浮侧边导航栏 -->
-<nav class="navbar" id="mainNavbar">
-    <div class="nav-toggle" id="navToggle">◀</div>
-    <div class="navbar-content">
-        <a href="#" class="logo">
-            <span class="logo-icon">🎵</span>
-            <span class="logo-text">音眸轨迹</span>
+<!-- 悬浮侧边导航栏 (基于 DaisyUI) -->
+<nav class="navbar fixed left-5 top-1/2 -translate-y-1/2 h-[calc(100vh-80px)] w-60 z-[2000] p-4 flex-col rounded-2xl transition-all duration-500 ease-in-out glass overflow-hidden group/nav" id="mainNavbar">
+    <style>
+        /* 收缩状态下的特殊样式处理 */
+        .navbar.collapsed { width: 4.5rem !important; padding: 1rem 0.5rem !important; left: 1rem !important; }
+        .navbar.collapsed .logo-text, 
+        .navbar.collapsed .nav-text, 
+        .navbar.collapsed summary::after,
+        .navbar.collapsed details ul { 
+            display: none !important; 
+        }
+        .navbar.collapsed .menu li a, 
+        .navbar.collapsed summary { 
+            justify-content: center !important; 
+            padding: 0.75rem !important;
+        }
+        .navbar.collapsed .menu li a span:first-child,
+        .navbar.collapsed summary span:first-child {
+            margin: 0 !important;
+            font-size: 1.5rem;
+        }
+    </style>
+    <div class="nav-toggle absolute -right-2.5 top-10 w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center cursor-pointer shadow-lg z-[2001] text-[10px] border-2 border-white" id="navToggle">◀</div>
+    
+    <div class="navbar-content w-full h-full flex flex-col">
+        <!-- Logo 区域 -->
+        <a href="/" class="flex items-center gap-3 px-4 mb-10 no-underline group">
+            <span class="text-2xl bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">🎵</span>
+            <span class="logo-text text-lg font-extrabold text-slate-800 dark:text-slate-100 tracking-tight transition-all duration-300">音眸轨迹</span>
         </a>
-        <ul class="nav-links">
-            <li><a href="/" class="active" aria-label="仪表板"><span class="nav-text">仪表板</span></a></li>
-            <li><a href="#" id="insightListTab" aria-label="音眸列表"><span class="nav-text">音眸列表</span></a></li>
-            <li><a href="#" id="unscrobbledTab" aria-label="未上报列表"><span class="nav-text">未上报列表</span></a></li>
-           <!-- <li><a href="/recommendations" title="音乐推荐"><span class="nav-text">音乐推荐</span></a></li>
-            <li><a href="/report" title="分析报告"><span class="nav-text">分析报告</span></a></li>
-            <li><a href="/playCounts" title="播放统计"><span class="nav-text">播放统计</span></a></li>-->
+
+        <!-- 菜单区域 -->
+        <ul class="menu menu-md w-full p-0 gap-2 flex-nowrap overflow-y-auto" id="navLinks">
+            <li>
+                <a href="/" class="active flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all duration-300 hover:bg-indigo-50/50" id="dashboardTab">
+                    <span class="text-xl">📊</span>
+                    <span class="nav-text">仪表板</span>
+                </a>
+            </li>
+            
+            <li>
+                <details id="libraryMenuDetails" open>
+                    <summary class="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold cursor-pointer group hover:bg-indigo-50/50">
+                        <span class="text-xl">🗂️</span>
+                        <span class="nav-text">我的资料库</span>
+                    </summary>
+                    <ul class="mt-1 ml-4 border-l border-slate-200 dark:border-slate-700 space-y-1">
+                        <li><a href="#" id="albumListTab" class="py-2 px-4 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-indigo-600">专辑</a></li>
+                        <li><a href="#" id="trackListTab" class="py-2 px-4 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-indigo-600">曲目</a></li>
+                        <li><a href="#" id="insightListTab" class="py-2 px-4 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-indigo-600">音眸</a></li>
+                        <li><a href="#" id="unscrobbledTab" class="py-2 px-4 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-indigo-600">未上报</a></li>
+                    </ul>
+                </details>
+            </li>
         </ul>
     </div>
 </nav>
@@ -2307,6 +2186,58 @@
         </div>
     </div>
 
+    <!-- 专辑列表容器 -->
+    <div id="albumListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">专辑库</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="position: relative;">
+                        <input type="text" id="albumSearchInput" placeholder="搜索专辑或艺术家..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshAlbumListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div id="albumListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="albumPagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="albumPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="albumPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="albumNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 曲目列表容器 -->
+    <div id="trackListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">曲目库</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="position: relative;">
+                        <input type="text" id="trackSearchInput" placeholder="搜索曲目、艺术家或专辑..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshTrackListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div id="trackListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="trackPagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="trackPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="trackPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="trackNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 未上报记录容器 -->
     <div id="unscrobbledContainer" style="display: none">
         <div class="chart-card">
@@ -2372,7 +2303,7 @@
 </div>
 
 <!-- 关联流水日志 Modal -->
-<div id="callLogModal" class="modal">
+<div id="callLogModal" class="custom-modal">
     <div class="modal-content" style="max-width: 900px;">
         <div class="module-trail"></div>
         <div class="modal-header">
@@ -2389,12 +2320,28 @@
     // WebSocket连接
     let ws = null;
 
-    // 音眸列表分页及搜索变量
-    let currentInsightPage = 1;
-    let insightPageSize = 20;
-    let totalInsights = 0;
     let currentInsightKeyword = "";
     let insightSearchTimeout = null;
+
+    // 专辑列表分页及搜索变量
+    let currentAlbumPage = 1;
+    let albumPageSize = 20;
+    let totalAlbumsCount = 0;
+    let currentAlbumKeyword = "";
+    let albumSearchTimeout = null;
+
+    // 曲目列表分页及搜索变量
+    let currentTrackPage = 1;
+    let trackTrackPageSize = 20; // 改名避坑
+    let trackPageSize = 20;
+    let totalTracksCount = 0;
+    let currentTrackKeyword = "";
+    let trackSearchTimeout = null;
+
+    // 音眸列表分页变量
+    let currentInsightPage = 1;
+    let insightPageSize = 20;
+    let totalInsightsCount = 0;
 
     // 自动切换日夜模式
     function toggleDarkModeBasedOnSystem() {
@@ -5926,7 +5873,7 @@
                         <div style="display: flex; gap: 8px; justify-content: center;">
                             <button class="time-filter" onclick="toggleInsightStatus(${ins.id})" style="padding: 4px 10px;">${toggleText}</button>
                             <button class="time-filter" onclick="showInsightDetailsById(${ins.id})" style="padding: 4px 10px;">详情</button>
-                            <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${ins.artist.replace(/'/g, "\\'")}', '${ins.track.replace(/'/g, "\\'")}')" style="padding: 4px 10px;">流水</button>
+                            <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${esc(ins.artist)}', '${esc(ins.track)}')" style="padding: 4px 10px;">流水</button>
                             <button class="time-filter" onclick="deleteInsight(${ins.id})" style="padding: 4px 10px; background-color: #e74c3c; color: white; border-color: #e74c3c;">删除</button>
                         </div>
                      </td>`;
@@ -6002,6 +5949,7 @@
             alert("加载详情失败");
         }
     }
+    window.showInsightDetailsById = showInsightDetailsById;
 
     // 删除解析记录
     async function deleteInsight(id) {
@@ -6505,8 +6453,21 @@
 
     // 添加查看详情模态框相关函数
     // 显示模态框
+    // 统一转义函数：修复 Unexpected EOF 并兼容 HTML 属性中的 JS 字符串
+    function esc(s) {
+        if (!s) return "";
+        return String(s)
+            .replace(/\\/g, '\\\\')  // 转义反斜杠
+            .replace(/'/g, "\\'")   // 转义单引号 (针对 JS 字符串)
+            .replace(/"/g, '&quot;') // 转义双引号 (针对 HTML 属性)
+            .replace(/\n/g, '\\n')  // 转义换行
+            .replace(/\r/g, '\\r');
+    }
+
+    // 显示模态框
     function showModal(modalId) {
-        document.getElementById(modalId).style.display = "block";
+        const el = document.getElementById(modalId);
+        if (el) el.style.display = "block";
     }
 
     // 隐藏模态框
@@ -6802,6 +6763,7 @@
             currentTrackInsight = insights[0];
         }
     }
+    window.showTrackDetails = showTrackDetails;
 
     async function triggerLyricsSearch() {
         const track = window.currentDetailData.track;
@@ -6846,11 +6808,8 @@
             console.log("Detail currentTrackInsight updated to index", index, ":", currentTrackInsight);
         }
     }
+    window.showTrackDetails = window.showTrackDetails || showTrackDetails;
 
-    /**
-     * 显示专辑详情模态框
-     * @param {number} id 专辑 ID
-     */
     /**
      * 显示专辑详情模态框
      * @param {number} id 专辑 ID
@@ -6858,6 +6817,7 @@
     function showAlbumDetails(id) {
         if (!id) return;
         window.currentAlbumID = id; // 记录当前处理的专辑 ID
+        window.currentAlbumSyncStatus = 0; // 记录当前专辑的同步状态
         
         // 检测当前主题
         const isDark = document.body.classList.contains("dark-mode");
@@ -6874,6 +6834,7 @@
         const statusEl = document.getElementById('ad-status');
         const packagingEl = document.getElementById('ad-packaging');
         const barcodeEl = document.getElementById('ad-barcode');
+        const totalDiscsEl = document.getElementById('ad-total-discs');
         const mbidEl = document.getElementById('ad-mbid');
         const mbSearchBtn = document.getElementById('mbSearchBtn');
         const mbDeepBtn = document.getElementById('mbDeepBtn');
@@ -6890,6 +6851,7 @@
         if (statusEl) statusEl.textContent = '-';
         if (packagingEl) packagingEl.textContent = '-';
         if (barcodeEl) barcodeEl.textContent = '-';
+        if (totalDiscsEl) totalDiscsEl.textContent = '-';
         if (mbidEl) mbidEl.textContent = '-';
         mbSearchBtn.style.display = 'block';
         mbDeepBtn.style.display = 'none';
@@ -6925,6 +6887,18 @@
                     barcodeEl.textContent = data.barcode || '-';
                     barcodeEl.title = data.barcode || '-';
                 }
+                if (totalDiscsEl) {
+                    let text = data.total_discs ? `${data.total_discs} 碟` : '1 碟';
+                    if (data.disc_infos && Object.keys(data.disc_infos).length > 0) {
+                        try {
+                            const parsed = JSON.parse(data.disc_infos);
+                            const breakdown = Object.keys(parsed).map(k => `${parsed[k]}首`).join(' + ');
+                            text += ` (${breakdown})`;
+                        } catch(e) {}
+                    }
+                    totalDiscsEl.textContent = text;
+                    totalDiscsEl.title = text;
+                }
                 if (mbidEl) {
                     const mbid = (data.release_mb && data.release_mb.mbid) ? data.release_mb.mbid : '-';
                     mbidEl.textContent = mbid;
@@ -6934,57 +6908,79 @@
                 // 根据同步状态更新 UI 按钮和候选列表
                 updateMBUI(data.sync_status || 0);
                 
-                if (data.tracks && data.tracks.length > 0) {
-                    let html = '';
-                    const taMap = {};
-                    if (data.track_album) {
-                        data.track_album.forEach(ta => {
-                            if (ta.track_id) taMap[ta.track_id] = ta;
+                if (data.track_album && data.track_album.length > 0) {
+                    let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+                    const tracksMap = {};
+                    if (data.tracks) {
+                        data.tracks.forEach(t => {
+                            tracksMap[t.id] = t;
                         });
                     }
 
-                    data.tracks.forEach((track, index) => {
-                        const ta = taMap[track.id] || {};
+                    let currentDisc = -1;
+                    const showDiscHeaders = data.total_discs > 1;
+
+                    // 显式排序保证顺序稳定
+                    const sortedTA = [...data.track_album].sort((a, b) => {
+                        if (a.disc_number !== b.disc_number) return a.disc_number - b.disc_number;
+                        return a.track_number - b.track_number;
+                    });
+
+                    sortedTA.forEach((ta, index) => {
+                        const track = tracksMap[ta.track_id] || {
+                            artist: data.artist,
+                            album: data.name,
+                            track: ta.track,
+                            play_count: 0
+                        };
+                        
                         const mbTrackName = ta.track || '';
                         const mbRecordingID = ta.mb_recording_id || '';
-                        const hasDiff = mbTrackName && mbTrackName.toLowerCase() !== track.track.toLowerCase();
-                        const hasLink = track.id && track.id > 0;
+                        const hasDiff = mbTrackName && track.track && mbTrackName.toLowerCase() !== track.track.toLowerCase();
+                        const hasLink = ta.track_id && ta.track_id > 0;
+                        
+                        const trackDisc = ta.disc_number || 1;
+                        if (showDiscHeaders && trackDisc !== currentDisc) {
+                            html += `
+                                <li style="padding: 15px 0 5px 0; margin-top: 5px; border-bottom: 1px solid var(--border-color); color: var(--text-primary); font-weight: 700; opacity: 0.8; font-size: 0.9em;">
+                                    碟 ${trackDisc}
+                                </li>
+                            `;
+                            currentDisc = trackDisc;
+                        }
+
+                        const trackNumDisplay = ta.track_number || (index + 1);
+                        const isPlaceholder = !hasLink;
 
                         html += `
-                            <li class="ranking-item" style="display: flex; gap: 15px; padding: 12px 0; border-bottom: 1px solid ${itemBorder};" 
-                                ${hasLink ? `onclick="showTrackDetails('${track.artist.replace(/'/g, "\\'")}', '${track.album.replace(/'/g, "\\'")}', '${track.track.replace(/'/g, "\\'")}')"` : ''}
-                                onmouseover="this.style.background='${itemHover}'" 
+                            <li class="ranking-item" style="display: flex; gap: 15px; padding: 12px 0; border-bottom: 1px solid ${itemBorder}; ${isPlaceholder ? 'opacity: 0.5; filter: grayscale(0.5);' : ''}" 
+                                ${hasLink ? `onclick="showTrackDetails('${esc(track.artist)}', '${esc(track.album)}', '${esc(track.track)}')"` : ''}
+                                onmouseover="${hasLink ? `this.style.background='${itemHover}'` : ''}" 
                                 onmouseout="this.style.background='transparent'">
                                 
-                                <div style="width: 28px; font-weight: 700; opacity: 0.3; font-size: 0.9em; flex-shrink: 0; align-self: center; color: var(--text-secondary); text-align: center;">${track.track_number || (index + 1)}</div>
+                                <div style="width: 45px; font-weight: 700; opacity: 0.3; font-size: 0.9em; flex-shrink: 0; align-self: center; text-align: center;">${trackNumDisplay}</div>
                                 
-                                <!-- 本地信息 -->
                                 <div style="flex: 1; min-width: 0; overflow: hidden;">
-                                    <div style="font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1em;" title="${track.track}">${track.track}</div>
-                                    <div style="font-size: 0.85em; opacity: 0.6; margin-top: 2px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${track.artist || '-'}">${track.artist || '-'}</div>
-                                    <div style="font-size: 0.8em; opacity: 0.4; margin-top: 4px; color: var(--text-secondary);">${track.play_count} 次播放</div>
+                                    <div style="font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1em;" title="${track.track || '未知条目'}">${track.track || '未知条目'}</div>
+                                    <div style="font-size: 0.85em; opacity: 0.6; margin-top: 2px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${track.artist || '未知艺术家'}">${track.artist || '未知艺术家'}</div>
+                                    <div style="font-size: 0.8em; margin-top: 4px;">
+                                        ${isPlaceholder ? '<span style="color: var(--text-secondary); border: 1px solid rgba(128,128,128,0.3); padding: 0px 5px; border-radius: 3px; font-size: 0.9em;">待完善 (未播放)</span>' : `<span style="opacity: 0.5;">${track.play_count} 次播放</span>`}
+                                    </div>
                                 </div>
 
-                                <!-- MB 信息 (右侧对齐，等宽) -->
                                 <div style="flex: 1; min-width: 0; font-size: 0.8em; padding-left: 15px; border-left: 1px solid ${itemBorder};">
                                     ${mbRecordingID ? `
                                     <div style="display: flex; gap: 5px; margin-bottom: 2px;">
-                                        <span style="color: var(--primary-color); opacity: 0.8; flex-shrink: 0;">MB:</span>
-                                        <span style="color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${mbTrackName}">${mbTrackName} ${hasDiff ? '<b style="color:var(--accent-color); font-weight: 800;">!</b>' : ''}</span>
+                                        <span style="flex-shrink: 0; background: #6b46c1; color: #fff; font-size: 0.75em; padding: 1px 4px; border-radius: 3px; font-weight: 800;">MB</span>
+                                        <span style="color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${hasDiff ? 'color: var(--accent-color);' : 'opacity: 0.6;'}" title="${mbTrackName}">${mbTrackName}</span>
                                     </div>
-                                    <div style="display: flex; gap: 5px; opacity: 0.4;">
-                                        <span style="flex-shrink: 0; color: var(--text-secondary);">Rec:</span>
-                                        <span style="font-family: monospace; font-size: 0.9em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${mbRecordingID}">${mbRecordingID}</span>
-                                    </div>
-                                    ` : `
-                                    <div style="color: var(--text-secondary); opacity: 0.3; font-style: italic;">未匹配</div>
-                                    `}
+                                    <div style="font-family: monospace; opacity: 0.3; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${mbRecordingID}</div>
+                                    ` : `<div style="opacity: 0.2; font-style: italic;">尚未同步</div>`}
                                 </div>
 
-                                <!-- 解除关联按钮 -->
-                                ${hasLink ? `
+                                ${hasLink && window.currentAlbumSyncStatus !== 3 ? `
                                 <div style="flex-shrink: 0; padding-left: 10px; display: flex; align-items: center;">
-                                    <button onclick="event.stopPropagation(); unlinkTrackAlbum(${track.id}, ${window.currentAlbumID}, '${track.track.replace(/'/g, "\\'")}')" 
+                                    <button onclick="event.stopPropagation(); unlinkTrackAlbum(${ta.id}, ${window.currentAlbumID}, '${esc(track.track)}')" 
                                         style="padding: 4px 8px; font-size: 0.7em; border: 1px solid var(--accent-color); background: transparent; color: var(--accent-color); border-radius: 4px; cursor: pointer; opacity: 0.6;"
                                         onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">解除</button>
                                 </div>
@@ -6992,6 +6988,7 @@
                             </li>
                         `;
                     });
+                    html += '</ul>';
                     trackList.innerHTML = html;
                 } else {
                     trackList.innerHTML = '<div style="padding: 40px; text-align: center; opacity: 0.4; color: var(--text-secondary);">暂无曲目信息</div>';
@@ -7033,6 +7030,8 @@
      * 根据同步状态更新 UI 按钮
      */
     function updateMBUI(status) {
+        window.currentAlbumSyncStatus = status; // 保存同步状态
+        
         const mbSearchBtn = document.getElementById('mbSearchBtn');
         const mbDeepBtn = document.getElementById('mbDeepBtn');
         const candidateList = document.getElementById('mbCandidateList');
@@ -7100,7 +7099,17 @@
                 const isSelected = (selectedMBID === item.mbid);
                 const date = detail.date || '未知日期';
                 const country = detail.country || '未知国家';
-                const trackCount = (detail.media && detail.media[0]) ? detail.media[0]["track-count"] : '?';
+                // 计算所有碟的曲目总数
+                let trackCount = 0;
+                let trackCalcStr = "";
+                if (detail.media && detail.media.length > 0) {
+                    trackCount = detail.media.reduce((sum, m) => sum + (m["track-count"] || 0), 0);
+                    if (detail.media.length > 1) {
+                        trackCalcStr = detail.media.map(m => m["track-count"] || 0).join(' + ') + ' = ';
+                    }
+                }
+                const trackDisplay = trackCalcStr + trackCount;
+                const isCompleted = currentStatus === 3; // 精选完成后禁用确认按钮
 
                 html += `
                     <div class="mb-candidate-card" style="padding: 15px; background: ${isSelected ? 'rgba(var(--primary-rgb), 0.15)' : cardBg}; border: 1px solid ${isSelected ? 'var(--primary-color)' : cardBorder}; border-radius: 14px; position: relative; transition: all 0.2s;">
@@ -7112,13 +7121,16 @@
                                 <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8em; opacity: 0.6;">
                                     <span>📅 ${date}</span>
                                     <span>🌍 ${country}</span>
-                                    <span>🎵 ${trackCount}曲</span>
+                                    <span>🎵 ${trackDisplay}曲</span>
                                 </div>
                             </div>
                             <div style="flex-shrink: 0;">
                                 ${isSelected ? 
                                     '<span style="background: var(--primary-color); color: #fff; font-size: 0.7em; padding: 2px 8px; border-radius: 5px; font-weight: 800; box-shadow: 0 4px 10px rgba(var(--primary-rgb), 0.3);">已选定</span>' : 
-                                    `<button class="time-filter" style="font-size: 0.7em; padding: 4px 10px; border-radius: 6px;" onclick="selectCandidate(${item.id}, '${item.mbid}')">确认此版本</button>`
+                                    (isCompleted ? 
+                                        '<span style="font-size: 0.7em; padding: 4px 10px; border-radius: 6px; opacity: 0.4; color: var(--text-secondary);">已完成</span>' :
+                                        `<button class="time-filter" style="font-size: 0.7em; padding: 4px 10px; border-radius: 6px;" onclick="selectCandidate(${item.id}, '${item.mbid}')">确认此版本</button>`
+                                    )
                                 }
                             </div>
                         </div>
@@ -7220,22 +7232,23 @@
 
         // 渲染曲目信息
         let trackHtml = `<div style="margin-top: 15px;"><strong style="color: var(--text-primary);">曲目摘要:</strong><div style="max-height: 300px; overflow-y: auto; margin-top: 10px; font-size: 0.85em; color: var(--text-primary);">`;
-        if (detail.media && detail.media[0]) {
-            const m = detail.media[0];
-            trackHtml += `<div style="opacity: 0.7;">该版本包含 ${m["track-count"] || 0} 首曲目 (格式: ${m.format || '未知'})</div>`;
-            if (m.tracks && m.tracks.length > 0) {
-                m.tracks.forEach(t => {
-                    const trackTitle = t.title || (t.recording ? t.recording.title : '-');
-                    const trackLength = t.length ? `${Math.floor(t.length/60000)}:${String(Math.floor((t.length%60000)/1000)).padStart(2, '0')}` : '-';
-                    trackHtml += `<div style="padding: 4px 0; border-bottom: 1px solid ${subtleBorder}; display: flex;">
-                        <span style="width: 30px; opacity: 0.5; color: var(--text-secondary);">${t.number || t.position}.</span>
-                        <span style="flex: 1; color: var(--text-primary);">${trackTitle}</span>
-                        <span style="opacity: 0.5; color: var(--text-secondary);">${trackLength}</span>
-                    </div>`;
-                });
-            } else {
-                trackHtml += '<div style="margin-top: 10px; opacity: 0.5; font-style: italic; color: var(--text-secondary);">注：该搜索结果页暂不包含完整曲目单。</div>';
-            }
+        if (detail.media && detail.media.length > 0) {
+            detail.media.forEach((m, mIndex) => {
+                trackHtml += `<div style="margin-top: 10px; opacity: 0.7; font-weight: bold; padding-bottom: 5px; border-bottom: 1px solid ${subtleBorder};">碟 ${m.position || (mIndex+1)} (共 ${m["track-count"] || 0} 首，格式: ${m.format || '未知'})</div>`;
+                if (m.tracks && m.tracks.length > 0) {
+                    m.tracks.forEach(t => {
+                        const trackTitle = t.title || (t.recording ? t.recording.title : '-');
+                        const trackLength = t.length ? `${Math.floor(t.length/60000)}:${String(Math.floor((t.length%60000)/1000)).padStart(2, '0')}` : '-';
+                        trackHtml += `<div style="padding: 4px 0; border-bottom: 1px solid ${subtleBorder}; display: flex;">
+                            <span style="width: 30px; opacity: 0.5; color: var(--text-secondary);">${t.number || t.position}.</span>
+                            <span style="flex: 1; color: var(--text-primary); margin-left:10px;">${trackTitle}</span>
+                            <span style="opacity: 0.5; color: var(--text-secondary);">${trackLength}</span>
+                        </div>`;
+                    });
+                } else {
+                    trackHtml += '<div style="margin-top: 5px; margin-bottom: 10px; opacity: 0.5; font-style: italic; color: var(--text-secondary);">注：该搜索结果页暂不包含完整曲目单。</div>';
+                }
+            });
         } else {
             trackHtml += '<div style="color: var(--text-secondary);">暂无曲目信息</div>';
         }
@@ -7298,6 +7311,7 @@
             <div style="margin-top: 20px; font-family: monospace; font-size: 0.7em; opacity: 0.3; word-break: break-all; color: var(--text-secondary);">MBID: ${item.mbid}</div>
         `;
     }
+    window.showCandidateDetail = showCandidateDetail;
 
     /**
      * 选定 MB 版本进行关联
@@ -7377,7 +7391,7 @@
 </script>
 
 <!-- MusicBrainz 候选版本详情模态框 -->
-<div id="mbCandidateDetailModal" class="modal" style="z-index: 2100;">
+<div id="mbCandidateDetailModal" class="custom-modal" style="z-index: 4000;">
     <div class="modal-content" style="max-width: 500px; margin-top: 80px; background: var(--card-bg); border: 1px solid var(--border-color);">
         <div class="module-trail"></div>
         <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
@@ -7400,7 +7414,7 @@
 </div>
 
 <!-- 专辑详情模态框 -->
-<div id="albumDetailsModal" class="modal">
+<div id="albumDetailsModal" class="custom-modal">
     <div class="modal-content album-modal-content" style="max-width: 1250px; width: 95vw;">
         <div class="module-trail"></div>
         <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 15px 25px;">
@@ -7430,6 +7444,7 @@
                         <div class="meta-row"><div class="meta-label">发行状态:</div><div class="meta-value" id="ad-status" title="-">-</div></div>
                         <div class="meta-row"><div class="meta-label">包装形式:</div><div class="meta-value" id="ad-packaging" title="-">-</div></div>
                         <div class="meta-row"><div class="meta-label">识别条码:</div><div class="meta-value" id="ad-barcode" title="-">-</div></div>
+                        <div class="meta-row"><div class="meta-label">总计碟数:</div><div class="meta-value" id="ad-total-discs" title="-">-</div></div>
                     </div>
 
                     <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
@@ -7449,9 +7464,9 @@
                     </div>
                 </div>
                 
-                <div id="mbCandidateList" style="display: none; flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <div id="mbCandidateList" style="display: none; flex: 1; overflow: hidden;">
                     <p style="font-size: 0.8em; margin-bottom: 15px; color: var(--text-secondary);">请点击版本进行关联校准：</p>
-                    <div id="mbCandidateContent" style="flex: 1; overflow-y: auto; padding-right: 5px;"></div>
+                    <div id="mbCandidateContent" style="flex: 1; overflow-y: auto; padding-right: 5px; max-height: 100%;"></div>
                 </div>
                 <div id="mbInitialMsg" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; text-align: center;">
                     <div style="font-size: 3em; margin-bottom: 10px;">🔍</div>
@@ -7473,7 +7488,7 @@
 </div>
 
 <!-- 曲目详情模态框 -->
-<div id="trackDetailsModal" class="modal">
+<div id="trackDetailsModal" class="custom-modal">
     <div class="modal-content" style="max-width: 800px;">
         <div class="module-trail"></div>
         <!-- 内容由 JavaScript 动态生成，包含 Tab 结构 -->
@@ -7481,7 +7496,7 @@
 </div>
 
 <!-- “正在播放” AI 歌词解析模态框 -->
-<div id="nowPlayingInsightModal" class="modal">
+<div id="nowPlayingInsightModal" class="custom-modal">
     <div class="modal-content" style="max-width: 800px;">
         <div class="module-trail"></div>
         <div class="modal-header">
@@ -7545,7 +7560,7 @@
 </div>
 
 <!-- “音眸列表” AI 歌词解析模态框 -->
-<div id="listInsightModal" class="modal">
+<div id="listInsightModal" class="custom-modal">
     <div class="modal-content" style="max-width: 800px;">
         <div class="module-trail"></div>
         <div class="modal-header">
@@ -7673,7 +7688,7 @@
 </div>
 
 <!-- AI 模型选择模态框 -->
-<div id="aiModelPickerModal" class="modal" style="z-index: 2100;">
+<div id="aiModelPickerModal" class="custom-modal">
     <div class="modal-content" style="max-width: 400px; padding: 25px;">
         <div class="module-trail"></div>
         <div class="modal-header" style="margin-bottom: 20px;">
@@ -7751,32 +7766,291 @@
         </div>
     </div>
 </div>
-
-<!-- Watermark Logo -->
-<div class="watermark"></div>
-
 <script>
-    // 侧边栏切换逻辑
-    document.addEventListener('DOMContentLoaded', () => {
-        const navbar = document.getElementById('mainNavbar');
-        const toggleBtn = document.getElementById('navToggle');
-        const isMobileNav = window.innerWidth <= 768;
+    // --- 新增：导航切换逻辑 ---
+    function showSection(sectionId) {
+        // 隐藏所有主内容区域
+        const sections = [
+            '.stats-container', '.charts-container', '.rankings-container',
+            '#unscrobbledContainer', '#insightListContainer', 
+            '#albumListContainer', '#trackListContainer'
+        ];
         
-        // 从 localStorage 加载用户偏好
-        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-        if (isMobileNav) {
-            navbar.classList.remove('collapsed');
-        } else if (isCollapsed && window.innerWidth > 1200) {
-            navbar.classList.add('collapsed');
-            toggleBtn.textContent = '▶';
+        sections.forEach(selector => {
+            const el = document.querySelector(selector);
+            if (el) el.style.display = 'none';
+        });
+
+        // 取消所有导航激活状态
+        document.querySelectorAll('.menu a').forEach(a => {
+            a.classList.remove('active', 'bg-primary', 'text-white');
+        });
+
+        // 根据 sectionId 显示对应区域
+        if (sectionId === 'dashboard') {
+            document.querySelector('.stats-container').style.display = 'grid';
+            document.querySelector('.charts-container').style.display = 'grid';
+            document.querySelector('.rankings-container').style.display = 'grid';
+            document.getElementById('dashboardTab').classList.add('active', 'bg-primary', 'text-white');
+        } else {
+            const container = document.getElementById(sectionId + 'Container');
+            if (container) container.style.display = 'block';
+            
+            const tab = document.getElementById(sectionId + 'Tab');
+            if (tab) tab.classList.add('active', 'bg-primary', 'text-white');
+
+            // 特殊逻辑：如果是特定列表，则加载数据
+            if (sectionId === 'albumList') loadAlbumList();
+            if (sectionId === 'trackList') loadTrackList();
+            if (sectionId === 'insightList') loadInsightList();
+            if (sectionId === 'unscrobbled') loadUnscrobbledRecords();
+        }
+    }
+
+    // 处理侧边栏库菜单展开/折叠
+    const libraryMenuItem = document.getElementById('libraryMenuItem');
+    if (libraryMenuItem) {
+        libraryMenuItem.querySelector('a').addEventListener('click', (e) => {
+            e.preventDefault();
+            // 如果侧边栏是折叠的，先展开侧边栏
+            const navbar = document.getElementById('mainNavbar');
+            if (navbar.classList.contains('collapsed')) {
+                toggleNavbar();
+            }
+            libraryMenuItem.classList.toggle('expanded');
+        });
+    }
+
+    // 处理侧边栏导航点击 (DaisyUI 版)
+    document.querySelectorAll('.menu a').forEach(a => {
+        a.addEventListener('click', (e) => {
+            const id = a.id;
+            if (!id) return;
+            
+            // 只有 Tab 类项才执行切换
+            if (id.endsWith('Tab')) {
+                e.preventDefault();
+                const sectionMap = {
+                    'dashboardTab': 'dashboard',
+                    'albumListTab': 'albumList',
+                    'trackListTab': 'trackList',
+                    'insightListTab': 'insightList',
+                    'unscrobbledTab': 'unscrobbled'
+                };
+                
+                const section = sectionMap[id];
+                if (section) {
+                    showSection(section);
+                    // 更新子导航激活状态 (DaisyUI 类)
+                    document.querySelectorAll('.menu a').forEach(el => el.classList.remove('active', 'bg-primary', 'text-white'));
+                    a.classList.add('active', 'bg-primary', 'text-white');
+                }
+            }
+        });
+    });
+
+    // 默认激活仪表盘
+    showSection('dashboard');
+
+    // --- 新编：专辑列表加载逻辑 ---
+    async function loadAlbumList(page = 1) {
+        currentAlbumPage = page;
+        const content = document.getElementById('albumListContent');
+        content.innerHTML = '<div class="loading">加载中...</div>';
+
+        const offset = (page - 1) * albumPageSize;
+        const url = `/api/albums?limit=${albumPageSize}&offset=${offset}&keyword=${encodeURIComponent(currentAlbumKeyword)}`;
+
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            totalAlbumsCount = data.total;
+            renderAlbumList(data.albums);
+            updateAlbumPagination();
+        } catch (err) {
+            content.innerHTML = `<div class="error">加载失败: ${err.message}</div>`;
+        }
+    }
+
+    function renderAlbumList(albums) {
+        const content = document.getElementById('albumListContent');
+        if (!albums || albums.length === 0) {
+            content.innerHTML = '<div class="no-data">暂无专辑记录</div>';
+            return;
         }
 
-        toggleBtn.addEventListener('click', () => {
-            const currentlyCollapsed = navbar.classList.toggle('collapsed');
-            toggleBtn.textContent = currentlyCollapsed ? '▶' : '◀';
-            localStorage.setItem('sidebarCollapsed', currentlyCollapsed);
+        let html = '<div class="album-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding: 10px;">';
+        albums.forEach(album => {
+            html += `
+                <div class="album-card" onclick="showAlbumDetails(${album.id})" style="cursor: pointer; background: var(--bg-card); padding: 15px; border-radius: 12px; transition: transform 0.2s;">
+                    <div class="album-cover-placeholder" style="width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 3rem; margin-bottom: 10px;">💿</div>
+                    <div class="album-name" style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${album.name}</div>
+                    <div class="album-artist" style="font-size: 0.85rem; opacity: 0.7;">${album.artist}</div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        content.innerHTML = html;
+    }
+
+    function updateAlbumPagination() {
+        const totalPages = Math.ceil(totalAlbumsCount / albumPageSize);
+        document.getElementById('albumPageInfo').textContent = `第 ${currentAlbumPage} 页 / 共 ${totalPages} 页 (总计 ${totalAlbumsCount})`;
+        document.getElementById('albumPrevPage').disabled = currentAlbumPage <= 1;
+        document.getElementById('albumNextPage').disabled = currentAlbumPage >= totalPages;
+    }
+
+    // --- 新编：曲目列表加载逻辑 ---
+    async function loadTrackList(page = 1) {
+        currentTrackPage = page;
+        const content = document.getElementById('trackListContent');
+        content.innerHTML = '<div class="loading">加载中...</div>';
+
+        const offset = (page - 1) * trackPageSize;
+        const url = `/api/tracks?limit=${trackPageSize}&offset=${offset}&keyword=${encodeURIComponent(currentTrackKeyword)}`;
+
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            totalTracksCount = data.total;
+            renderTrackList(data.tracks);
+            updateTrackPagination();
+        } catch (err) {
+            content.innerHTML = `<div class="error">加载失败: ${err.message}</div>`;
+        }
+    }
+
+    function renderTrackList(tracks) {
+        const content = document.getElementById('trackListContent');
+        if (!tracks || tracks.length === 0) {
+            content.innerHTML = '<div class="no-data">暂无曲目记录</div>';
+            return;
+        }
+
+        let html = '<ul class="ranking-list">';
+        tracks.forEach((track, index) => {
+            const trackName = track.track || track.title || "未知曲目";
+            const discText = track.disc_number > 1 ? `CD ${track.disc_number} - ` : "";
+            html += `
+                <li class="ranking-item" onclick="showTrackDetails('${esc(track.artist)}', '${esc(track.album)}', '${esc(trackName)}')" style="cursor: pointer;">
+                    <div class="rank-number">${(currentTrackPage-1)*trackPageSize + index + 1}</div>
+                    <div class="track-info">
+                        <div class="track-title">${trackName}</div>
+                        <div class="track-artist">${track.artist} - 《${track.album}》 (${discText}${track.track_number})</div>
+                    </div>
+                </li>
+            `;
+        });
+        html += '</ul>';
+        content.innerHTML = html;
+    }
+
+    function updateTrackPagination() {
+        const totalPages = Math.ceil(totalTracksCount / trackPageSize);
+        document.getElementById('trackPageInfo').textContent = `第 ${currentTrackPage} 页 / 共 ${totalPages} 页 (总计 ${totalTracksCount})`;
+        document.getElementById('trackPrevPage').disabled = currentTrackPage <= 1;
+        document.getElementById('trackNextPage').disabled = currentTrackPage >= totalPages;
+    }
+
+    // 绑定分页与搜索
+    document.getElementById('albumPrevPage')?.addEventListener('click', () => loadAlbumList(currentAlbumPage - 1));
+    document.getElementById('albumNextPage')?.addEventListener('click', () => loadAlbumList(currentAlbumPage + 1));
+    document.getElementById('refreshAlbumListBtn')?.addEventListener('click', () => loadAlbumList(1));
+    document.getElementById('albumSearchInput')?.addEventListener('input', (e) => {
+        currentAlbumKeyword = e.target.value;
+        clearTimeout(albumSearchTimeout);
+        albumSearchTimeout = setTimeout(() => loadAlbumList(1), 500);
+    });
+
+    document.getElementById('trackPrevPage')?.addEventListener('click', () => loadTrackList(currentTrackPage - 1));
+    document.getElementById('trackNextPage')?.addEventListener('click', () => loadTrackList(currentTrackPage + 1));
+    document.getElementById('refreshTrackListBtn')?.addEventListener('click', () => loadTrackList(1));
+    document.getElementById('trackSearchInput')?.addEventListener('input', (e) => {
+        currentTrackKeyword = e.target.value;
+        clearTimeout(trackSearchTimeout);
+        trackSearchTimeout = setTimeout(() => loadTrackList(1), 500);
+    });
+
+    // --- 新增内容见上文 ---
+
+    // 侧边栏菜单展开/折叠逻辑
+    function toggleNavbar() {
+        const navbar = document.getElementById('mainNavbar');
+        const isCollapsed = navbar.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+            navbar.classList.remove('collapsed', 'w-20');
+            navbar.classList.add('w-60');
+            document.body.classList.remove('collapsed-sidebar');
+            localStorage.setItem('navbarCollapsed', 'false');
+            // 展开时打开库菜单
+            const details = document.getElementById('libraryMenuDetails');
+            if (details) details.open = true;
+            document.getElementById('navToggle').textContent = '◀';
+        } else {
+            navbar.classList.add('collapsed', 'w-20');
+            navbar.classList.remove('w-60');
+            document.body.classList.add('collapsed-sidebar');
+            localStorage.setItem('navbarCollapsed', 'true');
+            // 折叠时关闭所有子菜单以节省空间
+            const details = document.getElementById('libraryMenuDetails');
+            if (details) details.open = false;
+            document.getElementById('navToggle').textContent = '▶';
+        }
+    }
+
+    // 初始化按钮点击
+    const navToggleBtn = document.getElementById('navToggle');
+    if (navToggleBtn) {
+        navToggleBtn.addEventListener('click', toggleNavbar);
+    }
+
+    // 初始化侧边栏状态
+    (function initNavbar() {
+        const navbar = document.getElementById('mainNavbar');
+        const collapsed = localStorage.getItem('navbarCollapsed') === 'true';
+        if (collapsed) {
+            navbar.classList.add('collapsed', 'w-20');
+            navbar.classList.remove('w-60');
+            document.body.classList.add('collapsed-sidebar');
+            if (navToggleBtn) navToggleBtn.textContent = '▶';
+        } else {
+            navbar.classList.remove('collapsed', 'w-20');
+            navbar.classList.add('w-60');
+            document.body.classList.remove('collapsed-sidebar');
+            if (navToggleBtn) navToggleBtn.textContent = '◀';
+        }
+    })();
+
+    // 初始化导航点击监听 (DaisyUI 版)
+    document.querySelectorAll('.menu a').forEach(a => {
+        a.addEventListener('click', (e) => {
+            const id = a.id;
+            if (!id || !id.endsWith('Tab')) return;
+            
+            e.preventDefault();
+            const sectionMap = {
+                'dashboardTab': 'dashboard',
+                'albumListTab': 'albumList',
+                'trackListTab': 'trackList',
+                'insightListTab': 'insightList',
+                'unscrobbledTab': 'unscrobbled'
+            };
+            
+            const section = sectionMap[id];
+            if (section) {
+                showSection(section);
+                // 更新子导航激活状态 (DaisyUI 类)
+                document.querySelectorAll('.menu a').forEach(el => {
+                    el.classList.remove('active', 'bg-primary', 'text-white');
+                });
+                a.classList.add('active', 'bg-primary', 'text-white');
+            }
         });
     });
 </script>
+
+<!-- Watermark Logo -->
+<div class="watermark"></div>
 </body>
 </html>

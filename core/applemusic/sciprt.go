@@ -730,7 +730,6 @@ func run(command string) (string, error) {
 
 func convertTmpToTrackBase(t *tmp) *TrackInfo {
 	result := new(TrackInfo)
-
 	// 字符串直接赋值字段
 	result.Title = t.Name // tmp的Name对应TrackBase的Title
 	result.Album = t.Album

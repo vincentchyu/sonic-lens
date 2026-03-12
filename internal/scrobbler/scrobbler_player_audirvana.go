@@ -15,7 +15,7 @@ type AudirvanaTrackInfoWrapper struct {
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetTitle() string {
-	return a.baseWrapper.ConversionSimplified(a.Title)
+	return a.baseWrapper.ConversionSimplified(common.UnityFixAll(common.TrackCustomFit(a.Title)))
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetAlbum() string {
@@ -81,6 +81,9 @@ func (a *AudirvanaTrackInfoWrapper) GetBundleID() string {
 func (a *AudirvanaTrackInfoWrapper) GetUniqueID() string {
 	// 使用URL作为唯一标识符
 	return a.MataDataHandle.GetUniqueID()
+}
+func (a *AudirvanaTrackInfoWrapper) GetDiscNumber() int8 {
+	return a.MataDataHandle.GetDiscNumber()
 }
 
 // AudirvanaPlayerController Audirvana播放器控制器

@@ -63,7 +63,11 @@ type (
 		GetSource() string
 		GetBundleID() string
 		GetUniqueID() string
+		GetDiscNumber() int8
 	}
+	// todo Discnumber
+	// 增加 discNumber
+	// disc_number
 
 	ExiftoolInfo map[string]any
 	WavInfo      struct {
@@ -233,6 +237,32 @@ func (receiver ExiftoolInfo) GetTrackNumber() int64 {
 	val, ok = receiver[key3]
 	if ok {
 		return cast.ToInt64(val)
+	}
+	return 0
+}
+
+// GetDiscNumber GetDiscNumber
+func (receiver ExiftoolInfo) GetDiscNumber() int8 {
+	key1, key2, key3 := "DiscNumber", "Discnumber", "discnumber"
+	//  "TrackNumber": "1 of 12",
+	//   "TrackNumber": 1,
+	var val any
+	val, ok := receiver[key1]
+	if ok {
+		toString := cast.ToString(val)
+		if ok := strings.Contains(toString, "of"); ok {
+			split := strings.Split(toString, "of")
+			return cast.ToInt8(strings.TrimSpace(split[0]))
+		}
+		return cast.ToInt8(toString)
+	}
+	val, ok = receiver[key2]
+	if ok {
+		return cast.ToInt8(val)
+	}
+	val, ok = receiver[key3]
+	if ok {
+		return cast.ToInt8(val)
 	}
 	return 0
 }
@@ -482,6 +512,11 @@ func (receiver *WavInfo) GetBundleID() string {
 func (receiver *WavInfo) GetUniqueID() string {
 	// WAV files don't have a standard unique identifier field in metadata
 	return ""
+}
+
+// GetDiscNumber GetDiscNumber
+func (receiver WavInfo) GetDiscNumber() int8 {
+	return 1
 }
 
 func GetMRMediaNowPlayingCli(ctx context.Context) (*MRMediaNowPlaying, error) {

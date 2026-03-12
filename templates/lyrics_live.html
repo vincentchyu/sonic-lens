@@ -118,7 +118,7 @@
 
         .top {
             display: grid;
-            grid-template-columns: 1fr auto 1fr;
+            grid-template-columns: 180px 1fr 180px;
             align-items: center;
             gap: 10px;
             flex: 0 0 auto;
@@ -151,49 +151,82 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .track-info-badge {
+            font-size: 0.72rem;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: var(--accent);
+            color: white;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            line-height: 1;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+        }
+
+        .track-info-container {
+            grid-column: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
         }
 
         .actions {
-            display: flex;
-            gap: 8px;
-            flex: 0 0 auto;
             grid-column: 3;
-            justify-self: end;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 5px;
         }
 
         .btn {
-            border: 1px solid rgba(127, 140, 141, 0.24);
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--fg);
-            border-radius: 999px;
-            padding: 9px 12px;
+            border: none;
             cursor: pointer;
-            font-size: 0.85rem;
-            transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 0.72rem;
+            padding: 4px 0; /* Vertical padding only */
+            border-radius: 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            line-height: 1;
+            white-space: nowrap;
+            width: 72px; /* Fixed width for consistency */
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .btn:hover {
-            border-color: var(--accent);
+        .favorite-btn, .refresh-btn, .back-btn, .insight-btn {
+            background: rgba(37, 99, 235, 0.1);
             color: var(--accent);
-            background: rgba(255, 255, 255, 0.16);
+            border: 1px solid rgba(37, 99, 235, 0.3);
+        }
+
+        .favorite-btn.favorited {
+            background: var(--accent);
+            color: white;
+            border: 1px solid var(--accent);
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+        }
+
+        .btn:hover:not(:disabled) {
             transform: translateY(-1px);
+            filter: brightness(1.1);
         }
 
         .btn:disabled {
             opacity: 0.55;
             cursor: default;
             transform: none;
-        }
-
-        .favorite-btn {
-            min-width: 88px;
-            font-weight: 600;
-        }
-
-        .favorite-btn.liked {
-            color: var(--accent-strong);
-            border-color: rgba(37, 99, 235, 0.28);
-            background: rgba(37, 99, 235, 0.12);
         }
 
         .lyrics {
@@ -504,15 +537,19 @@
 </div>
 <div class="page">
     <div class="top">
+        <div class="track-info-container" id="trackInfoContainer" style="visibility:hidden;">
+            <span class="track-info-badge" id="discNumberDisplay"></span>
+            <span class="track-info-badge" id="trackNumberDisplay"></span>
+        </div>
         <div class="title-wrap">
             <div class="track" id="trackTitle">等待播放中...</div>
             <div class="meta" id="trackMeta">连接中</div>
         </div>
         <div class="actions">
             <button class="btn favorite-btn" id="favoriteBtn" disabled>☆ 收藏</button>
-            <button class="btn" id="toggleInsightBtn" style="display:none;">赏析</button>
-            <button class="btn" id="backBtn">返回看板</button>
-            <button class="btn" id="refreshLyricsBtn">刷新歌词</button>
+            <button class="btn insight-btn" id="toggleInsightBtn" style="display:none;">赏析</button>
+            <button class="btn back-btn" id="backBtn">返回看板</button>
+            <button class="btn refresh-btn" id="refreshLyricsBtn">刷新歌词</button>
         </div>
     </div>
     <div class="content" id="contentRoot">
@@ -586,22 +623,43 @@
         }, 220);
     }
 
-    function updateFavoriteButtonState(isLiked) {
+    function updateFavoriteButtonState(appleMusicFav, lastFmFav) {
         const btn = document.getElementById("favoriteBtn");
         if (!btn) return;
         btn.disabled = !currentTrackInfo || !currentSource;
-        btn.classList.toggle("liked", !!isLiked);
-        btn.textContent = isLiked ? "★ 已收藏" : "☆ 收藏";
-        btn.title = isLiked ? "已添加到喜欢" : "添加到喜欢";
+        
+        // 只要有一个平台收藏了，就标记为 liked 类（用于改变背景色或基础样式）
+        const isAnyLiked = !!appleMusicFav || !!lastFmFav;
+        const isAllLiked = !!appleMusicFav && !!lastFmFav;
+        btn.classList.toggle("favorited", isAnyLiked);
+
+        // 使用 SVG 实现三态展示
+        let starSvg = '';
+        if (isAllLiked) {
+            // 全星：全实心
+            starSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>`;
+        } else if (isAnyLiked) {
+            // 半星：左实右虚
+            starSvg = `<svg width="14" height="14" viewBox="0 0 24 24" style="margin-right:4px;">
+                <defs><linearGradient id="halfGrad"><stop offset="50%" stop-color="currentColor"/><stop offset="50%" stop-color="transparent" stop-opacity="0"/></linearGradient></defs>
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" fill="url(#halfGrad)" stroke="currentColor" stroke-width="1.5"/>
+            </svg>`;
+        } else {
+            // 空星：仅描边
+            starSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+        }
+
+        btn.innerHTML = starSvg + (isAnyLiked ? "已收藏" : "收藏");
+        btn.title = isAllLiked ? "已同步至双平台" : (isAnyLiked ? "已收藏至单平台，再次点击同步全部" : "添加到收藏");
     }
 
     async function handleFavoriteButtonClick() {
         if (!currentTrackInfo || !currentSource) return;
         const btn = document.getElementById("favoriteBtn");
-        const isCurrentlyLiked = btn.classList.contains("liked");
-        if (isCurrentlyLiked) return;
+        
+        // 如果已经是全平台收藏，暂时不做取消收藏逻辑（保持现有逻辑一致性，主要解决显示问题）
+        if (currentTrackInfo.apple_music && currentTrackInfo.lastfm) return;
 
-        updateFavoriteButtonState(true);
         try {
             const resp = await fetch("/api/favorite", {
                 method: "POST",
@@ -622,9 +680,8 @@
                 currentTrackInfo.apple_music = !!data.apple_music;
                 currentTrackInfo.lastfm = !!data.lastfm;
             }
-            updateFavoriteButtonState(!!data.apple_music);
+            updateFavoriteButtonState(currentTrackInfo.apple_music, currentTrackInfo.lastfm);
         } catch (e) {
-            updateFavoriteButtonState(false);
             window.alert("收藏操作失败，请稍后重试");
         }
     }
@@ -1195,6 +1252,39 @@
         }
     }
 
+    function updateTrackDisplay(data) {
+        if (!data) return;
+        const trackTitle = document.getElementById("trackTitle");
+        const trackMeta = document.getElementById("trackMeta");
+        const trackInfoContainer = document.getElementById("trackInfoContainer");
+        const discNumberDisplay = document.getElementById("discNumberDisplay");
+        const trackNumberDisplay = document.getElementById("trackNumberDisplay");
+        
+        if (trackTitle) trackTitle.textContent = data.title || data.track || "未知曲目";
+        if (trackMeta) trackMeta.textContent = (data.artist || "未知艺术家") + (data.album ? " · " + data.album : "");
+        
+        if (trackInfoContainer) {
+            let hasInfo = false;
+            if (data.disc_number && data.disc_number > 0) {
+                discNumberDisplay.textContent = "DISC " + data.disc_number;
+                discNumberDisplay.style.display = "inline-block";
+                hasInfo = true;
+            } else {
+                discNumberDisplay.style.display = "none";
+            }
+            
+            if (data.track_number && data.track_number > 0) {
+                trackNumberDisplay.textContent = "TRACK " + data.track_number;
+                trackNumberDisplay.style.display = "inline-block";
+                hasInfo = true;
+            } else {
+                trackNumberDisplay.style.display = "none";
+            }
+            
+            trackInfoContainer.style.visibility = hasInfo ? "visible" : "hidden";
+        }
+    }
+
     function connectWebSocket() {
         const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
         ws = new WebSocket(protocol + window.location.host + "/ws");
@@ -1210,7 +1300,8 @@
                 currentPosition = currentTrackInfo.position || 0;
                 trackDuration = currentTrackInfo.duration || 0;
                 setTrackInfo(currentTrackInfo, data.source || "");
-                updateFavoriteButtonState(!!currentTrackInfo.apple_music);
+                updateTrackDisplay(currentTrackInfo);
+                updateFavoriteButtonState(!!currentTrackInfo.apple_music, !!currentTrackInfo.lastfm);
                 startProgress();
                 if (changed) {
                     loadLyricsForCurrentTrack(false);
@@ -1228,7 +1319,7 @@
                 renderInsight(null);
                 document.getElementById("toggleInsightBtn").style.display = "none";
                 setSplitMode(false);
-                updateFavoriteButtonState(false);
+                updateFavoriteButtonState(false, false);
                 updateProgressDisplay();
             }
         };
@@ -1261,7 +1352,7 @@
         currentPosition = position || 0;
         trackDuration = duration || 0;
         setTrackInfo(currentTrackInfo, source);
-        updateFavoriteButtonState(false);
+        updateFavoriteButtonState(false, false);
         startProgress();
         loadLyricsForCurrentTrack(false);
         syncInsightForCurrentTrack();
@@ -1305,7 +1396,7 @@
         parseInitialTrackFromQuery();
         renderInsight(null);
         updateProgressDisplay();
-        updateFavoriteButtonState(false);
+        updateFavoriteButtonState(false, false);
         connectWebSocket();
     });
 </script>

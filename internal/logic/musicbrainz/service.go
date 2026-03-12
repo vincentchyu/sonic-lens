@@ -88,6 +88,23 @@ func SearchAndCacheReleases(ctx context.Context, albumID int64) error {
 		return err
 	}
 
+	// 如果状态为3（精选完成），需要清除之前的MB关联数据，重新开始
+	if album.SyncStatus == 3 {
+		// 清除 album_release_mb 关联记录
+		if err := model.GetDB().WithContext(ctx).Where(
+			"album_id = ?", albumID,
+		).Delete(&model.AlbumReleaseMB{}).Error; err != nil {
+			log.Warn(ctx, "Clear album_release_mb failed", zap.Int64("album_id", albumID), zap.Error(err))
+		}
+		// 清除 track_album 中的 mb_recording_id
+		if err := model.GetDB().WithContext(ctx).Model(&model.TrackAlbum{}).Where(
+			"album_id = ?", albumID,
+		).Update("mb_recording_id", "").Error; err != nil {
+			log.Warn(ctx, "Clear mb_recording_id failed", zap.Int64("album_id", albumID), zap.Error(err))
+		}
+		log.Info(ctx, "Reset album sync status from 3 to 1", zap.Int64("album_id", albumID))
+	}
+
 	log.Info(
 		ctx, "Searching candidates for album", zap.Int64("album_id", albumID), zap.String("name", album.Name),
 		zap.String("artist", album.Artist),
@@ -137,6 +154,17 @@ func SearchAndCacheReleases(ctx context.Context, albumID int64) error {
 	return nil
 }
 
+// todo list
+// media len:2, cap:2 意思是当前专辑有几张碟
+// media.position 碟号是多少
+// media.track-count 当前碟有个track
+// media.track[0].position或者number 为当前track在这个碟中的序号
+// 现在的深度维护不支持多张碟的情况
+// album表也没有当前专辑有几张碟每张碟的分别的总track数字的记录
+// track_album表也没有DiscNumber 只有TrackNumber
+// 现在遇到的情况就是the wall 这张专辑在track_album 分别有 TrackNumber 1 1 两首以此类推其他的序号也是两个 深度维护应该按照歌曲名字 补充上DiscNumber
+// 参考json在@internal/logic/musicbrainz/lookUpRelease.json
+
 // DeepingMaintenance performs a lookup and updates track numbers
 func DeepingMaintenance(ctx context.Context, albumID int64) error {
 	log.Info(ctx, "Starting DeepingMaintenance", zap.Int64("album_id", albumID))
@@ -154,7 +182,7 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 	log.Info(ctx, "Fetching MB release details", zap.String("mbid", link.MBID))
 	release, err := client.LookupRelease(
 		ctx, mbtypes.MBID(link.MBID), musicbrainzws2.IncludesFilter{
-			Includes: []string{"recordings", "media", "genres"},
+			Includes: []string{"recordings", "media", "artist-credits", "genres"},
 		},
 	)
 	if err != nil {
@@ -163,25 +191,47 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 	}
 
 	// 3. 建立映射关系
-	mbTrackMapByName := make(map[string]musicbrainzws2.Track)
-	mbTracks := make([]musicbrainzws2.Track, 0)
+	type MBTrackInfo struct {
+		musicbrainzws2.Track
+		DiscNumber int8
+	}
+	mbTrackMapByName := make(map[string][]MBTrackInfo) // 一个名字可能对应多个（多碟重复）
+	mbTrackMapByPos := make(map[string]MBTrackInfo)   // 碟号|轨道号 -> 信息 (物理唯一)
+	mbTrackMapByName2ToLower := make(map[string]string)
+	mbTracks := make([]MBTrackInfo, 0)
+
+	totalDiscs := len(release.Media)
+	discInfosMap := make(map[int]int)
+
 	for _, medium := range release.Media {
+		discInfosMap[medium.Position] = medium.TrackCount
 		for _, t := range medium.Tracks {
 			key := ""
+			org := musicbrainz.TrackTitleWithFeat(t)
+			title := common.UnityFixAll(org)
 			// 判断是否是是中文 中文转简体
-			if common.IsExistsChineseSimplified(t.Title) {
-				conversionSimplified := common.ConversionSimplifiedFx(t.Title)
+			if common.IsExistsChineseSimplified(title) {
+				conversionSimplified := common.ConversionSimplifiedFx(title)
 				key = strings.ToLower(conversionSimplified)
 			} else {
-				key = strings.ToLower(t.Title)
+				key = strings.ToLower(title)
 			}
 			// 英文 将 Title 转为小写以支持大小写不敏感匹配 (兼容数据库 utf8mb4_unicode_ci)
-			t.Title = key
-			t.Recording.Title = key
-			mbTrackMapByName[key] = t
-			mbTracks = append(mbTracks, t)
+			t.Title = title
+			t.Recording.Title = title
+
+			info := MBTrackInfo{
+				Track:      t,
+				DiscNumber: int8(medium.Position),
+			}
+			mbTrackMapByName2ToLower[key] = org
+			mbTrackMapByName[key] = append(mbTrackMapByName[key], info)
+			mbTrackMapByPos[fmt.Sprintf("%d|%d", info.DiscNumber, info.Position)] = info
+			mbTracks = append(mbTracks, info)
 		}
 	}
+	discInfosBytes, _ := json.Marshal(discInfosMap)
+	discInfosStr := string(discInfosBytes)
 
 	// 开启事务处理所有数据库操作
 	err = model.GetDB().WithContext(ctx).Transaction(
@@ -215,29 +265,47 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 				}
 				var trackObj model.Track
 				if err := tx.First(&trackObj, ta.TrackID).Error; err == nil {
-					// 大小写不敏感匹配
-					key := ""
-					// 判断是否是是中文 中文转简体
-					if common.IsExistsChineseSimplified(trackObj.Track) {
-						conversionSimplified := common.ConversionSimplifiedFx(trackObj.Track)
-						key = strings.ToLower(conversionSimplified)
-					} else {
-						key = strings.ToLower(trackObj.Track)
+					// 1. 优先尝试物理位置匹配 (如果本地已有物理坐标)
+					posKey := fmt.Sprintf("%d|%d", trackObj.DiscNumber, trackObj.TrackNumber)
+					mbTrack, found := mbTrackMapByPos[posKey]
+
+					// 2. 如果位置匹配失败，退而求其次使用名称匹配
+					if !found {
+						key := strings.ToLower(trackObj.Track)
+						if infos, ok := mbTrackMapByName[key]; ok && len(infos) > 0 {
+							// 如果只有一个匹配，直接对齐
+							if len(infos) == 1 {
+								mbTrack = infos[0]
+								found = true
+							} else {
+								// 如果有多个同名歌曲（多碟情况），这里需要非常谨慎
+								// 暂时根据 processedRecordingIDs 找一个还没处理过的
+								for _, info := range infos {
+									if !processedRecordingIDs[string(info.Recording.ID)] {
+										mbTrack = info
+										found = true
+										break
+									}
+								}
+							}
+						}
 					}
 
-					if mbTrack, ok := mbTrackMapByName[key]; ok {
+					if found {
 						recordingID := string(mbTrack.Recording.ID)
 						processedRecordingIDs[recordingID] = true
 
 						log.Info(
 							ctx, "Aligning heard track", zap.String("track", trackObj.Track),
 							zap.String("recording_id", recordingID), zap.Int("pos", mbTrack.Position),
+							zap.Int8("disc", mbTrack.DiscNumber),
 						)
 
 						// 更新本地 track 元数据
 						if err := tx.Model(&trackObj).Updates(
 							map[string]interface{}{
 								"music_brainz_id": recordingID,
+								"disc_number":     mbTrack.DiscNumber,
 								"track_number":    int8(mbTrack.Position),
 							},
 						).Error; err != nil {
@@ -248,6 +316,7 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 						if err := tx.Model(ta).Updates(
 							map[string]interface{}{
 								"track_number":    int8(mbTrack.Position),
+								"disc_number":     mbTrack.DiscNumber,
 								"track":           mbTrack.Title,
 								"mb_recording_id": recordingID,
 							},
@@ -266,14 +335,22 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 				if processedRecordingIDs[recordingID] {
 					continue
 				}
+				// utf8mb4_unicode_ci ci表示大小写不敏感 LOWER(track) 完全是多余的
+				/*
+					SHOW FULL COLUMNS FROM multimedia.track_album; -- track utf8mb4_unicode_ci
 
+					UPDATE MY_TABLE SET Field = 'track', Type = 'varchar(255)', Collation = 'utf8mb4_unicode_ci', `Null` = 'YES', `Key` = '', `Default` = null, Extra = '', Privileges = 'select,insert,update,references', Comment = 'track 冗余';
+
+				*/
 				// 尝试匹配尚未建立 TrackID 关联但名称吻合的占位符 (大小写不敏感)
 				var ta model.TrackAlbum
 				if err := tx.Where(
-					"album_id = ? AND LOWER(track) = ? AND track_id = 0", albumID, strings.ToLower(mbTrack.Title),
+					// "album_id = ? AND LOWER(track) = ? AND track_id = 0", albumID, mbTrack.Title,
+					"album_id = ? AND track = ? AND track_id = 0", albumID, mbTrack.Title,
 				).First(&ta).Error; err == nil {
 					// 发现占位符，校正数据
 					ta.TrackNumber = int8(mbTrack.Position)
+					ta.DiscNumber = mbTrack.DiscNumber
 					ta.MusicBrainzRecordingID = recordingID
 					if err := tx.Save(&ta).Error; err != nil {
 						return err
@@ -298,6 +375,7 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 						Track:                  mbTrack.Title,
 						AlbumID:                albumID,
 						TrackNumber:            int8(mbTrack.Position),
+						DiscNumber:             mbTrack.DiscNumber,
 						MusicBrainzRecordingID: recordingID,
 					}
 					if err := tx.Create(newTA).Error; err != nil {
@@ -319,6 +397,8 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 
 			updateFields := map[string]interface{}{
 				"sync_status": 3,
+				"total_discs": totalDiscs,
+				"disc_infos":  discInfosStr,
 			}
 			if release.Date.String() != "" {
 				updateFields["release_date"] = release.Date.String()

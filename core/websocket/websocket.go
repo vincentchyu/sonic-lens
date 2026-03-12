@@ -48,13 +48,15 @@ type WsTrackInfo struct {
 	Type   string `json:"type"`
 	Source string `json:"source"`
 	Data   struct {
-		Title      string `json:"title"`
-		Album      string `json:"album"`
-		Artist     string `json:"artist"`
-		AppleMusic bool   `json:"apple_music"`
-		LastFM     bool   `json:"lastfm"`
-		Duration   int64  `json:"duration"` // 歌曲时长，单位秒
-		Position   int64  `json:"position"` // 歌曲当前播放位置，单位秒
+		Title       string `json:"title"`
+		Album       string `json:"album"`
+		Artist      string `json:"artist"`
+		AppleMusic  bool   `json:"apple_music"`
+		LastFM      bool   `json:"lastfm"`
+		Duration    int64  `json:"duration"`     // 歌曲时长，单位秒
+		Position    int64  `json:"position"`     // 歌曲当前播放位置，单位秒
+		TrackNumber int8   `json:"track_number"` // 曲目号
+		DiscNumber  int8   `json:"disc_number"`  // 盘号
 	} `json:"data"`
 }
 

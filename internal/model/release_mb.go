@@ -3,8 +3,6 @@ package model
 import (
 	"context"
 	"time"
-
-	"gorm.io/gorm/clause"
 )
 
 // ReleaseMB stores the raw JSON data from MusicBrainz for a release
@@ -24,13 +22,18 @@ func (ReleaseMB) TableName() string {
 }
 
 func SaveReleaseMB(ctx context.Context, r *ReleaseMB) error {
-	// 使用 Upsert: 按 (mbid, album_id) 区分，存在则更新，不存在则插入
-	return GetDB().WithContext(ctx).Clauses(
-		clause.OnConflict{
-			Columns:   []clause.Column{{Name: "mbid"}, {Name: "album_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"name", "json_data", "updated_at"}),
-		},
-	).Create(r).Error
+	var existing ReleaseMB
+	err := GetDB().WithContext(ctx).Where("mbid = ? AND album_id = ?", r.MBID, r.AlbumID).First(&existing).Error
+	if err == nil {
+		// 存在则更新
+		return GetDB().WithContext(ctx).Model(&existing).Updates(map[string]interface{}{
+			"name":      r.Name,
+			"json_data": r.JSONData,
+		}).Error
+	}
+
+	// 不存在则创建
+	return GetDB().WithContext(ctx).Create(r).Error
 }
 
 func GetReleaseMBByMBID(ctx context.Context, albumID int64, mbid string) (*ReleaseMB, error) {

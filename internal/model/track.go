@@ -38,15 +38,16 @@ import (
 }*/
 type Track struct {
 	ID              int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Artist          string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_artist_album_track" json:"artist"`
-	Album           string    `gorm:"column:album;type:varchar(255);not null;index:idx_track_album;uniqueIndex:uidx_artist_album_track" json:"album"`
-	Track           string    `gorm:"column:track;type:varchar(255);not null;index:idx_track_track;uniqueIndex:uidx_artist_album_track" json:"track"`
+	Artist          string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_t_aatdntn" json:"artist"`
+	Album           string    `gorm:"column:album;type:varchar(255);not null;index:idx_track_album;uniqueIndex:uidx_t_aatdntn" json:"album"`
+	Track           string    `gorm:"column:track;type:varchar(255);not null;index:idx_track_track;uniqueIndex:uidx_t_aatdntn" json:"track"`
 	PlayCount       int       `gorm:"column:play_count;type:int;default:0" json:"play_count"`
 	IsAppleMusicFav bool      `gorm:"column:is_apple_music_fav;type:tinyint(1);default:0" json:"is_apple_music_fav"`
 	IsLastFmFav     bool      `gorm:"column:is_last_fm_fav;type:tinyint(1);default:0" json:"is_last_fm_fav"`
 	Version         int       `gorm:"column:version;type:int;default:1" json:"version"`
 	AlbumArtist     string    `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
-	TrackNumber     int8      `gorm:"column:track_number;type:tinyint" json:"track_number"`
+	TrackNumber     int8      `gorm:"column:track_number;type:tinyint;uniqueIndex:uidx_t_aatdntn" json:"track_number"`
+	DiscNumber      int8      `gorm:"column:disc_number;type:tinyint;default:1;uniqueIndex:uidx_t_aatdntn" json:"disc_number"` // 碟号
 	Duration        int64     `gorm:"column:duration;type:int" json:"duration"`
 	Genre           string    `gorm:"column:genre;type:varchar(255);index:idx_track_genre" json:"genre"`
 	Composer        string    `gorm:"column:composer;type:varchar(255)" json:"composer"`
@@ -76,6 +77,7 @@ type TrackMetadata struct {
 	Source        string `json:"source"`         // 数据来源：Apple Music, Audirvana, Roon等
 	BundleID      string `json:"bundle_id"`      // 应用标识符 (用于media-control)
 	UniqueID      string `json:"unique_id"`      // 唯一标识符 (用于media-control)
+	DiscNumber    int8   `json:"disc_number"`    // 盘编号
 }
 
 // IncrementTrackPlayCountParams represents parameters for IncrementTrackPlayCount function
@@ -168,12 +170,16 @@ func IncrementTrackPlayCount(params IncrementTrackPlayCountParams) error {
 				if params.TrackMetadata.TrackNumber == 0 {
 					params.TrackMetadata.TrackNumber = placeholder.TrackNumber
 				}
+				if params.TrackMetadata.DiscNumber == 0 {
+					params.TrackMetadata.DiscNumber = placeholder.DiscNumber
+				}
 			}
 
 			var track Track
 			for i := 0; i < 3; i++ { // 最多重试3次
 				err := tx.Where(
-					"artist = ? AND album = ? AND track = ?", params.Artist, params.Album, params.Track,
+					"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ?", 
+					params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber, params.TrackMetadata.DiscNumber,
 				).First(&track).Error
 				if err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -192,6 +198,7 @@ func IncrementTrackPlayCount(params IncrementTrackPlayCountParams) error {
 							Source:        params.TrackMetadata.Source,
 							BundleID:      params.TrackMetadata.BundleID,
 							UniqueID:      params.TrackMetadata.UniqueID,
+							DiscNumber:    params.TrackMetadata.DiscNumber,
 							PlayCount:     1,
 							Version:       1,
 						}
@@ -228,12 +235,17 @@ func IncrementTrackPlayCount(params IncrementTrackPlayCountParams) error {
 			var ta TrackAlbum
 			foundPlaceholder := false
 			// 优先通过歌曲名称匹配相同专辑下的占位符
-			err := tx.Where("album_id = ? AND track = ? AND track_id = 0", album.ID, params.Track).First(&ta).Error
+			err := tx.Where(
+				"album_id = ? AND track = ? AND track_id = 0", album.ID, params.Track,
+			).First(&ta).Error
 			if err == nil {
 				// 发现占位符，将其“转正”
 				ta.TrackID = track.ID
 				if track.TrackNumber > 0 {
 					ta.TrackNumber = track.TrackNumber
+				}
+				if track.DiscNumber > 0 && ta.TrackNumber <= 0 {
+					ta.DiscNumber = track.DiscNumber
 				}
 				if ta.MusicBrainzRecordingID == "" {
 					ta.MusicBrainzRecordingID = track.MusicBrainzID
@@ -250,12 +262,17 @@ func IncrementTrackPlayCount(params IncrementTrackPlayCountParams) error {
 					AlbumID:                album.ID,
 					Track:                  track.Track,
 					TrackNumber:            track.TrackNumber,
+					DiscNumber:             track.DiscNumber,
 					MusicBrainzRecordingID: track.MusicBrainzID,
 				}
 				if err := tx.Where(
 					"track_id = ? AND album_id = ?", ta.TrackID, ta.AlbumID,
 				).FirstOrCreate(&ta).Error; err != nil {
 					return err
+				} else {
+					if err := tx.Save(&ta).Error; err != nil {
+						return err
+					}
 				}
 			}
 
@@ -275,7 +292,8 @@ func SetAppleMusicFavorite(params SetFavoriteParams) error {
 	for {
 		var record Track
 		err := GetDB().WithContext(params.Ctx).Where(
-			"artist = ? AND album = ? AND track = ?", params.Artist, params.Album, params.Track,
+			"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ?", 
+			params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber, params.TrackMetadata.DiscNumber,
 		).First(&record).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -318,8 +336,8 @@ func SetAppleMusicFavorite(params SetFavoriteParams) error {
 		UpdateTrackWithTrackMetadata(&record, &params.TrackMetadata)
 
 		result := GetDB().WithContext(params.Ctx).Where(
-			"artist = ? AND album = ? AND track = ? AND version = ?",
-			params.Artist, params.Album, params.Track, record.Version,
+			"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ? AND version = ?",
+			params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber, params.TrackMetadata.DiscNumber, record.Version,
 		).Updates(&updatedRecord)
 
 		if result.Error != nil {
@@ -347,7 +365,8 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 	for {
 		var record Track
 		err := GetDB().WithContext(params.Ctx).Where(
-			"artist = ? AND album = ? AND track = ?", params.Artist, params.Album, params.Track,
+			"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ?", 
+			params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber, params.TrackMetadata.DiscNumber,
 		).First(&record).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -390,8 +409,8 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 		UpdateTrackWithTrackMetadata(&record, &params.TrackMetadata)
 
 		result := GetDB().WithContext(params.Ctx).Where(
-			"artist = ? AND album = ? AND track = ? AND version = ?",
-			params.Artist, params.Album, params.Track, record.Version,
+			"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ? AND version = ?",
+			params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber, params.TrackMetadata.DiscNumber, record.Version,
 		).Updates(&updatedRecord)
 
 		if result.Error != nil {
@@ -695,4 +714,27 @@ func UpdateTrackWithTrackMetadata(track *Track, newTrack *TrackMetadata) {
 	if track.Source == "" && newTrack.Source != "" {
 		track.Source = newTrack.Source
 	}
+}
+
+// GetTracksOrderedByAlbum retrieves tracks ordered by album name, disc number and track number
+func GetTracksOrderedByAlbum(ctx context.Context, limit, offset int, keyword string) ([]*Track, error) {
+	var tracks []*Track
+	db := GetDB().WithContext(ctx)
+	if keyword != "" {
+		kw := "%" + keyword + "%"
+		db = db.Where("track LIKE ? OR artist LIKE ? OR album LIKE ?", kw, kw, kw)
+	}
+	err := db.Order("album ASC, disc_number ASC, track_number ASC").Limit(limit).Offset(offset).Find(&tracks).Error
+	return tracks, err
+}
+
+func GetTracksOrderedByAlbumCount(ctx context.Context, keyword string) (int64, error) {
+	var count int64
+	db := GetDB().WithContext(ctx).Model(&Track{})
+	if keyword != "" {
+		kw := "%" + keyword + "%"
+		db = db.Where("track LIKE ? OR artist LIKE ? OR album LIKE ?", kw, kw, kw)
+	}
+	err := db.Count(&count).Error
+	return count, err
 }

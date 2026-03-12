@@ -162,21 +162,25 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 		Type:   "now_playing",
 		Source: string(b.source),
 		Data: struct {
-			Title      string `json:"title"`
-			Album      string `json:"album"`
-			Artist     string `json:"artist"`
-			AppleMusic bool   `json:"apple_music"`
-			LastFM     bool   `json:"lastfm"`
-			Duration   int64  `json:"duration"` // 歌曲时长，单位秒
-			Position   int64  `json:"position"` // 歌曲当前播放位置，单位秒
+			Title       string `json:"title"`
+			Album       string `json:"album"`
+			Artist      string `json:"artist"`
+			AppleMusic  bool   `json:"apple_music"`
+			LastFM      bool   `json:"lastfm"`
+			Duration    int64  `json:"duration"`     // 歌曲时长，单位秒
+			Position    int64  `json:"position"`     // 歌曲当前播放位置，单位秒
+			TrackNumber int8   `json:"track_number"` // 曲目号
+			DiscNumber  int8   `json:"disc_number"`  // 盘号
 		}{
-			Title:      playerInfo.GetTitle(),
-			Album:      playerInfo.GetAlbum(),
-			Artist:     playerInfo.GetArtist(),
-			AppleMusic: appleMusicFav,
-			LastFM:     lastFmFav,
-			Duration:   duration,
-			Position:   int64(position),
+			Title:       playerInfo.GetTitle(),
+			Album:       playerInfo.GetAlbum(),
+			Artist:      playerInfo.GetArtist(),
+			AppleMusic:  appleMusicFav,
+			LastFM:      lastFmFav,
+			Duration:    duration,
+			Position:    int64(position),
+			TrackNumber: int8(playerInfo.GetTrackNumber()),
+			DiscNumber:  int8(playerInfo.GetDiscNumber()),
 		},
 	}
 	// 向WebSocket客户端广播播放信息
@@ -474,6 +478,7 @@ func (b *BasePlayerChecker) handleTrackScrobble(ctx context.Context, playerInfo 
 			Source:        playerInfo.GetUrl(), // 优先地址
 			BundleID:      playerInfo.GetBundleID(),
 			UniqueID:      playerInfo.GetUniqueID(),
+			DiscNumber:    playerInfo.GetDiscNumber(),
 		},
 	}
 	if incrementTrackPlayCountParams.TrackMetadata.Source == "" {

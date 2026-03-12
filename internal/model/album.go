@@ -16,6 +16,8 @@ type Album struct {
 	Status      string    `gorm:"column:status;type:varchar(50)" json:"status"`
 	Packaging   string    `gorm:"column:packaging;type:varchar(50)" json:"packaging"`
 	Barcode     string    `gorm:"column:barcode;type:varchar(255)" json:"barcode"`
+	TotalDiscs  int       `gorm:"column:total_discs;type:int;default:1" json:"total_discs"` // 总碟数
+	DiscInfos   string    `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`    // 各碟信息(如 track counts)
 	SyncStatus  int       `gorm:"column:sync_status;type:tinyint;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成
 	CreatedAt   time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
@@ -69,7 +71,7 @@ func GetAlbumWithTracks(ctx context.Context, albumID int64) (*AlbumDetail, error
 		Select("t.*").
 		Joins("left join track_album ta ON t.id = ta.track_id").
 		Where("ta.album_id = ?", albumID).
-		Order("ta.track_number ASC").
+		Order("ta.disc_number ASC, ta.track_number ASC").
 		Find(&tracks).Error
 
 	if err != nil {
@@ -84,4 +86,26 @@ func GetAlbumWithTracks(ctx context.Context, albumID int64) (*AlbumDetail, error
 		TrackAlbums: trackAlbums,
 		ReleaseMB:   mbLink,
 	}, nil
+}
+// GetAlbums retrieves albums with pagination and optional keyword search
+func GetAlbums(ctx context.Context, limit, offset int, keyword string) ([]*Album, error) {
+	var albums []*Album
+	db := GetDB().WithContext(ctx)
+	if keyword != "" {
+		kw := "%" + keyword + "%"
+		db = db.Where("name LIKE ? OR artist LIKE ?", kw, kw)
+	}
+	err := db.Order("name ASC").Limit(limit).Offset(offset).Find(&albums).Error
+	return albums, err
+}
+
+func GetAlbumsCount(ctx context.Context, keyword string) (int64, error) {
+	var count int64
+	db := GetDB().WithContext(ctx).Model(&Album{})
+	if keyword != "" {
+		kw := "%" + keyword + "%"
+		db = db.Where("name LIKE ? OR artist LIKE ?", kw, kw)
+	}
+	err := db.Count(&count).Error
+	return count, err
 }

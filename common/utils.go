@@ -56,7 +56,7 @@ func NormalizeChineseGenre(genre string) string {
 	return genre
 }
 
-// 自定义适配
+// GenreCustomFit 自定义适配
 func GenreCustomFit(genre string) string {
 	switch genre {
 	case "Rock & Roll":
@@ -78,7 +78,7 @@ func GenreCustomFit(genre string) string {
 	return genre
 }
 
-// 艺术家自定义适配
+// ArtistCustomFit 艺术家自定义适配
 func ArtistCustomFit(artist string) string {
 	switch artist {
 	case "Omnipotent Youth Society":
@@ -88,10 +88,76 @@ func ArtistCustomFit(artist string) string {
 	return artist
 }
 
-// CustomReplaceStringFunction 替换字符串函数
-func CustomReplaceStringFunction(target string) string {
+// TrackCustomFit 歌曲自定义适配
+func TrackCustomFit(artist string) string {
+	switch artist {
+	case "Another Brick In the Wall, Pt. 1":
+		return "Another Brick in the Wall, Part 1"
+	case "Another Brick In the Wall, Pt. 2":
+		return "Another Brick in the Wall, Part 2"
+	case "Another Brick In the Wall, Pt. 3":
+		return "Another Brick in the Wall, Part 3"
+		// todo add
+	}
+	return artist
+}
+
+func UnityFixAll(str string) string {
+	// 1  符号统一
+	str = UnityPunctuationMarksFix(str)
+	// 2 feat统一
+	str = UnityFeatFix(str)
+	return str
+}
+
+// UnityPunctuationMarksFix 替换字符串函数
+// ’ => '
+// ，=> ,
+// 替换为英文引号
+func UnityPunctuationMarksFix(target string) string {
 	if strings.ContainsAny(target, "’") {
-		return strings.ReplaceAll(target, "’", "'")
+		target = strings.ReplaceAll(target, "’", "'")
+	}
+	if strings.ContainsAny(target, "，") {
+		target = strings.ReplaceAll(target, "，", ",")
 	}
 	return target
+}
+
+//	UnityFeatFix
+//
+// Hikky Burr (feat. Bill Cosby) => Hikky Burr (feat. Bill Cosby)
+// 太阳 (feat. Jukka Ahonen) => 太阳 (feat. Jukka Ahonen)
+// 太阳(feat.Jukka Ahonen) => 太阳 (feat. Jukka Ahonen)
+func UnityFeatFix(title string) string {
+	lower := strings.ToLower(title)
+
+	featIdx := strings.Index(lower, "feat")
+	if featIdx == -1 {
+		return title
+	}
+
+	startIdx := strings.LastIndex(title[:featIdx], "(")
+	if startIdx == -1 {
+		return title
+	}
+
+	prefix := title[startIdx+1 : featIdx]
+	if strings.TrimSpace(prefix) != "" {
+		return title
+	}
+
+	endIdx := strings.Index(title[featIdx:], ")")
+	if endIdx == -1 {
+		return title
+	}
+	endIdx += featIdx
+
+	content := title[featIdx+4 : endIdx]
+	afterFeat := strings.TrimLeft(content, ". ")
+
+	baseTitle := strings.TrimSpace(title[:startIdx])
+	remainder := title[endIdx+1:]
+
+	return baseTitle + " (feat. " + afterFeat + ")" + remainder
 }

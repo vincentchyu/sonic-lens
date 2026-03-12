@@ -2,6 +2,7 @@ package musicbrainz
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -139,4 +140,39 @@ func TestClient(t *testing.T) {
 	fmt.Println(
 		searchReleases,
 	)
+}
+func TestTrackTitleWithFeat(t *testing.T) {
+	ctx := context.Background()
+	InitClient()
+	defer Close(ctx)
+	client := GetClient()
+	fmt.Println(client.UserAgent())
+
+	// 获取专辑信息
+	release, err := client.LookupRelease(
+		ctx, "be9260e4-f4df-48c1-b004-3a636fcde6bd", musicbrainzws2.IncludesFilter{
+			Includes: []string{
+				"collections",
+				"labels",
+				"recordings",
+				"media",
+				"release-groups",
+				"genres",
+				"artist-credits",
+				// "label", 不支持
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("release")
+	bytes, _ := json.Marshal(release)
+	fmt.Println(string(bytes))
+	for _, media := range release.Media {
+		for _, track := range media.Tracks {
+			trackTitleWithFeat := TrackTitleWithFeat(track)
+			fmt.Println(trackTitleWithFeat)
+		}
+	}
 }

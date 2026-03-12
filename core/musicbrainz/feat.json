@@ -1,0 +1,2536 @@
+{
+  "id": "be9260e4-f4df-48c1-b004-3a636fcde6bd",
+  "score": 0,
+  "title": "不稳定的规律/有序混沌",
+  "disambiguation": "",
+  "annotation": "",
+  "aliases": null,
+  "relations": null,
+  "artist-credit": [
+    {
+      "name": "沉默演讲",
+      "joinphrase": "",
+      "artist": {
+        "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+        "score": 0,
+        "name": "沉默演讲",
+        "sort-name": "Silent Speech",
+        "disambiguation": "",
+        "type": "Group",
+        "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+        "annotation": "",
+        "aliases": null,
+        "life-span": {
+          "begin": null,
+          "end": null,
+          "ended": false
+        },
+        "relations": null,
+        "gender": "",
+        "gender-id": "",
+        "country": "CN",
+        "isnis": null,
+        "ipis": null,
+        "rating": {
+          "value": 0
+        },
+        "user-rating": {
+          "value": 0
+        },
+        "tags": null,
+        "user-tags": null,
+        "genres": [],
+        "user-genres": null,
+        "recordings": null,
+        "releases": null,
+        "release-groups": null,
+        "works": null
+      }
+    }
+  ],
+  "artist-credit-id": "",
+  "country": "",
+  "date": "2021-07",
+  "status": "Official",
+  "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+  "packaging": "Box",
+  "packaging-id": "c1668fc7-8944-4a00-bc3e-46e8d861d211",
+  "quality": "normal",
+  "barcode": "9787883342229",
+  "asin": "",
+  "text-representation": {
+    "script": "Hans",
+    "language": "zho"
+  },
+  "label-info": [
+    {
+      "label": {
+        "id": "b323c6ef-a705-4875-a3f7-6e30e4a8a502",
+        "score": 0,
+        "name": "太合麦田（天津）音乐有限公司",
+        "sort-name": "太合麦田（天津）音乐有限公司",
+        "disambiguation": "",
+        "type": "Holding",
+        "type-id": "43f31a62-97e4-36f6-9752-453c131b71ed",
+        "annotation": "",
+        "aliases": null,
+        "relations": null,
+        "life-span": {
+          "begin": null,
+          "end": null,
+          "ended": false
+        },
+        "country": "",
+        "isnis": null,
+        "ipis": null,
+        "rating": {
+          "value": 0
+        },
+        "user-rating": {
+          "value": 0
+        },
+        "tags": null,
+        "user-tags": null,
+        "genres": [],
+        "user-genres": null,
+        "label-code": 0,
+        "releases": null
+      },
+      "catalog-number": "RE-220343-TAI"
+    }
+  ],
+  "release-events": [
+    {
+      "date": "2021-07",
+      "area": {
+        "id": "",
+        "score": 0,
+        "name": "",
+        "sort-name": "",
+        "disambiguation": "",
+        "type": "",
+        "type-id": "",
+        "annotation": "",
+        "aliases": null,
+        "life-span": {
+          "begin": null,
+          "end": null,
+          "ended": false
+        },
+        "relations": null,
+        "rating": {
+          "value": 0
+        },
+        "user-rating": {
+          "value": 0
+        },
+        "tags": null,
+        "user-tags": null,
+        "genres": null,
+        "user-genres": null,
+        "iso-3166-1-codes": null,
+        "iso-3166-2-codes": null
+      }
+    },
+    {
+      "date": "2022-03",
+      "area": {
+        "id": "7c81bb69-a99b-3487-b6d4-0f76d7a29ca0",
+        "score": 0,
+        "name": "China",
+        "sort-name": "China",
+        "disambiguation": "",
+        "type": "",
+        "type-id": "",
+        "annotation": "",
+        "aliases": null,
+        "life-span": {
+          "begin": null,
+          "end": null,
+          "ended": false
+        },
+        "relations": null,
+        "rating": {
+          "value": 0
+        },
+        "user-rating": {
+          "value": 0
+        },
+        "tags": null,
+        "user-tags": null,
+        "genres": null,
+        "user-genres": null,
+        "iso-3166-1-codes": [
+          "CN"
+        ],
+        "iso-3166-2-codes": null
+      }
+    }
+  ],
+  "cover-art-archive": {
+    "artwork": true,
+    "count": 3,
+    "front": true,
+    "back": true,
+    "darkened": false
+  },
+  "release-group": {
+    "id": "57fa1a69-bfb9-4172-83da-6757accffe19",
+    "score": 0,
+    "title": "不稳定的规律/有序混沌",
+    "disambiguation": "",
+    "primary-type": "Album",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "secondary-types": [],
+    "secondary-type-ids": [],
+    "annotation": "",
+    "aliases": null,
+    "relations": null,
+    "artist-credit": [
+      {
+        "name": "沉默演讲",
+        "joinphrase": "",
+        "artist": {
+          "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+          "score": 0,
+          "name": "沉默演讲",
+          "sort-name": "Silent Speech",
+          "disambiguation": "",
+          "type": "Group",
+          "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+          "annotation": "",
+          "aliases": null,
+          "life-span": {
+            "begin": null,
+            "end": null,
+            "ended": false
+          },
+          "relations": null,
+          "gender": "",
+          "gender-id": "",
+          "country": "CN",
+          "isnis": null,
+          "ipis": null,
+          "rating": {
+            "value": 0
+          },
+          "user-rating": {
+            "value": 0
+          },
+          "tags": null,
+          "user-tags": null,
+          "genres": null,
+          "user-genres": null,
+          "recordings": null,
+          "releases": null,
+          "release-groups": null,
+          "works": null
+        }
+      }
+    ],
+    "artist-credit-id": "",
+    "first-release-date": "2021-07",
+    "rating": {
+      "value": 0
+    },
+    "user-rating": {
+      "value": 0
+    },
+    "tags": null,
+    "user-tags": null,
+    "genres": [],
+    "user-genres": null,
+    "releases": null
+  },
+  "media": [
+    {
+      "id": "3e9ea5b7-369f-3abc-a352-4ad109bede84",
+      "title": "Law of Instability",
+      "format": "CD",
+      "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+      "position": 1,
+      "track-count": 9,
+      "track-offset": 0,
+      "tracks": [
+        {
+          "id": "ccf20880-c6cf-4e11-87f7-a444d5ab0a42",
+          "title": "Intro",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 36160,
+          "position": 1,
+          "number": "1",
+          "recording": {
+            "id": "23d2d2ae-e418-4112-97e5-e09f3dea8b49",
+            "score": 0,
+            "title": "Intro",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 36160,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "1486fb3a-5a06-4d4c-a5bc-6c4c13cf2a4d",
+          "title": "太史公之缢",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 331213,
+          "position": 2,
+          "number": "2",
+          "recording": {
+            "id": "7f19ee29-cf5c-4b0e-b259-c4cbd2b374be",
+            "score": 0,
+            "title": "太史公之缢",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 331213,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "6c99c189-4195-4caf-8193-d4fc297aa058",
+          "title": "这璀璨又迷人的星空卻让人看不透，就像是Ta",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 414413,
+          "position": 3,
+          "number": "3",
+          "recording": {
+            "id": "43df3d6a-d9e4-44af-9df0-ca8529e874a4",
+            "score": 0,
+            "title": "这璀璨又迷人的星空卻让人看不透，就像是Ta",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 414413,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "e501968c-2774-4fc3-acb8-2885782002e8",
+          "title": "预兆",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 192293,
+          "position": 4,
+          "number": "4",
+          "recording": {
+            "id": "d96e13ca-cf10-401b-8e94-077795a5f273",
+            "score": 0,
+            "title": "预兆",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 192293,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "82db78bc-b01f-43b4-be20-c609d51efc00",
+          "title": "睡莲里",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 324040,
+          "position": 5,
+          "number": "5",
+          "recording": {
+            "id": "c67e196c-daa3-4f32-ae5f-eedb87a68876",
+            "score": 0,
+            "title": "睡莲里",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 324040,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "17a0112a-a9c9-4971-b3b9-2530c2320e9a",
+          "title": "现实",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 172600,
+          "position": 6,
+          "number": "6",
+          "recording": {
+            "id": "e7e1102a-b200-4233-a977-9e6cf88ced64",
+            "score": 0,
+            "title": "现实",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 172600,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "73ec9994-b59a-426b-a7f9-8ca2597be480",
+          "title": "另一个我 第二章",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 306906,
+          "position": 7,
+          "number": "7",
+          "recording": {
+            "id": "6be6995d-e365-4c69-8496-9df19d38f9dd",
+            "score": 0,
+            "title": "另一个我 第二章",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 306906,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "fbec4658-65c6-41e8-8eff-d67985418d75",
+          "title": "遗忘篇",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 263186,
+          "position": 8,
+          "number": "8",
+          "recording": {
+            "id": "d6a22358-c19e-4737-914f-819a90f67e59",
+            "score": 0,
+            "title": "遗忘篇",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 263186,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "e4b68e9e-38f0-48d6-9b14-ac10e52577fc",
+          "title": "Late Man",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 199586,
+          "position": 9,
+          "number": "9",
+          "recording": {
+            "id": "e4cb8467-e446-4b92-9832-992dc6e5ddb9",
+            "score": 0,
+            "title": "Late Man",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 199586,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        }
+      ],
+      "discs": null
+    },
+    {
+      "id": "bb2e3184-29a4-38a9-b68b-1afb062104f5",
+      "title": "Orderly Chaos",
+      "format": "CD",
+      "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+      "position": 2,
+      "track-count": 9,
+      "track-offset": 0,
+      "tracks": [
+        {
+          "id": "1651148c-1a94-43ed-b35e-0ba0d5fdb788",
+          "title": "我要当心",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 163506,
+          "position": 1,
+          "number": "1",
+          "recording": {
+            "id": "4264bc4e-b4ea-4b93-b4b5-1b97fe5f046f",
+            "score": 0,
+            "title": "我要当心",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 163506,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "2e8409df-53d9-47a1-a61f-755a89abca40",
+          "title": "她",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 278226,
+          "position": 2,
+          "number": "2",
+          "recording": {
+            "id": "ddb76d3b-a830-4cbc-b7f2-bc049ac1df9f",
+            "score": 0,
+            "title": "她",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 278226,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "02227b56-85d4-4537-80cf-d78cd9311582",
+          "title": "偏执狂与幻想家",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 195133,
+          "position": 3,
+          "number": "3",
+          "recording": {
+            "id": "3d4f15f4-6b5c-4a8a-b5e9-268059cd54ff",
+            "score": 0,
+            "title": "偏执狂与幻想家",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 195133,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "762a14a3-a246-4802-9256-2c8a13b73bf9",
+          "title": "太阳",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": " feat. ",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            },
+            {
+              "name": "Jukka Ahonen",
+              "joinphrase": "",
+              "artist": {
+                "id": "8aca5730-93c4-41e4-be2f-e2605806a36d",
+                "score": 0,
+                "name": "Jukka Ahonen",
+                "sort-name": "Jukka Ahonen",
+                "disambiguation": "",
+                "type": "Person",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": [],
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 185826,
+          "position": 4,
+          "number": "4",
+          "recording": {
+            "id": "5d8d7ac8-10fa-425d-9033-2f77fb9ad646",
+            "score": 0,
+            "title": "太阳",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": " feat. ",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              },
+              {
+                "name": "Jukka Ahonen",
+                "joinphrase": "",
+                "artist": {
+                  "id": "8aca5730-93c4-41e4-be2f-e2605806a36d",
+                  "score": 0,
+                  "name": "Jukka Ahonen",
+                  "sort-name": "Jukka Ahonen",
+                  "disambiguation": "",
+                  "type": "Person",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 185826,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "06403c53-e048-48f9-bf9c-f921bd2e9103",
+          "title": "像夕之晨",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": " feat. ",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            },
+            {
+              "name": "Jukka Ahonen",
+              "joinphrase": "",
+              "artist": {
+                "id": "8aca5730-93c4-41e4-be2f-e2605806a36d",
+                "score": 0,
+                "name": "Jukka Ahonen",
+                "sort-name": "Jukka Ahonen",
+                "disambiguation": "",
+                "type": "Person",
+                "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": [],
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 190413,
+          "position": 5,
+          "number": "5",
+          "recording": {
+            "id": "b0a4043e-ee26-4a87-a686-5908c25ae1ee",
+            "score": 0,
+            "title": "像夕之晨",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": " feat. ",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              },
+              {
+                "name": "Jukka Ahonen",
+                "joinphrase": "",
+                "artist": {
+                  "id": "8aca5730-93c4-41e4-be2f-e2605806a36d",
+                  "score": 0,
+                  "name": "Jukka Ahonen",
+                  "sort-name": "Jukka Ahonen",
+                  "disambiguation": "",
+                  "type": "Person",
+                  "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 190413,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "6c0368cc-f5d5-42ca-9845-60a478c86361",
+          "title": "爱已赴往",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 262106,
+          "position": 6,
+          "number": "6",
+          "recording": {
+            "id": "fc922de3-3452-4a1d-baa9-e1f52548ec39",
+            "score": 0,
+            "title": "爱已赴往",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 262106,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "266f4d90-caf5-415b-852b-3d586a5b4c68",
+          "title": "把一些荒谬装进纸盒里",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 265840,
+          "position": 7,
+          "number": "7",
+          "recording": {
+            "id": "19c75ba5-7c7b-4d6a-b968-97ac20d552b4",
+            "score": 0,
+            "title": "把一些荒谬装进纸盒里",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 265840,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "37dac91c-bd60-4ba0-b480-72dc6f04459e",
+          "title": "鹈鹕",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 266840,
+          "position": 8,
+          "number": "8",
+          "recording": {
+            "id": "97f56b7a-6a33-4598-a455-d399ad6d846b",
+            "score": 0,
+            "title": "鹈鹕",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 266840,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        },
+        {
+          "id": "bf6ad6f0-c47c-4982-bc6a-c2deeefb04df",
+          "title": "何为誓言",
+          "artist-credit": [
+            {
+              "name": "沉默演讲",
+              "joinphrase": "",
+              "artist": {
+                "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                "score": 0,
+                "name": "沉默演讲",
+                "sort-name": "Silent Speech",
+                "disambiguation": "",
+                "type": "Group",
+                "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                "annotation": "",
+                "aliases": null,
+                "life-span": {
+                  "begin": null,
+                  "end": null,
+                  "ended": false
+                },
+                "relations": null,
+                "gender": "",
+                "gender-id": "",
+                "country": "CN",
+                "isnis": null,
+                "ipis": null,
+                "rating": {
+                  "value": 0
+                },
+                "user-rating": {
+                  "value": 0
+                },
+                "tags": null,
+                "user-tags": null,
+                "genres": null,
+                "user-genres": null,
+                "recordings": null,
+                "releases": null,
+                "release-groups": null,
+                "works": null
+              }
+            }
+          ],
+          "artist-credit-id": "",
+          "length": 215066,
+          "position": 9,
+          "number": "9",
+          "recording": {
+            "id": "913d490e-dd1f-4dd6-b153-0dfcf0083454",
+            "score": 0,
+            "title": "何为誓言",
+            "disambiguation": "",
+            "annotation": "",
+            "relations": null,
+            "artist-credit": [
+              {
+                "name": "沉默演讲",
+                "joinphrase": "",
+                "artist": {
+                  "id": "65edc130-bac9-42b3-9207-e82cd5b5e4bc",
+                  "score": 0,
+                  "name": "沉默演讲",
+                  "sort-name": "Silent Speech",
+                  "disambiguation": "",
+                  "type": "Group",
+                  "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+                  "annotation": "",
+                  "aliases": null,
+                  "life-span": {
+                    "begin": null,
+                    "end": null,
+                    "ended": false
+                  },
+                  "relations": null,
+                  "gender": "",
+                  "gender-id": "",
+                  "country": "CN",
+                  "isnis": null,
+                  "ipis": null,
+                  "rating": {
+                    "value": 0
+                  },
+                  "user-rating": {
+                    "value": 0
+                  },
+                  "tags": null,
+                  "user-tags": null,
+                  "genres": null,
+                  "user-genres": null,
+                  "recordings": null,
+                  "releases": null,
+                  "release-groups": null,
+                  "works": null
+                }
+              }
+            ],
+            "artist-credit-id": "",
+            "length": 215066,
+            "first-release-date": "2021-07",
+            "video": false,
+            "isrcs": null,
+            "rating": {
+              "value": 0
+            },
+            "user-rating": {
+              "value": 0
+            },
+            "tags": null,
+            "user-tags": null,
+            "genres": [],
+            "user-genres": null,
+            "releases": null
+          }
+        }
+      ],
+      "discs": null
+    }
+  ],
+  "rating": {
+    "value": 0
+  },
+  "user-rating": {
+    "value": 0
+  },
+  "tags": null,
+  "user-tags": null,
+  "genres": [
+    {
+      "id": "0e3fc579-2d24-4f20-9dae-736e1ec78798",
+      "disambiguation": "",
+      "name": "rock",
+      "count": 1
+    }
+  ],
+  "user-genres": null
+}
