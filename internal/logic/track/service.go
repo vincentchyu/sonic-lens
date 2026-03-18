@@ -2,6 +2,9 @@ package track
 
 import (
 	"context"
+	"errors"
+	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -11,11 +14,32 @@ import (
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
+var (
+	appleMusicSetFavorite                = applemusic.SetFavorite
+	lastfmSetFavorite                    = lastfm.SetFavorite
+	modelGetTrackByIdentity              = model.GetTrackByIdentity
+	modelInsertTrackPlayRecord           = model.InsertTrackPlayRecord
+	modelProcessTrackPlayRecord          = model.ProcessTrackPlayRecord
+	modelSetAppleMusicFavorite           = model.SetAppleMusicFavorite
+	modelSetLastFmFavorite               = model.SetLastFmFavorite
+	modelGetAppleMusicFavorite           = model.GetAppleMusicFavorite
+	modelGetAppleMusicFavoriteByIdentity = model.GetAppleMusicFavoriteByIdentity
+	modelGetLastFmFavorite               = model.GetLastFmFavorite
+	modelGetLastFmFavoriteByIdentity     = model.GetLastFmFavoriteByIdentity
+)
+
 // TrackService 定义曲目相关服务接口
 type TrackService interface {
 	GetTrackPlayCounts(ctx context.Context, limit, offset int, keyword string) ([]*model.Track, error)
 	GetTrack(ctx context.Context, artist, album, track string) (*model.Track, error)
+	GetTrackByIdentity(
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+	) (*model.Track, error)
 	InsertTrackPlayRecord(ctx context.Context, record *model.TrackPlayRecord) error
+	ResolveTrackPlayRecord(
+		ctx context.Context, recordID int64, artist, album, track string, metadata model.TrackMetadata,
+	) error
+	ProcessTrackPlayRecord(ctx context.Context, recordID int64, metadata model.TrackMetadata) error
 	IncrementTrackPlayCount(params model.IncrementTrackPlayCountParams) error
 	GetTotalPlayCount(ctx context.Context) (int64, error)
 	GetTrackCounts(ctx context.Context) (int64, error)
@@ -50,8 +74,14 @@ type TrackService interface {
 	SetLastFmFavorite(params model.SetFavoriteParams) error
 	// GetAppleMusicFavorite 获取Apple Music喜欢状态
 	GetAppleMusicFavorite(ctx context.Context, artist, album, track string) (bool, error)
+	GetAppleMusicFavoriteByIdentity(
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+	) (bool, error)
 	// GetLastFmFavorite 获取Last.fm喜欢状态
 	GetLastFmFavorite(ctx context.Context, artist, album, track string) (bool, error)
+	GetLastFmFavoriteByIdentity(
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+	) (bool, error)
 	// SetTrackFavorite 设置曲目喜欢状态
 	SetTrackFavorite(
 		ctx context.Context, artist, album, track, source string, isFavorite bool, metadata model.TrackMetadata,
@@ -69,10 +99,25 @@ type TrackService interface {
 	GetTracksOrderedByAlbum(ctx context.Context, limit, offset int, keyword string) ([]*model.Track, error)
 	// GetTracksOrderedByAlbumCount 获取按专辑排序的曲目总数
 	GetTracksOrderedByAlbumCount(ctx context.Context, keyword string) (int64, error)
+	// GetLibrarySyncDelta 获取资料库同步增量
+	GetLibrarySyncDelta(ctx context.Context, sinceVersion int64) (*model.LibrarySyncDelta, error)
+	// GetTrackAlbumByTrackID 获取曲目当前首条专辑绑定，用于上层展示关联状态。
+	GetTrackAlbumByTrackID(ctx context.Context, trackID int64) (*model.TrackAlbum, error)
+	// GetAlbumDetail 获取专辑详情及其曲目列表。
+	GetAlbumDetail(ctx context.Context, albumID int64) (*model.AlbumDetail, error)
+	// DeleteTrackAlbumLink 删除人工修复指定的曲目专辑关联。
+	DeleteTrackAlbumLink(ctx context.Context, trackID, albumID int64) error
+	ProbeAndSyncTrackFavorite(ctx context.Context, input PlaybackEventInput) TrackFavoriteProbeResult
+	HandleNowPlayingStarted(ctx context.Context, input PlaybackEventInput)
+	HandleTrackPlaybackThreshold(ctx context.Context, input PlaybackEventInput) PlaybackThresholdResult
 }
 
 // TrackServiceImpl 实现TrackService接口
-type TrackServiceImpl struct{}
+type TrackServiceImpl struct {
+	favoriteProbeMu sync.Mutex
+	lastLikeKey     string
+	lastLikeProbe   favoriteProbeState
+}
 
 // NewTrackService 创建TrackService实例
 func NewTrackService() TrackService {
@@ -93,8 +138,26 @@ func (s *TrackServiceImpl) GetTrack(ctx context.Context, artist, album, track st
 	return model.GetTrack(ctx, artist, album, track)
 }
 
+func (s *TrackServiceImpl) GetTrackByIdentity(
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+) (*model.Track, error) {
+	return modelGetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
+}
+
 func (s *TrackServiceImpl) InsertTrackPlayRecord(ctx context.Context, record *model.TrackPlayRecord) error {
-	return model.InsertTrackPlayRecord(ctx, record)
+	return modelInsertTrackPlayRecord(ctx, record)
+}
+
+func (s *TrackServiceImpl) ResolveTrackPlayRecord(
+	ctx context.Context, recordID int64, artist, album, track string, metadata model.TrackMetadata,
+) error {
+	return model.ResolveTrackPlayRecord(ctx, recordID, artist, album, track, metadata)
+}
+
+func (s *TrackServiceImpl) ProcessTrackPlayRecord(
+	ctx context.Context, recordID int64, metadata model.TrackMetadata,
+) error {
+	return modelProcessTrackPlayRecord(ctx, recordID, metadata)
 }
 
 func (s *TrackServiceImpl) IncrementTrackPlayCount(params model.IncrementTrackPlayCountParams) error {
@@ -237,68 +300,78 @@ func (s *TrackServiceImpl) SyncSelectedUnscrobbledRecords(ctx context.Context, i
 func (s *TrackServiceImpl) SetAppleMusicFavorite(
 	params model.SetFavoriteParams,
 ) error {
-	err := applemusic.SetFavorite(params.Ctx, params.IsFavorite)
+	err := appleMusicSetFavorite(params.Ctx, params.IsFavorite)
 	if err != nil {
 		return err
 	}
-	return model.SetAppleMusicFavorite(params)
+	return modelSetAppleMusicFavorite(params)
 }
 
 // SetLastFmFavorite 设置Last.fm喜欢状态
 func (s *TrackServiceImpl) SetLastFmFavorite(params model.SetFavoriteParams) error {
-	err := lastfm.SetFavorite(params.Ctx, params.Artist, params.Track, params.IsFavorite)
+	err := lastfmSetFavorite(params.Ctx, params.Artist, params.Track, params.IsFavorite)
 	if err != nil {
 		return err
 	}
-	return model.SetLastFmFavorite(params)
+	return modelSetLastFmFavorite(params)
 }
 
 // GetAppleMusicFavorite 获取Apple Music喜欢状态
 func (s *TrackServiceImpl) GetAppleMusicFavorite(ctx context.Context, artist, album, track string) (bool, error) {
-	return model.GetAppleMusicFavorite(ctx, artist, album, track)
+	return modelGetAppleMusicFavorite(ctx, artist, album, track)
+}
+
+func (s *TrackServiceImpl) GetAppleMusicFavoriteByIdentity(
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+) (bool, error) {
+	return modelGetAppleMusicFavoriteByIdentity(ctx, artist, album, track, trackNumber, discNumber)
 }
 
 // GetLastFmFavorite 获取Last.fm喜欢状态
 func (s *TrackServiceImpl) GetLastFmFavorite(ctx context.Context, artist, album, track string) (bool, error) {
-	return model.GetLastFmFavorite(ctx, artist, album, track)
+	return modelGetLastFmFavorite(ctx, artist, album, track)
+}
+
+func (s *TrackServiceImpl) GetLastFmFavoriteByIdentity(
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+) (bool, error) {
+	return modelGetLastFmFavoriteByIdentity(ctx, artist, album, track, trackNumber, discNumber)
 }
 
 // SetTrackFavorite 设置曲目喜欢状态
 func (s *TrackServiceImpl) SetTrackFavorite(
 	ctx context.Context, artist, album, track, source string, isFavorite bool, metadata model.TrackMetadata,
 ) (appleMusicFav bool, lastFmFav bool, err error) {
-	// 无论来源是什么，只要涉及收藏操作，我们都尝试同步
-	// 对于 Apple Music 来源，同时更新 Apple Music 服务端的喜欢状态
-	if source == "Apple Music" {
-		_ = s.SetAppleMusicFavorite(
-			model.SetFavoriteParams{
-				Ctx:           ctx,
-				Artist:        artist,
-				Album:         album,
-				Track:         track,
-				IsFavorite:    isFavorite,
-				TrackMetadata: metadata,
-			},
-		)
+	params := model.SetFavoriteParams{
+		Ctx:           ctx,
+		Artist:        artist,
+		Album:         album,
+		Track:         track,
+		IsFavorite:    isFavorite,
+		TrackMetadata: metadata,
 	}
 
-	// 统一更新 Last.fm 收藏状态（Last.fm 是我们的通用收藏标记位）
-	_ = s.SetLastFmFavorite(
-		model.SetFavoriteParams{
-			Ctx:           ctx,
-			Artist:        artist,
-			Album:         album,
-			Track:         track,
-			IsFavorite:    isFavorite,
-			TrackMetadata: metadata,
-		},
-	)
+	var callErr error
+	// Apple Music 来源维持双写：Apple + Last.fm。
+	if strings.EqualFold(source, model.TrackFavoriteEventSourceAppleMusic) {
+		if amErr := s.SetAppleMusicFavorite(params); amErr != nil {
+			callErr = errors.Join(callErr, amErr)
+		}
+	}
+	// Last.fm 仍是系统统一收藏标记位。
+	if lfmErr := s.SetLastFmFavorite(params); lfmErr != nil {
+		callErr = errors.Join(callErr, lfmErr)
+	}
 
 	// 获取更新后的最终状态，确保返回给前端的数据是准确的
-	appleMusicFav, _ = s.GetAppleMusicFavorite(ctx, artist, album, track)
-	lastFmFav, _ = s.GetLastFmFavorite(ctx, artist, album, track)
+	appleMusicFav, _ = s.GetAppleMusicFavoriteByIdentity(
+		ctx, artist, album, track, metadata.TrackNumber, metadata.DiscNumber,
+	)
+	lastFmFav, _ = s.GetLastFmFavoriteByIdentity(
+		ctx, artist, album, track, metadata.TrackNumber, metadata.DiscNumber,
+	)
 
-	return appleMusicFav, lastFmFav, nil
+	return appleMusicFav, lastFmFav, callErr
 }
 
 // GetAllGenres 获取所有流派（分页）
@@ -339,4 +412,23 @@ func (s *TrackServiceImpl) GetTracksOrderedByAlbum(ctx context.Context, limit, o
 // GetTracksOrderedByAlbumCount 获取曲目总数
 func (s *TrackServiceImpl) GetTracksOrderedByAlbumCount(ctx context.Context, keyword string) (int64, error) {
 	return model.GetTracksOrderedByAlbumCount(ctx, keyword)
+}
+
+func (s *TrackServiceImpl) GetLibrarySyncDelta(ctx context.Context, sinceVersion int64) (*model.LibrarySyncDelta, error) {
+	return model.GetLibrarySyncDelta(ctx, sinceVersion)
+}
+
+// GetTrackAlbumByTrackID 获取曲目当前首条专辑绑定。
+func (s *TrackServiceImpl) GetTrackAlbumByTrackID(ctx context.Context, trackID int64) (*model.TrackAlbum, error) {
+	return model.GetTrackAlbumByTrackID(ctx, trackID)
+}
+
+// GetAlbumDetail 获取专辑详情及其曲目列表。
+func (s *TrackServiceImpl) GetAlbumDetail(ctx context.Context, albumID int64) (*model.AlbumDetail, error) {
+	return model.GetAlbumWithTracks(ctx, albumID)
+}
+
+// DeleteTrackAlbumLink 删除指定的曲目专辑关联。
+func (s *TrackServiceImpl) DeleteTrackAlbumLink(ctx context.Context, trackID, albumID int64) error {
+	return model.DeleteTrackAlbumLink(ctx, trackID, albumID)
 }

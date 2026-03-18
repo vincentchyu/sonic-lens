@@ -50,7 +50,7 @@ func StartD1SyncScheduler(ctx context.Context) {
 			// 首次启动时立即执行一次同步
 			go func() {
 				log.Info(ctx, "Performing initial D1 sync")
-				if err := d1Client.SyncAll(ctx, false); err != nil {
+				if err := d1Client.SyncAll(ctx, true); err != nil {
 					log.Error(ctx, "Initial D1 sync failed", zap.Error(err))
 				}
 			}()

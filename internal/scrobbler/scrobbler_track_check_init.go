@@ -7,6 +7,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
+	"github.com/vincentchyu/sonic-lens/core/websocket"
 	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
@@ -25,7 +26,7 @@ var (
 	roonChecker       *BasePlayerChecker
 	appleMusicChecker *BasePlayerChecker
 
-	playerCheckers map[common.PlayerType]PlayerChecker // playerCheckers 存储所有支持的播放器检查器
+	playerCheckers map[common.PlayerType]common.PlayerChecker // playerCheckers 存储所有支持的播放器检查器
 )
 
 func Init(
@@ -71,7 +72,7 @@ func Init(
 				&currentPlayingCache,
 				newTrackService,
 			)
-			playerCheckers = map[common.PlayerType]PlayerChecker{
+			playerCheckers = map[common.PlayerType]common.PlayerChecker{
 				common.PlayerAudirvana:  audirvanaChecker,
 				common.PlayerRoon:       roonChecker,
 				common.PlayerAppleMusic: appleMusicChecker,
@@ -105,4 +106,16 @@ func _CheckPlayingTrack(ctx context.Context, playerTypes []common.PlayerType, st
 			go checker.CheckPlayingTrack(ctx, stop)
 		}
 	}
+}
+
+func GetCurrentPlayingTrack(source common.PlayerType) (*websocket.WsInfo, bool) {
+	value, ok := currentPlayingCache.Load(source)
+	if !ok {
+		return nil, false
+	}
+	trackInfo, ok := value.(*websocket.WsInfo)
+	if !ok || trackInfo == nil {
+		return nil, false
+	}
+	return trackInfo, true
 }

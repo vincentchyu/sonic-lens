@@ -5,9 +5,12 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // TrackInsight 存储单首歌曲的 AI 歌词解析结果
@@ -47,6 +50,13 @@ type TrackInsight struct {
 }
 
 type JSONText map[string]string
+
+type TrackInsightLookup struct {
+	TrackID int64
+	Artist  string
+	Album   string
+	Track   string
+}
 
 func (j JSONText) Value() (driver.Value, error) {
 	var buf bytes.Buffer
@@ -99,12 +109,35 @@ func CreateTrackInsight(ctx context.Context, insight *TrackInsight) error {
 	return GetDB().WithContext(ctx).Create(insight).Error
 }
 
-func GetTrackInsight(ctx context.Context, artist, album, track string) (*TrackInsight, error) {
+func GetTrackInsightByLookup(ctx context.Context, lookup TrackInsightLookup) (*TrackInsight, error) {
 	var insight TrackInsight
-	err := GetDB().WithContext(ctx).
-		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
-		Where("is_disabled = ?", false).
-		First(&insight).Error
+	base := GetDB().WithContext(ctx).Where("is_disabled = ?", false)
+	if lookup.TrackID > 0 {
+		err := base.Session(&gorm.Session{}).Where("track_id = ?", lookup.TrackID).First(&insight).Error
+		if err == nil {
+			return &insight, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	err := base.Session(&gorm.Session{}).Where(
+		"artist = ? AND album = ? AND track = ?", lookup.Artist, lookup.Album, lookup.Track,
+	).First(&insight).Error
+	if err != nil {
+		return nil, err
+	}
+	return &insight, nil
+}
+
+func GetTrackInsight(ctx context.Context, artist, album, track string) (*TrackInsight, error) {
+	return GetTrackInsightByLookup(ctx, TrackInsightLookup{Artist: artist, Album: album, Track: track})
+}
+
+// GetTrackInsightByID 按主键获取单条解析记录，避免上层直接查询 track_insight 表。
+func GetTrackInsightByID(ctx context.Context, id int64) (*TrackInsight, error) {
+	var insight TrackInsight
+	err := GetDB().WithContext(ctx).First(&insight, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -115,17 +148,29 @@ func UpdateTrackInsight(ctx context.Context, insight *TrackInsight) error {
 	return GetDB().WithContext(ctx).Save(insight).Error
 }
 
-func GetTrackInsights(ctx context.Context, artist, album, track string) ([]*TrackInsight, error) {
+func GetTrackInsightsByLookup(ctx context.Context, lookup TrackInsightLookup) ([]*TrackInsight, error) {
 	var insights []*TrackInsight
-	err := GetDB().WithContext(ctx).
-		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
-		Where("is_disabled = ?", false).
-		Order("created_at DESC").
-		Find(&insights).Error
+	base := GetDB().WithContext(ctx).Where("is_disabled = ?", false).Order("created_at DESC")
+	if lookup.TrackID > 0 {
+		err := base.Session(&gorm.Session{}).Where("track_id = ?", lookup.TrackID).Find(&insights).Error
+		if err == nil && len(insights) > 0 {
+			return insights, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	err := base.Session(&gorm.Session{}).Where(
+		"artist = ? AND album = ? AND track = ?", lookup.Artist, lookup.Album, lookup.Track,
+	).Find(&insights).Error
 	if err != nil {
 		return nil, err
 	}
 	return insights, nil
+}
+
+func GetTrackInsights(ctx context.Context, artist, album, track string) ([]*TrackInsight, error) {
+	return GetTrackInsightsByLookup(ctx, TrackInsightLookup{Artist: artist, Album: album, Track: track})
 }
 
 // GetAllTrackInsights 获取所有解析记录（用于管理列表）
@@ -195,17 +240,34 @@ func GetInsightsTotalScores(ctx context.Context, insightIDs []int64) (map[int64]
 	return scoreMap, nil
 }
 
-func GetNegativeFeedbacksByTrack(ctx context.Context, artist, album, track string) ([]*TrackInsightFeedback, error) {
+func GetNegativeFeedbacksByLookup(ctx context.Context, lookup TrackInsightLookup) ([]*TrackInsightFeedback, error) {
 	var feedbacks []*TrackInsightFeedback
-	err := GetDB().WithContext(ctx).
+	base := GetDB().WithContext(ctx).
 		Table("track_insight_feedbacks").
 		Joins("JOIN track_insight ON track_insight_feedbacks.insight_id = track_insight.id").
-		Where("track_insight.artist = ? AND track_insight.album = ? AND track_insight.track = ?", artist, album, track).
 		Where("track_insight_feedbacks.score < 0").
-		Order("track_insight_feedbacks.created_at DESC").
-		Find(&feedbacks).Error
+		Order("track_insight_feedbacks.created_at DESC")
+	if lookup.TrackID > 0 {
+		err := base.Session(&gorm.Session{}).
+			Where("track_insight.track_id = ?", lookup.TrackID).
+			Find(&feedbacks).Error
+		if err == nil && len(feedbacks) > 0 {
+			return feedbacks, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	err := base.Session(&gorm.Session{}).Where(
+		"track_insight.artist = ? AND track_insight.album = ? AND track_insight.track = ?",
+		lookup.Artist, lookup.Album, lookup.Track,
+	).Find(&feedbacks).Error
 	if err != nil {
 		return nil, err
 	}
 	return feedbacks, nil
+}
+
+func GetNegativeFeedbacksByTrack(ctx context.Context, artist, album, track string) ([]*TrackInsightFeedback, error) {
+	return GetNegativeFeedbacksByLookup(ctx, TrackInsightLookup{Artist: artist, Album: album, Track: track})
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/api"
 	"github.com/vincentchyu/sonic-lens/cmd"
 	"github.com/vincentchyu/sonic-lens/config"
+	"github.com/vincentchyu/sonic-lens/core/bonjour"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/musicbrainz"
 	"github.com/vincentchyu/sonic-lens/core/redis"
@@ -31,6 +32,9 @@ func main() {
 	// command.SetHelpTemplate("使用-c 设置配置文件路径\n使用-m 设置true/false")
 	rootCmd.Version = "1.0.0"
 	rootCmd.Args = cobra.NoArgs
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		config.InitConfig(*configFile)
+	}
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error { return initServer() }
 
 	flags := rootCmd.Flags()
@@ -44,8 +48,11 @@ func main() {
 	// Add memory-tool subcommand
 	rootCmd.AddCommand(newMemoryToolCommand())
 
-	// Add music-analysis subcommand
-	rootCmd.AddCommand(cmd.NewMusicAnalysisCommand())
+	// Add cleanup-duplicate-albums subcommand
+	rootCmd.AddCommand(newCleanupDuplicateAlbumsCommand())
+
+	// Add replay-track-play-records subcommand
+	rootCmd.AddCommand(newReplayTrackPlayRecordsCommand())
 
 	cobra.CheckErr(rootCmd.Execute())
 }
@@ -58,11 +65,18 @@ func newMemoryToolCommand() *cobra.Command {
 	return cmd.NewMemoryToolCommand()
 }
 
+func newCleanupDuplicateAlbumsCommand() *cobra.Command {
+	return cmd.NewCleanupDuplicateAlbumsCommand()
+}
+
+func newReplayTrackPlayRecordsCommand() *cobra.Command {
+	return cmd.NewReplayTrackPlayRecordsCommand()
+}
+
 func initServer() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	c := make(chan struct{})
-	config.InitConfig(*configFile)
 	dbLogger, redisLogger := log.LogInit(config.ConfigObj.Log.Path, config.ConfigObj.Log.Level, c)
 
 	// Initialize telemetry
@@ -83,12 +97,16 @@ func initServer() error {
 	cancelFuncCacheInitializeGenreCache := cache.InitializeGenreCache(ctx)
 
 	// Start D1 sync scheduler
-	go d1sync.StartD1SyncScheduler(ctx)
+	// go d1sync.StartD1SyncScheduler(ctx)
 	// Start dashboard stat scheduler
 	go d1sync.StartDashboardStatScheduler(ctx)
+	go d1sync.StartTrackPlayReplayScheduler(ctx)
 
 	// Start scrobblerRun goroutine
 	go api.StartHTTPServer(ctx, config.ConfigObj.Telemetry.Name)
+
+	// 启动 Bonjour 广播用于局域网发现
+	stopBonjour := bonjour.Start(ctx, config.ConfigObj.Bonjour, config.ConfigObj.HTTP.Port)
 
 	// Start HTTP server in a separate goroutine
 	_ = scrobblerRun(c)
@@ -98,6 +116,7 @@ func initServer() error {
 	fmt.Println("system exiting")
 	defer func() {
 		ctx := context.Background()
+		stopBonjour()
 		cancelFuncCacheInitializeGenreCache()
 		musicbrainz.Close(ctx)
 		err := telemetry.Shutdown(ctx)

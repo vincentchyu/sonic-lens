@@ -23,6 +23,7 @@ type D1Client struct {
 }
 
 const d1MaxParamsPerStatement = 31
+const d1ExecMaxRetries = 5
 
 func batchSizeByParams(paramsPerRow int) int {
 	if paramsPerRow <= 0 {
@@ -33,6 +34,402 @@ func batchSizeByParams(paramsPerRow int) int {
 		return 1
 	}
 	return size
+}
+
+func isRetryableD1Error(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	retryableKeywords := []string{
+		"unexpected eof",
+		"timeout",
+		"temporarily unavailable",
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"server closed idle connection",
+		"429",
+		"502",
+		"503",
+		"504",
+	}
+	for _, keyword := range retryableKeywords {
+		if strings.Contains(msg, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *D1Client) execWithRetry(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	var lastErr error
+	for attempt := 1; attempt <= d1ExecMaxRetries; attempt++ {
+		result, err := c.db.ExecContext(ctx, query, args...)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !isRetryableD1Error(err) || attempt == d1ExecMaxRetries {
+			break
+		}
+
+		backoff := time.Duration(attempt) * time.Second
+		log.Warn(
+			ctx, "D1 exec failed, retrying",
+			zap.Int("attempt", attempt),
+			zap.Int("max_retries", d1ExecMaxRetries),
+			zap.Duration("backoff", backoff),
+			zap.Error(err),
+		)
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *D1Client) ensureSchema(ctx context.Context) error {
+	if err := c.ensureSyncMetadataSchema(ctx); err != nil {
+		return err
+	}
+	if err := c.ensureTracksSchema(ctx); err != nil {
+		return err
+	}
+	if err := c.ensureTrackPlayRecordsSchema(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *D1Client) ensureSyncMetadataSchema(ctx context.Context) error {
+	_, err := c.execWithRetry(
+		ctx, `
+		CREATE TABLE IF NOT EXISTS sync_metadata (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			table_name TEXT NOT NULL UNIQUE,
+			last_sync_time TEXT NOT NULL,
+			sync_count INTEGER DEFAULT 0,
+			last_error TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to ensure sync_metadata schema: %w", err)
+	}
+	return nil
+}
+
+func (c *D1Client) tableExists(ctx context.Context, tableName string) (bool, error) {
+	var count int
+	err := c.db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+		tableName,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (c *D1Client) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = ?", tableName)
+	err := c.db.QueryRowContext(ctx, query, columnName).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (c *D1Client) ensureTracksSchema(ctx context.Context) error {
+	exists, err := c.tableExists(ctx, "tracks")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return c.createTracksTable(ctx)
+	}
+
+	hasTrackNumber, err := c.tableHasColumn(ctx, "tracks", "track_number")
+	if err != nil {
+		return err
+	}
+	hasDiscNumber, err := c.tableHasColumn(ctx, "tracks", "disc_number")
+	if err != nil {
+		return err
+	}
+	if hasTrackNumber && hasDiscNumber {
+		return c.ensureTracksIndexes(ctx)
+	}
+
+	return c.migrateTracksTable(ctx, hasTrackNumber, hasDiscNumber)
+}
+
+func (c *D1Client) createTracksTable(ctx context.Context) error {
+	if _, err := c.execWithRetry(
+		ctx, `
+		CREATE TABLE IF NOT EXISTS tracks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			artist TEXT NOT NULL,
+			album TEXT NOT NULL,
+			track TEXT NOT NULL,
+			album_artist TEXT,
+			play_count INTEGER DEFAULT 0,
+			genre TEXT,
+			duration INTEGER,
+			source TEXT,
+			track_number INTEGER DEFAULT 0,
+			disc_number INTEGER DEFAULT 1,
+			is_apple_music_fav INTEGER DEFAULT 0,
+			is_last_fm_fav INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			UNIQUE (artist, album, track, disc_number, track_number)
+		)
+	`,
+	); err != nil {
+		return fmt.Errorf("failed to create tracks table: %w", err)
+	}
+	return c.ensureTracksIndexes(ctx)
+}
+
+func (c *D1Client) ensureTracksIndexes(ctx context.Context) error {
+	statements := []string{
+		"CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist)",
+		"CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album)",
+		"CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre)",
+		"CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source)",
+		"CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_tracks_genre_play_count ON tracks(genre, play_count DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_tracks_artist_track ON tracks(artist, track)",
+	}
+	for _, stmt := range statements {
+		if _, err := c.execWithRetry(ctx, stmt); err != nil {
+			return fmt.Errorf("failed to ensure tracks index: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) migrateTracksTable(ctx context.Context, hasTrackNumber, hasDiscNumber bool) error {
+	log.Info(
+		ctx, "Migrating D1 tracks schema",
+		zap.Bool("has_track_number", hasTrackNumber),
+		zap.Bool("has_disc_number", hasDiscNumber),
+	)
+
+	if _, err := c.execWithRetry(ctx, "DROP TABLE IF EXISTS tracks_legacy_backup"); err != nil {
+		return fmt.Errorf("failed to cleanup tracks backup table: %w", err)
+	}
+	if _, err := c.execWithRetry(ctx, "ALTER TABLE tracks RENAME TO tracks_legacy_backup"); err != nil {
+		return fmt.Errorf("failed to rename tracks table: %w", err)
+	}
+	if err := c.createTracksTable(ctx); err != nil {
+		return err
+	}
+
+	trackNumberExpr := "0"
+	if hasTrackNumber {
+		trackNumberExpr = "COALESCE(track_number, 0)"
+	}
+	discNumberExpr := "1"
+	if hasDiscNumber {
+		discNumberExpr = "COALESCE(NULLIF(disc_number, 0), 1)"
+	}
+
+	copySQL := fmt.Sprintf(
+		`INSERT INTO tracks (
+			artist, album, track, album_artist, play_count, genre, duration, source,
+			track_number, disc_number, is_apple_music_fav, is_last_fm_fav, created_at, updated_at
+		)
+		SELECT
+			artist, album, track, album_artist, COALESCE(play_count, 0), genre, duration, source,
+			%s, %s, COALESCE(is_apple_music_fav, 0), COALESCE(is_last_fm_fav, 0), created_at, updated_at
+		FROM tracks_legacy_backup`,
+		trackNumberExpr, discNumberExpr,
+	)
+	if _, err := c.execWithRetry(ctx, copySQL); err != nil {
+		return fmt.Errorf("failed to copy tracks data into new schema: %w", err)
+	}
+	if _, err := c.execWithRetry(ctx, "DROP TABLE tracks_legacy_backup"); err != nil {
+		return fmt.Errorf("failed to drop tracks legacy table: %w", err)
+	}
+	return nil
+}
+
+func (c *D1Client) ensureTrackPlayRecordsSchema(ctx context.Context) error {
+	exists, err := c.tableExists(ctx, "track_play_records")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return c.createTrackPlayRecordsTable(ctx)
+	}
+
+	hasTrackNumber, err := c.tableHasColumn(ctx, "track_play_records", "track_number")
+	if err != nil {
+		return err
+	}
+	hasDiscNumber, err := c.tableHasColumn(ctx, "track_play_records", "disc_number")
+	if err != nil {
+		return err
+	}
+	hasResolvedTrackID, err := c.tableHasColumn(ctx, "track_play_records", "resolved_track_id")
+	if err != nil {
+		return err
+	}
+	hasResolutionStatus, err := c.tableHasColumn(ctx, "track_play_records", "resolution_status")
+	if err != nil {
+		return err
+	}
+	hasResolutionConfidence, err := c.tableHasColumn(ctx, "track_play_records", "resolution_confidence")
+	if err != nil {
+		return err
+	}
+	hasLibraryApplied, err := c.tableHasColumn(ctx, "track_play_records", "library_applied")
+	if err != nil {
+		return err
+	}
+	if hasTrackNumber && hasDiscNumber && hasResolvedTrackID && hasResolutionStatus && hasResolutionConfidence {
+		return c.ensureTrackPlayRecordsIndexes(ctx)
+	}
+
+	return c.migrateTrackPlayRecordsTable(
+		ctx,
+		hasTrackNumber,
+		hasDiscNumber,
+		hasResolvedTrackID,
+		hasResolutionStatus,
+		hasResolutionConfidence,
+		hasLibraryApplied,
+	)
+}
+
+func (c *D1Client) createTrackPlayRecordsTable(ctx context.Context) error {
+	if _, err := c.execWithRetry(
+		ctx, `
+		CREATE TABLE IF NOT EXISTS track_play_records (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			artist TEXT NOT NULL,
+			album_artist TEXT,
+			album TEXT NOT NULL,
+			track TEXT NOT NULL,
+			duration INTEGER,
+			play_time TEXT NOT NULL,
+				scrobbled INTEGER DEFAULT 0,
+				track_number INTEGER DEFAULT 0,
+				disc_number INTEGER DEFAULT 1,
+				source TEXT,
+				resolved_track_id INTEGER DEFAULT 0,
+				resolution_status TEXT NOT NULL DEFAULT 'pending',
+				resolution_confidence INTEGER DEFAULT 0,
+				library_applied INTEGER DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)
+	`,
+	); err != nil {
+		return fmt.Errorf("failed to create track_play_records table: %w", err)
+	}
+	return c.ensureTrackPlayRecordsIndexes(ctx)
+}
+
+func (c *D1Client) ensureTrackPlayRecordsIndexes(ctx context.Context) error {
+	statements := []string{
+		"CREATE INDEX IF NOT EXISTS idx_play_records_play_time ON track_play_records(play_time DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_artist ON track_play_records(artist)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_source ON track_play_records(source)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_resolved_track_id ON track_play_records(resolved_track_id)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_resolution_status ON track_play_records(resolution_status)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_library_applied ON track_play_records(library_applied)",
+	}
+	for _, stmt := range statements {
+		if _, err := c.execWithRetry(ctx, stmt); err != nil {
+			return fmt.Errorf("failed to ensure track_play_records index: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *D1Client) migrateTrackPlayRecordsTable(
+	ctx context.Context,
+	hasTrackNumber, hasDiscNumber, hasResolvedTrackID, hasResolutionStatus, hasResolutionConfidence, hasLibraryApplied bool,
+) error {
+	log.Info(
+		ctx, "Migrating D1 track_play_records schema",
+		zap.Bool("has_track_number", hasTrackNumber),
+		zap.Bool("has_disc_number", hasDiscNumber),
+		zap.Bool("has_resolved_track_id", hasResolvedTrackID),
+		zap.Bool("has_resolution_status", hasResolutionStatus),
+		zap.Bool("has_resolution_confidence", hasResolutionConfidence),
+		zap.Bool("has_library_applied", hasLibraryApplied),
+	)
+
+	if _, err := c.execWithRetry(ctx, "DROP TABLE IF EXISTS track_play_records_legacy_backup"); err != nil {
+		return fmt.Errorf("failed to cleanup track_play_records backup table: %w", err)
+	}
+	if _, err := c.execWithRetry(ctx, "ALTER TABLE track_play_records RENAME TO track_play_records_legacy_backup"); err != nil {
+		return fmt.Errorf("failed to rename track_play_records table: %w", err)
+	}
+	if err := c.createTrackPlayRecordsTable(ctx); err != nil {
+		return err
+	}
+
+	trackNumberExpr := "0"
+	if hasTrackNumber {
+		trackNumberExpr = "COALESCE(track_number, 0)"
+	}
+	discNumberExpr := "1"
+	if hasDiscNumber {
+		discNumberExpr = "COALESCE(NULLIF(disc_number, 0), 1)"
+	}
+	resolvedTrackIDExpr := "0"
+	if hasResolvedTrackID {
+		resolvedTrackIDExpr = "COALESCE(resolved_track_id, 0)"
+	}
+	resolutionStatusExpr := "'pending'"
+	if hasResolutionStatus {
+		resolutionStatusExpr = "COALESCE(NULLIF(resolution_status, ''), 'pending')"
+	}
+	resolutionConfidenceExpr := "0"
+	if hasResolutionConfidence {
+		resolutionConfidenceExpr = "COALESCE(resolution_confidence, 0)"
+	}
+	libraryAppliedExpr := "0"
+	if hasLibraryApplied {
+		libraryAppliedExpr = "COALESCE(library_applied, 0)"
+	}
+
+	copySQL := fmt.Sprintf(
+		`INSERT INTO track_play_records (
+			artist, album_artist, album, track, duration, play_time, scrobbled,
+			track_number, disc_number, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
+		)
+		SELECT
+			artist, album_artist, album, track, duration, play_time, COALESCE(scrobbled, 0),
+			%s, %s, source, %s, %s, %s, %s, created_at, updated_at
+		FROM track_play_records_legacy_backup`,
+		trackNumberExpr,
+		discNumberExpr,
+		resolvedTrackIDExpr,
+		resolutionStatusExpr,
+		resolutionConfidenceExpr,
+		libraryAppliedExpr,
+	)
+	if _, err := c.execWithRetry(ctx, copySQL); err != nil {
+		return fmt.Errorf("failed to copy track_play_records data into new schema: %w", err)
+	}
+	if _, err := c.execWithRetry(ctx, "DROP TABLE track_play_records_legacy_backup"); err != nil {
+		return fmt.Errorf("failed to drop track_play_records legacy table: %w", err)
+	}
+	return nil
 }
 
 // NewD1Client 创建 D1 客户端
@@ -59,10 +456,17 @@ func NewD1Client(cfg *config.CloudflareConfig) (*D1Client, error) {
 		return nil, fmt.Errorf("failed to ping D1 database: %w", err)
 	}
 
-	return &D1Client{
+	client := &D1Client{
 		db:  db,
 		cfg: cfg,
-	}, nil
+	}
+
+	if err := client.ensureSchema(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to ensure D1 schema: %w", err)
+	}
+
+	return client, nil
 }
 
 // Close 关闭 D1 连接
@@ -170,12 +574,12 @@ func (c *D1Client) upsertTracksBatch(ctx context.Context, tracks []*model.Track)
 	}
 
 	// 字段数量
-	const numFields = 12
+	const numFields = 14
 	placeholders := make([]string, len(tracks))
 	args := make([]interface{}, 0, len(tracks)*numFields)
 
 	for i, track := range tracks {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 		args = append(
 			args,
 			track.Artist,
@@ -186,6 +590,8 @@ func (c *D1Client) upsertTracksBatch(ctx context.Context, tracks []*model.Track)
 			track.Genre,
 			track.Duration,
 			track.Source,
+			track.TrackNumber,
+			track.DiscNumber,
 			boolToInt(track.IsAppleMusicFav),
 			boolToInt(track.IsLastFmFav),
 			track.CreatedAt.Format(time.RFC3339),
@@ -196,13 +602,13 @@ func (c *D1Client) upsertTracksBatch(ctx context.Context, tracks []*model.Track)
 	query := fmt.Sprintf(
 		`
 		INSERT OR REPLACE INTO tracks (
-			artist, album, track, album_artist, play_count, genre, duration, source,
+			artist, album, track, album_artist, play_count, genre, duration, source, track_number, disc_number,
 			is_apple_music_fav, is_last_fm_fav, created_at, updated_at
 		) VALUES %s
 	`, strings.Join(placeholders, ", "),
 	)
 
-	if _, err := c.db.ExecContext(ctx, query, args...); err != nil {
+	if _, err := c.execWithRetry(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to batch upsert tracks: %w", err)
 	}
 
@@ -293,12 +699,12 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 		return nil
 	}
 
-	const numFields = 10
+	const numFields = 16
 	placeholders := make([]string, len(records))
 	args := make([]interface{}, 0, len(records)*numFields)
 
 	for i, record := range records {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 		args = append(
 			args,
 			record.Artist,
@@ -308,7 +714,13 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 			record.Duration,
 			record.PlayTime.Format(time.RFC3339),
 			boolToInt(record.Scrobbled),
+			record.TrackNumber,
+			record.DiscNumber,
 			record.Source,
+			record.ResolvedTrackID,
+			record.ResolutionStatus,
+			record.ResolutionConfidence,
+			boolToInt(record.LibraryApplied),
 			record.CreatedAt.Format(time.RFC3339),
 			record.UpdatedAt.Format(time.RFC3339),
 		)
@@ -317,12 +729,12 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 	query := fmt.Sprintf(
 		`
 		INSERT OR REPLACE INTO track_play_records (
-			artist, album_artist, album, track, duration, play_time, scrobbled, source, created_at, updated_at
+			artist, album_artist, album, track, duration, play_time, scrobbled, track_number, disc_number, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
 		) VALUES %s
 	`, strings.Join(placeholders, ", "),
 	)
 
-	if _, err := c.db.ExecContext(ctx, query, args...); err != nil {
+	if _, err := c.execWithRetry(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to batch upsert play records: %w", err)
 	}
 	return nil
@@ -483,7 +895,7 @@ func (c *D1Client) cleanupStaleDashboardStatRows(ctx context.Context, lastSyncTi
 
 	for _, table := range tables {
 		query := fmt.Sprintf("DELETE FROM %s WHERE updated_at < ?", table)
-		if _, err := c.db.ExecContext(ctx, query, lastSyncAt); err != nil {
+		if _, err := c.execWithRetry(ctx, query, lastSyncAt); err != nil {
 			return fmt.Errorf("failed to cleanup stale rows from table %s: %w", table, err)
 		}
 	}
@@ -501,7 +913,7 @@ func (c *D1Client) resetDashboardStatTables(ctx context.Context) error {
 		"play_trend_hourly_stat",
 	}
 	for _, table := range tables {
-		if _, err := c.db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+		if _, err := c.execWithRetry(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("failed to clear table %s: %w", table, err)
 		}
 	}
@@ -537,7 +949,7 @@ func (c *D1Client) upsertDashboardOverviewBatch(ctx context.Context, rows []*mod
 		"INSERT OR REPLACE INTO dashboard_stat (id, total_plays, total_tracks, total_artist, total_albums, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -570,7 +982,7 @@ func (c *D1Client) upsertPlaySourceStatsBatch(ctx context.Context, rows []*model
 		"INSERT OR REPLACE INTO play_source_stat (id, source, count, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -603,7 +1015,7 @@ func (c *D1Client) upsertTopArtistStatsBatch(ctx context.Context, rows []*model.
 		"INSERT OR REPLACE INTO top_artist_stat (period_days, metric_type, artist, metric_value, rank, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -636,7 +1048,7 @@ func (c *D1Client) upsertTopAlbumStatsBatch(ctx context.Context, rows []*model.T
 		"INSERT OR REPLACE INTO top_album_stat (period_days, album, artist, play_count, rank, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -669,7 +1081,7 @@ func (c *D1Client) upsertTopGenreStatsBatch(ctx context.Context, rows []*model.T
 		"INSERT OR REPLACE INTO top_genre_stat (genre_name, genre_name_zh, track_genre_count, genre_count, rank, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -702,7 +1114,7 @@ func (c *D1Client) upsertPlayTrendDailyStatsBatch(ctx context.Context, rows []*m
 		"INSERT OR REPLACE INTO play_trend_daily_stat (stat_date, play_count, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -735,7 +1147,7 @@ func (c *D1Client) upsertPlayTrendHourlyStatsBatch(ctx context.Context, rows []*
 		"INSERT OR REPLACE INTO play_trend_hourly_stat (stat_date, hour, play_count, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
-	_, err := c.db.ExecContext(ctx, query, args...)
+	_, err := c.execWithRetry(ctx, query, args...)
 	return err
 }
 
@@ -806,7 +1218,7 @@ func (c *D1Client) upsertGenresBatch(ctx context.Context, genres []*model.Genre)
 	`, strings.Join(placeholders, ", "),
 	)
 
-	if _, err := c.db.ExecContext(ctx, query, args...); err != nil {
+	if _, err := c.execWithRetry(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to batch upsert genres: %w", err)
 	}
 	return nil
@@ -817,11 +1229,11 @@ func (c *D1Client) getLastSyncTime(ctx context.Context, tableName string) (time.
 	var lastSyncTimeStr string
 	err := c.db.QueryRowContext(
 		ctx,
-		"SELECT last_sync_time FROM sync_metadata WHERE table_name = ?",
+		"SELECT COALESCE(MAX(last_sync_time), '') FROM sync_metadata WHERE table_name = ?",
 		tableName,
 	).Scan(&lastSyncTimeStr)
 
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || lastSyncTimeStr == "" {
 		// 首次同步,返回零时间
 		return time.Time{}, nil
 	}
@@ -836,7 +1248,7 @@ func (c *D1Client) getLastSyncTime(ctx context.Context, tableName string) (time.
 func (c *D1Client) updateSyncMetadata(ctx context.Context, tableName string, syncCount int) error {
 	now := time.Now()
 
-	_, err := c.db.ExecContext(
+	_, err := c.execWithRetry(
 		ctx, `
 		INSERT OR REPLACE INTO sync_metadata (
 			table_name, last_sync_time, sync_count, created_at, updated_at
@@ -857,7 +1269,7 @@ func boolToInt(b bool) int {
 
 // SyncAll 同步所有数据
 func (c *D1Client) SyncAll(ctx context.Context, incremental bool) error {
-	log.Info(ctx, "Starting full D1 sync", zap.Bool("incremental", incremental))
+	log.Info(ctx, "Starting D1 sync", zap.Bool("incremental", incremental))
 
 	// 同步曲目数据
 	if err := c.SyncTracks(ctx, incremental); err != nil {
@@ -882,6 +1294,6 @@ func (c *D1Client) SyncAll(ctx context.Context, incremental bool) error {
 		log.Warn(ctx, "Failed to sync dashboard stats, skipping", zap.Error(err))
 	}
 
-	log.Info(ctx, "Full D1 sync completed successfully")
+	log.Info(ctx, "D1 sync completed successfully", zap.Bool("incremental", incremental))
 	return nil
 }

@@ -33,6 +33,14 @@ CREATE TABLE IF NOT EXISTS tracks
     INTEGER,
     source
     TEXT,
+    track_number
+    INTEGER
+    DEFAULT
+    0,
+    disc_number
+    INTEGER
+    DEFAULT
+    1,
     is_apple_music_fav
     INTEGER
     DEFAULT
@@ -53,7 +61,9 @@ CREATE TABLE IF NOT EXISTS tracks
 (
     artist,
     album,
-    track
+    track,
+    disc_number,
+    track_number
 )
     );
 
@@ -96,6 +106,14 @@ CREATE TABLE IF NOT EXISTS track_play_records
     INTEGER
     DEFAULT
     0,
+    track_number
+    INTEGER
+    DEFAULT
+    0,
+    disc_number
+    INTEGER
+    DEFAULT
+    1,
     source
     TEXT,
     created_at

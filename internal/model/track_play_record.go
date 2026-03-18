@@ -3,7 +3,10 @@ package model
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
@@ -78,21 +81,66 @@ type HourlyPlayTrendData struct {
 
 // TrackPlayRecord 对应 track_play_records 表
 type TrackPlayRecord struct {
-	ID            int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Artist        string    `gorm:"column:artist;type:varchar(255);not null;index:idx_track_play_records_artist" json:"artist"`
-	AlbumArtist   string    `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
-	Track         string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
-	Album         string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
-	AlbumID       int64     `gorm:"column:album_id;type:bigint;default:0;index:idx_track_play_records_album_id" json:"album_id"`
-	Duration      int64     `gorm:"column:duration;type:int" json:"duration"`
-	PlayTime      time.Time `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"play_time"`
-	Scrobbled     bool      `gorm:"column:scrobbled;type:tinyint(1);not null;default:0;index:idx_track_play_records_scrobbled" json:"scrobbled"`
-	MusicBrainzID string    `gorm:"column:music_brainz_id;type:varchar(255)" json:"music_brainz_id"`
-	TrackNumber   int8      `gorm:"column:track_number;type:tinyint" json:"track_number"`
-	Source        string    `gorm:"column:source;type:varchar(100);not null;index:idx_track_play_records_source" json:"source"`
-	CreatedAt     time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	ID                   int64                          `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_track_play_records_artist" json:"artist"`
+	AlbumArtist          string                         `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
+	Track                string                         `gorm:"column:track;type:varchar(255);not null" json:"track"`
+	Album                string                         `gorm:"column:album;type:varchar(255);not null" json:"album"`
+	AlbumID              int64                          `gorm:"column:album_id;type:bigint;default:0;index:idx_track_play_records_album_id" json:"album_id"`
+	Duration             int64                          `gorm:"column:duration;type:int" json:"duration"`
+	PlayTime             time.Time                      `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"play_time"`
+	Scrobbled            bool                           `gorm:"column:scrobbled;type:tinyint(1);not null;default:0;index:idx_track_play_records_scrobbled" json:"scrobbled"`
+	MusicBrainzID        string                         `gorm:"column:music_brainz_id;type:varchar(255)" json:"music_brainz_id"`
+	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint" json:"track_number"`
+	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1" json:"disc_number"`
+	Source               string                         `gorm:"column:source;type:varchar(100);not null;index:idx_track_play_records_source" json:"source"`
+	ResolvedTrackID      int64                          `gorm:"column:resolved_track_id;type:bigint;default:0;index:idx_track_play_records_resolved_track_id" json:"resolved_track_id"`                       // 本次播放最终归因到的 track.id，0 表示未归因
+	ResolutionStatus     string                         `gorm:"column:resolution_status;type:varchar(32);not null;default:'pending';index:idx_track_play_records_resolution_status" json:"resolution_status"` // 归因状态：pending/resolved/unresolved/ambiguous
+	ResolutionConfidence common.TrackMetadataConfidence `gorm:"column:resolution_confidence;type:tinyint;default:0" json:"resolution_confidence"`                                                             // 归因置信度，取值对应 common.TrackMetadataConfidence*
+	LibraryApplied       bool                           `gorm:"column:library_applied;type:tinyint(1);not null;default:0;index:idx_track_play_records_library_applied" json:"library_applied"`                // 是否已将该播放应用到主资料库(track/album/track_album)
+	CreatedAt            time.Time                      `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt            time.Time                      `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
+
+type ReplayTrackPlayRecordsParams struct {
+	Ctx            context.Context
+	Limit          int
+	Source         string
+	RecordIDs      []int64
+	PlayedFrom     time.Time
+	PlayedTo       time.Time
+	DryRun         bool
+	OnlyUnapplied  bool
+	OnlyUnresolved bool
+}
+
+type ReplayTrackPlayRecordResult struct {
+	ID              int64
+	Artist          string
+	Album           string
+	Track           string
+	Source          string
+	BeforeStatus    string
+	BeforeApplied   bool
+	AfterStatus     string
+	AfterApplied    bool
+	ResolvedTrackID int64
+}
+
+type ReplayTrackPlayRecordsReport struct {
+	Results []*ReplayTrackPlayRecordResult
+}
+
+const (
+	// TrackPlayRecordResolutionPending 表示播放已入库但尚未完成归因。
+	TrackPlayRecordResolutionPending = "pending"
+	// TrackPlayRecordResolutionResolved 表示播放已稳定归因到某条曲目。
+	TrackPlayRecordResolutionResolved = "resolved"
+	// TrackPlayRecordResolutionUnresolved 表示本轮未能稳定归因，后续可重试。
+	TrackPlayRecordResolutionUnresolved = "unresolved"
+	// TrackPlayRecordResolutionAmbiguous 表示存在多个候选，无法安全落单。
+	TrackPlayRecordResolutionAmbiguous = "ambiguous"
+)
 
 // TableName sets the table name for the TrackPlayRecord model
 func (TrackPlayRecord) TableName() string {
@@ -116,23 +164,454 @@ func InsertTrackPlayRecord(ctx context.Context, record *TrackPlayRecord) error {
 
 	// 自动填充 AlbumID
 	if record.AlbumID == 0 {
-		record.AlbumID = getAlbumIDByTrackInfo(ctx, record.Artist, record.Album, record.Track)
+		record.AlbumID = getAlbumIDByTrackInfo(
+			ctx, record.Artist, record.Album, record.Track, record.TrackNumber, record.DiscNumber,
+		)
+	}
+	if record.ResolutionStatus == "" {
+		record.ResolutionStatus = TrackPlayRecordResolutionPending
 	}
 
 	return GetDB().WithContext(ctx).Create(record).Error
 }
 
+func resolveTrackForPlayRecord(
+	tx *gorm.DB, artist, album, track string, metadata TrackMetadata,
+) (*Track, string, common.TrackMetadataConfidence, error) {
+	if historicalTrack, confidence, err := findLatestResolvedTrackByIdentityAndSourceTx(
+		tx,
+		artist,
+		album,
+		track,
+		strings.TrimSpace(metadata.Source),
+		metadata.TrackNumber,
+		metadata.DiscNumber,
+	); err == nil {
+		return historicalTrack, TrackPlayRecordResolutionResolved, confidence, nil
+	}
+
+	identity, resolvedTrack, err := resolveTrackIdentityWithOptions(
+		tx,
+		artist,
+		album,
+		track,
+		metadata,
+		trackIdentityResolveOptions{
+			allowLooseNameFallback: metadataAllowsLibraryMutation(metadata),
+			allowUniqueIDHint:      metadataAllowsLibraryMutation(metadata),
+		},
+	)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	if resolvedTrack != nil {
+		confidence := metadataConfidence(metadata)
+		if confidence < common.TrackMetadataConfidenceAuthoritative {
+			authoritative, authErr := HasAuthoritativeTrackAlbumBindingTx(tx, resolvedTrack.ID)
+			if authErr != nil {
+				return nil, "", 0, authErr
+			}
+			if authoritative {
+				confidence = common.TrackMetadataConfidenceAuthoritative
+			}
+		}
+		return resolvedTrack, TrackPlayRecordResolutionResolved, confidence, nil
+	}
+
+	if identity.TrackNumber == 0 && identity.DiscNumber == 0 {
+		return nil, TrackPlayRecordResolutionUnresolved, metadataConfidence(metadata), nil
+	}
+	return nil, TrackPlayRecordResolutionUnresolved, metadataConfidence(metadata), nil
+}
+
+// ResolveTrackPlayRecord 根据最新曲目解析结果回填播放记录归因状态。
+func ResolveTrackPlayRecord(
+	ctx context.Context, recordID int64, artist, album, track string, metadata TrackMetadata,
+) error {
+	if recordID <= 0 {
+		return nil
+	}
+
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			resolvedTrack, status, confidence, err := resolveTrackForPlayRecord(tx, artist, album, track, metadata)
+			if err != nil {
+				return err
+			}
+
+			fields := map[string]interface{}{
+				"resolution_status":     status,
+				"resolution_confidence": confidence,
+			}
+			if resolvedTrack != nil {
+				if err := ResolvePendingTrackFavoriteEventsByTrackTx(tx, resolvedTrack, confidence); err != nil {
+					return err
+				}
+				fields["resolved_track_id"] = resolvedTrack.ID
+				if resolvedTrack.MusicBrainzID != "" {
+					fields["music_brainz_id"] = resolvedTrack.MusicBrainzID
+				}
+				fields["album_id"] = getAlbumIDByTrackInfoTx(
+					tx,
+					resolvedTrack.Artist,
+					resolvedTrack.Album,
+					resolvedTrack.Track,
+					resolvedTrack.TrackNumber,
+					resolvedTrack.DiscNumber,
+				)
+			}
+			return tx.Model(&TrackPlayRecord{}).Where("id = ?", recordID).Updates(fields).Error
+		},
+	)
+}
+
+func getTrackPlayRecordByIDTx(tx *gorm.DB, recordID int64) (*TrackPlayRecord, error) {
+	var record TrackPlayRecord
+	if err := tx.Where("id = ?", recordID).First(&record).Error; err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func findLatestResolvedTrackByIdentityAndSourceTx(
+	tx *gorm.DB, artist, album, track, source string, trackNumber, discNumber int8,
+) (*Track, common.TrackMetadataConfidence, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return nil, 0, gorm.ErrRecordNotFound
+	}
+
+	query := tx.Model(&TrackPlayRecord{}).
+		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
+		Where("source = ?", source).
+		Where("resolution_status = ? AND resolved_track_id > 0", TrackPlayRecordResolutionResolved).
+		Where("library_applied = ?", true)
+
+	trackNumber, discNumber = normalizeTrackAlbumPosition(trackNumber, discNumber)
+	if trackNumber > 0 {
+		query = query.Where("track_number = ? AND disc_number = ?", trackNumber, discNumber)
+	}
+
+	var row struct {
+		ResolvedTrackID      int64 `gorm:"column:resolved_track_id"`
+		ResolutionConfidence int8  `gorm:"column:resolution_confidence"`
+	}
+	if err := query.Order("play_time DESC, id DESC").Limit(1).Scan(&row).Error; err != nil {
+		return nil, 0, err
+	}
+	if row.ResolvedTrackID <= 0 {
+		return nil, 0, gorm.ErrRecordNotFound
+	}
+
+	trackObj, err := GetTrackByIDTx(tx, row.ResolvedTrackID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return trackObj, common.TrackMetadataConfidence(row.ResolutionConfidence), nil
+}
+
+// FindLatestResolvedTrackIDByIdentityTx 优先复用播放归因结果，降低收藏写入的误归因风险。
+func FindLatestResolvedTrackIDByIdentityTx(
+	tx *gorm.DB, artist, album, track string, trackNumber, discNumber int8,
+) (int64, int8, error) {
+	query := tx.Model(&TrackPlayRecord{}).
+		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
+		Where("resolution_status = ? AND resolved_track_id > 0", TrackPlayRecordResolutionResolved)
+
+	trackNumber, discNumber = normalizeTrackAlbumPosition(trackNumber, discNumber)
+	if trackNumber > 0 {
+		query = query.Where("track_number = ? AND disc_number = ?", trackNumber, discNumber)
+	}
+
+	var row struct {
+		ResolvedTrackID      int64 `gorm:"column:resolved_track_id"`
+		ResolutionConfidence int8  `gorm:"column:resolution_confidence"`
+	}
+	err := query.Order("play_time DESC, id DESC").Limit(1).Scan(&row).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	if row.ResolvedTrackID <= 0 {
+		return 0, 0, gorm.ErrRecordNotFound
+	}
+	return row.ResolvedTrackID, row.ResolutionConfidence, nil
+}
+
+func buildIncrementTrackPlayCountParamsFromRecord(
+	ctx context.Context, record *TrackPlayRecord, metadata TrackMetadata,
+) IncrementTrackPlayCountParams {
+	return IncrementTrackPlayCountParams{
+		Ctx:           ctx,
+		Artist:        record.Artist,
+		Album:         record.Album,
+		Track:         record.Track,
+		TrackMetadata: metadata,
+	}
+}
+
+func buildTrackPlayRecordResolvedFields(
+	record *TrackPlayRecord,
+	resolvedTrack *Track,
+	albumID int64,
+) map[string]interface{} {
+	fields := map[string]interface{}{}
+	if resolvedTrack == nil {
+		return fields
+	}
+
+	fields["resolved_track_id"] = resolvedTrack.ID
+	if resolvedTrack.MusicBrainzID != "" {
+		fields["music_brainz_id"] = resolvedTrack.MusicBrainzID
+	}
+	if record != nil {
+		if record.TrackNumber <= 0 && resolvedTrack.TrackNumber > 0 {
+			fields["track_number"] = resolvedTrack.TrackNumber
+		}
+		if record.DiscNumber <= 0 && resolvedTrack.DiscNumber > 0 {
+			fields["disc_number"] = resolvedTrack.DiscNumber
+		}
+	}
+	fields["album_id"] = albumID
+
+	return fields
+}
+
+// ProcessTrackPlayRecord 统一处理播放流水的资料库写入和归因回填。
+func ProcessTrackPlayRecord(ctx context.Context, recordID int64, metadata TrackMetadata) error {
+	if recordID <= 0 {
+		return nil
+	}
+
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			record, err := getTrackPlayRecordByIDTx(tx, recordID)
+			if err != nil {
+				return err
+			}
+			// 检查流水的情况 有没有条件 对track 更新？
+			applied, err := applyTrackPlayMutationTx(
+				tx, buildIncrementTrackPlayCountParamsFromRecord(ctx, record, metadata),
+			)
+			if err != nil {
+				return err
+			}
+			// 更新PlayRecord
+			resolvedTrack, status, confidence, err := resolveTrackForPlayRecord(
+				tx, record.Artist, record.Album, record.Track, metadata,
+			)
+			if err != nil {
+				return err
+			}
+
+			fields := map[string]interface{}{
+				"resolution_status":     status,
+				"resolution_confidence": confidence,
+			}
+			if resolvedTrack != nil {
+				// 只是闭环了喜欢的数据 回填了播放数据的
+				if err := ResolvePendingTrackFavoriteEventsByTrackTx(tx, resolvedTrack, confidence); err != nil {
+					return err
+				}
+				albumID := getAlbumIDByTrackInfoTx(
+					tx,
+					resolvedTrack.Artist,
+					resolvedTrack.Album,
+					resolvedTrack.Track,
+					resolvedTrack.TrackNumber,
+					resolvedTrack.DiscNumber,
+				)
+				for key, value := range buildTrackPlayRecordResolvedFields(record, resolvedTrack, albumID) {
+					fields[key] = value
+				}
+				if applied && albumID > 0 {
+					fields["library_applied"] = true
+				}
+			}
+			return tx.Model(&TrackPlayRecord{}).Where("id = ?", recordID).Updates(fields).Error
+		},
+	)
+}
+
+func inferReplayTrackMetadata(record *TrackPlayRecord) TrackMetadata {
+	metadata := TrackMetadata{
+		AlbumArtist:   record.AlbumArtist,
+		TrackNumber:   record.TrackNumber,
+		DiscNumber:    record.DiscNumber,
+		Duration:      record.Duration,
+		MusicBrainzID: record.MusicBrainzID,
+		Source:        record.Source,
+		PlayerType:    record.Source,
+		Confidence:    common.TrackMetadataConfidenceLow,
+	}
+
+	switch strings.TrimSpace(record.Source) {
+	case string(common.PlayerAudirvana):
+		metadata.Confidence = common.TrackMetadataConfidenceHigh
+	case string(common.PlayerAppleMusic):
+		if record.TrackNumber > 0 && record.Duration > 0 {
+			metadata.Confidence = common.TrackMetadataConfidenceMedium
+		}
+	case string(common.PlayerRoon):
+		if record.TrackNumber > 0 && record.Duration > 0 {
+			metadata.Confidence = common.TrackMetadataConfidenceMedium
+		}
+	default:
+		if record.TrackNumber > 0 && record.Duration > 0 {
+			metadata.Confidence = common.TrackMetadataConfidenceMedium
+		}
+	}
+
+	if record.MusicBrainzID != "" {
+		metadata.Confidence = common.TrackMetadataConfidenceHigh
+	}
+
+	return metadata
+}
+
+// GetReplayableTrackPlayRecords 获取待补归因或待应用到资料库的播放流水。
+func GetReplayableTrackPlayRecords(
+	ctx context.Context,
+	limit int,
+	source string,
+	recordIDs []int64,
+	playedFrom, playedTo time.Time,
+	onlyUnapplied, onlyUnresolved bool,
+) ([]*TrackPlayRecord, error) {
+	var records []*TrackPlayRecord
+	db := GetDB().WithContext(ctx).Model(&TrackPlayRecord{})
+
+	if source != "" {
+		db = db.Where("source = ?", source)
+	}
+	if len(recordIDs) > 0 {
+		db = db.Where("id IN ?", recordIDs)
+	}
+	if !playedFrom.IsZero() {
+		db = db.Where("play_time >= ?", playedFrom)
+	}
+	if !playedTo.IsZero() {
+		db = db.Where("play_time <= ?", playedTo)
+	}
+
+	switch {
+	case onlyUnapplied && onlyUnresolved:
+		db = db.Where(
+			"library_applied = ? OR resolution_status IN ?", false, []string{
+				TrackPlayRecordResolutionPending,
+				TrackPlayRecordResolutionUnresolved,
+			},
+		)
+	case onlyUnapplied:
+		db = db.Where("library_applied = ?", false)
+	case onlyUnresolved:
+		db = db.Where(
+			"resolution_status IN ?", []string{
+				TrackPlayRecordResolutionPending,
+				TrackPlayRecordResolutionUnresolved,
+			},
+		)
+	default:
+		// 默认只处理尚未应用到资料库的新流程记录，避免已封板的历史流水继续进入 replay 队列。
+		db = db.Where("library_applied = ?", false)
+	}
+
+	if limit > 0 {
+		db = db.Limit(limit)
+	}
+
+	err := db.Order("play_time ASC, id ASC").Find(&records).Error
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// ReplayTrackPlayRecords 批量重放播放流水，用于后台补归因和资料库补写。
+func ReplayTrackPlayRecords(params ReplayTrackPlayRecordsParams) (*ReplayTrackPlayRecordsReport, error) {
+	ctx := params.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// 获取待补归因或待应用到资料库的播放流水。
+	records, err := GetReplayableTrackPlayRecords(
+		ctx,
+		params.Limit,
+		params.Source,
+		params.RecordIDs,
+		params.PlayedFrom,
+		params.PlayedTo,
+		params.OnlyUnapplied,
+		params.OnlyUnresolved,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &ReplayTrackPlayRecordsReport{
+		Results: make([]*ReplayTrackPlayRecordResult, 0, len(records)),
+	}
+
+	for _, record := range records {
+		result := &ReplayTrackPlayRecordResult{
+			ID:            record.ID,
+			Artist:        record.Artist,
+			Album:         record.Album,
+			Track:         record.Track,
+			Source:        record.Source,
+			BeforeStatus:  record.ResolutionStatus,
+			BeforeApplied: record.LibraryApplied,
+		}
+
+		if !params.DryRun {
+			// 统一处理播放流水的资料库写入和归因回填
+			if err := ProcessTrackPlayRecord(ctx, record.ID, inferReplayTrackMetadata(record)); err != nil {
+				return nil, err
+			}
+
+			stored, err := GetTrackPlayRecordByID(ctx, record.ID)
+			if err != nil {
+				return nil, err
+			}
+			result.AfterStatus = stored.ResolutionStatus
+			result.AfterApplied = stored.LibraryApplied
+			result.ResolvedTrackID = stored.ResolvedTrackID
+		}
+
+		report.Results = append(report.Results, result)
+	}
+
+	return report, nil
+}
+
+// GetTrackPlayRecordByID 根据主键获取播放流水。
+func GetTrackPlayRecordByID(ctx context.Context, recordID int64) (*TrackPlayRecord, error) {
+	return getTrackPlayRecordByIDTx(GetDB().WithContext(ctx), recordID)
+}
+
 // getAlbumIDByTrackInfo 通过 Track -> TrackAlbum 关联获取 AlbumID
-func getAlbumIDByTrackInfo(ctx context.Context, artist, album, track string) int64 {
-	var trackObj Track
-	err := GetDB().WithContext(ctx).Where("artist = ? AND album = ? AND track = ?", artist, album, track).First(&trackObj).Error
+func getAlbumIDByTrackInfo(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) int64 {
+	return getAlbumIDByTrackInfoTx(GetDB().WithContext(ctx), artist, album, track, trackNumber, discNumber)
+}
+
+func getAlbumIDByTrackInfoTx(tx *gorm.DB, artist, album, track string, trackNumber, discNumber int8) int64 {
+	trackObj, err := findTrackByIdentityWithOptions(
+		tx,
+		TrackIdentity{
+			Artist:      artist,
+			Album:       album,
+			Track:       track,
+			TrackNumber: trackNumber,
+			DiscNumber:  discNumber,
+		},
+		trackIdentityResolveOptions{allowLooseNameFallback: false},
+	)
 	if err != nil {
 		return 0
 	}
 
 	// 从 TrackAlbum 获取 album_id
 	var trackAlbum TrackAlbum
-	err = GetDB().WithContext(ctx).Where("track_id = ?", trackObj.ID).First(&trackAlbum).Error
+	err = tx.Where("track_id = ?", trackObj.ID).First(&trackAlbum).Error
 	if err != nil {
 		return 0
 	}
@@ -314,16 +793,20 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 	for _, row := range rows {
 		var albumObj Album
 		albumID := int64(0)
-		if err := GetDB().WithContext(ctx).Where("name = ? AND artist = ?", row.Album, row.Artist).First(&albumObj).Error; err == nil {
+		if err := GetDB().WithContext(ctx).Where(
+			"name = ? AND artist = ?", row.Album, row.Artist,
+		).First(&albumObj).Error; err == nil {
 			albumID = albumObj.ID
 		}
 
-		result = append(result, &TopAlbum{
-			AlbumID:   albumID,
-			Album:     row.Album,
-			Artist:    row.Artist,
-			PlayCount: row.PlayCount,
-		})
+		result = append(
+			result, &TopAlbum{
+				AlbumID:   albumID,
+				Album:     row.Album,
+				Artist:    row.Artist,
+				PlayCount: row.PlayCount,
+			},
+		)
 	}
 
 	return result, nil

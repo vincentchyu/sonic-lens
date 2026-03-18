@@ -132,8 +132,34 @@
 
         .title-wrap {
             min-width: 0;
-            text-align: center;
             grid-column: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+        }
+
+        .title-copy {
+            min-width: 0;
+            text-align: center;
+        }
+
+        .live-cover {
+            width: 68px;
+            height: 68px;
+            flex: 0 0 68px;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+        }
+
+        .live-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
 
         .track {
@@ -542,8 +568,13 @@
             <span class="track-info-badge" id="trackNumberDisplay"></span>
         </div>
         <div class="title-wrap">
-            <div class="track" id="trackTitle">等待播放中...</div>
-            <div class="meta" id="trackMeta">连接中</div>
+            <div class="live-cover">
+                <img id="trackCoverArt" alt="专辑封面" style="display:none;">
+            </div>
+            <div class="title-copy">
+                <div class="track" id="trackTitle">等待播放中...</div>
+                <div class="meta" id="trackMeta">连接中</div>
+            </div>
         </div>
         <div class="actions">
             <button class="btn favorite-btn" id="favoriteBtn" disabled>☆ 收藏</button>
@@ -686,8 +717,8 @@
         }
     }
 
-    function cacheKey(artist, album, track) {
-        return (artist || "") + "::" + (album || "") + "::" + (track || "");
+    function cacheKey(artist, album, track, trackNumber, discNumber) {
+        return (artist || "") + "::" + (album || "") + "::" + (track || "") + "::" + (trackNumber || 0) + "::" + (discNumber || 0);
     }
 
     function setSplitMode(enabled) {
@@ -886,8 +917,8 @@
         panel.innerHTML = html;
     }
 
-    async function fetchInsight(artist, album, track) {
-        const key = cacheKey(artist, album, track);
+    async function fetchInsight(artist, album, track, trackNumber, discNumber) {
+        const key = cacheKey(artist, album, track, trackNumber, discNumber);
         const cached = insightCache[key];
         if (cached && Date.now() - cached.ts < INSIGHT_CACHE_TTL_MS) {
             return cached.data;
@@ -895,7 +926,9 @@
         const params = new URLSearchParams({
             artist: artist || "",
             album: album || "",
-            track: track || ""
+            track: track || "",
+            trackNumber: String(trackNumber || 0),
+            discNumber: String(discNumber || 0)
         });
         const resp = await fetch("/api/track-insight?" + params.toString());
         if (!resp.ok) throw new Error("获取赏析失败");
@@ -1129,7 +1162,7 @@
             return;
         }
         try {
-            currentInsight = await fetchInsight(artist, album, track);
+            currentInsight = await fetchInsight(artist, album, track, data.track_number, data.disc_number);
         } catch (e) {
             currentInsight = null;
         }
@@ -1186,15 +1219,17 @@
         }, 220);
     }
 
-    async function fetchLyrics(artist, album, track) {
-        const key = cacheKey(artist, album, track);
+    async function fetchLyrics(artist, album, track, trackNumber, discNumber) {
+        const key = cacheKey(artist, album, track, trackNumber, discNumber);
         const cached = lyricsCache[key];
         if (cached && Date.now() - cached.ts < LYRICS_CACHE_TTL_MS) return cached.data;
 
         const params = new URLSearchParams({
             artist: artist || "",
             album: album || "",
-            track: track || ""
+            track: track || "",
+            trackNumber: String(trackNumber || 0),
+            discNumber: String(discNumber || 0)
         });
         const resp = await fetch("/api/track-lyrics?" + params.toString());
         if (!resp.ok) throw new Error("获取歌词失败");
@@ -1208,6 +1243,8 @@
         const artist = currentTrackInfo.artist || "";
         const album = currentTrackInfo.album || "";
         const track = currentTrackInfo.title || currentTrackInfo.track || "";
+        const trackNumber = currentTrackInfo.track_number || 0;
+        const discNumber = currentTrackInfo.disc_number || 0;
         if (!artist || !track) return;
 
         const container = document.getElementById("lyricsContainer");
@@ -1216,13 +1253,13 @@
         try {
             let data;
             if (force) {
-                const params = new URLSearchParams({artist: artist, album: album, track: track, force: "true"});
+                const params = new URLSearchParams({artist: artist, album: album, track: track, trackNumber: String(trackNumber), discNumber: String(discNumber), force: "true"});
                 const resp = await fetch("/api/track-lyrics?" + params.toString());
                 if (!resp.ok) throw new Error("刷新歌词失败");
                 data = await resp.json();
-                lyricsCache[cacheKey(artist, album, track)] = {ts: Date.now(), data: data};
+                lyricsCache[cacheKey(artist, album, track, trackNumber, discNumber)] = {ts: Date.now(), data: data};
             } else {
-                data = await fetchLyrics(artist, album, track);
+                data = await fetchLyrics(artist, album, track, trackNumber, discNumber);
             }
 
             if (!data.lyrics) {
@@ -1259,9 +1296,19 @@
         const trackInfoContainer = document.getElementById("trackInfoContainer");
         const discNumberDisplay = document.getElementById("discNumberDisplay");
         const trackNumberDisplay = document.getElementById("trackNumberDisplay");
+        const coverArt = document.getElementById("trackCoverArt");
         
         if (trackTitle) trackTitle.textContent = data.title || data.track || "未知曲目";
         if (trackMeta) trackMeta.textContent = (data.artist || "未知艺术家") + (data.album ? " · " + data.album : "");
+        if (coverArt) {
+            if (data.cover_art_url) {
+                coverArt.src = data.cover_art_url;
+                coverArt.style.display = "block";
+            } else {
+                coverArt.removeAttribute("src");
+                coverArt.style.display = "none";
+            }
+        }
         
         if (trackInfoContainer) {
             let hasInfo = false;
@@ -1312,6 +1359,11 @@
                 currentSource = "";
                 currentPosition = 0;
                 trackDuration = 0;
+                const coverArt = document.getElementById("trackCoverArt");
+                if (coverArt) {
+                    coverArt.removeAttribute("src");
+                    coverArt.style.display = "none";
+                }
                 document.getElementById("trackTitle").textContent = "等待播放中...";
                 document.getElementById("trackMeta").textContent = "暂无播放";
                 renderPlain("暂无歌词");

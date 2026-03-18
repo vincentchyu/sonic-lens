@@ -113,6 +113,8 @@ func UnityFixAll(str string) string {
 // UnityPunctuationMarksFix 替换字符串函数
 // ’ => '
 // ，=> ,
+// （=> (
+// ）=> )
 // 替换为英文引号
 func UnityPunctuationMarksFix(target string) string {
 	if strings.ContainsAny(target, "’") {
@@ -120,6 +122,9 @@ func UnityPunctuationMarksFix(target string) string {
 	}
 	if strings.ContainsAny(target, "，") {
 		target = strings.ReplaceAll(target, "，", ",")
+	}
+	if strings.ContainsAny(target, "（）") {
+		target = strings.NewReplacer("（", "(", "）", ")").Replace(target)
 	}
 	return target
 }

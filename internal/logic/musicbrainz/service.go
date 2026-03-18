@@ -3,6 +3,7 @@ package musicbrainz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,6 +17,206 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/musicbrainz"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
+
+type mbTrackInfo struct {
+	musicbrainzws2.Track
+	DiscNumber int8
+}
+
+// Service 定义 API 层使用的 MusicBrainz 业务入口，统一收口到 logic 层。
+type Service interface {
+	// SearchAndCacheReleases 搜索并缓存候选发行版。
+	SearchAndCacheReleases(ctx context.Context, albumID int64) error
+	// GetReleasesByAlbumID 获取某专辑对应的缓存候选结果。
+	GetReleasesByAlbumID(ctx context.Context, albumID int64) ([]*model.ReleaseMB, error)
+	// LinkAlbumToMBID 确认专辑与选定发行版的关联。
+	LinkAlbumToMBID(ctx context.Context, albumID int64, releaseMBID int64, mbid string) error
+	// DeepingMaintenance 执行精选维护与轨道修正。
+	DeepingMaintenance(ctx context.Context, albumID int64) error
+}
+
+type serviceImpl struct{}
+
+// NewService 创建 MusicBrainz 逻辑服务，供 API 层统一调用。
+func NewService() Service {
+	return &serviceImpl{}
+}
+
+// SearchAndCacheReleases 搜索并缓存候选发行版。
+func (s *serviceImpl) SearchAndCacheReleases(ctx context.Context, albumID int64) error {
+	return searchAndCacheReleases(ctx, albumID)
+}
+
+// GetReleasesByAlbumID 获取某专辑对应的缓存候选结果。
+func (s *serviceImpl) GetReleasesByAlbumID(ctx context.Context, albumID int64) ([]*model.ReleaseMB, error) {
+	return model.GetReleasesByAlbumID(ctx, albumID)
+}
+
+// LinkAlbumToMBID 确认专辑与选定发行版的关联。
+func (s *serviceImpl) LinkAlbumToMBID(ctx context.Context, albumID int64, releaseMBID int64, mbid string) error {
+	return model.LinkAlbumToMBID(ctx, albumID, releaseMBID, mbid)
+}
+
+// deepingMaintenance 执行精选维护与轨道修正。
+func (s *serviceImpl) DeepingMaintenance(ctx context.Context, albumID int64) error {
+	return deepingMaintenance(ctx, albumID)
+}
+
+func buildMBTrackPositionKey(discNumber, trackNumber int8) string {
+	if trackNumber <= 0 {
+		return ""
+	}
+	if discNumber <= 0 {
+		discNumber = 1
+	}
+	return fmt.Sprintf("%d|%d", discNumber, trackNumber)
+}
+
+func normalizeMBTrackLookupKey(title string) string {
+	title = strings.TrimSpace(common.UnityFixAll(title))
+	if title == "" {
+		return ""
+	}
+	return strings.ToLower(common.ConversionSimplifiedFx(title))
+}
+
+func matchMBTrackByTitle(
+	ta *model.TrackAlbum,
+	trackObj *model.Track,
+	mbTrackMapByName map[string][]mbTrackInfo,
+	processedRecordingIDs map[string]bool,
+) (mbTrackInfo, bool, bool, string) {
+	type titleMatchResult struct {
+		track   mbTrackInfo
+		found   bool
+		certain bool
+		source  string
+		key     string
+	}
+
+	best := titleMatchResult{}
+
+	for _, candidate := range []struct {
+		title  string
+		source string
+	}{
+		{title: ta.Track, source: "track_album_title"},
+		{title: trackObj.Track, source: "track_title"},
+	} {
+		key := normalizeMBTrackLookupKey(candidate.title)
+		if key == "" {
+			continue
+		}
+
+		infos, ok := mbTrackMapByName[key]
+		if !ok || len(infos) == 0 {
+			continue
+		}
+
+		current := titleMatchResult{
+			found:  true,
+			source: candidate.source,
+			key:    key,
+		}
+		if len(infos) == 1 {
+			current.track = infos[0]
+			current.certain = true
+		} else {
+			current.track = infos[0]
+			for _, info := range infos {
+				if !processedRecordingIDs[string(info.Recording.ID)] {
+					current.track = info
+					break
+				}
+			}
+		}
+
+		if !best.found ||
+			(current.certain && !best.certain) ||
+			(current.certain == best.certain && len(current.key) > len(best.key)) {
+			best = current
+		}
+	}
+
+	if best.found {
+		return best.track, true, best.certain, best.source
+	}
+
+	return mbTrackInfo{}, false, false, ""
+}
+
+func mbTrackMatchesAnyLocalTitle(mbTrack mbTrackInfo, titles ...string) bool {
+	mbKey := normalizeMBTrackLookupKey(mbTrack.Title)
+	if mbKey == "" {
+		return false
+	}
+
+	for _, title := range titles {
+		if normalizeMBTrackLookupKey(title) == mbKey {
+			return true
+		}
+	}
+
+	return false
+}
+
+func findMBTrackForHeardTrack(
+	ta *model.TrackAlbum,
+	trackObj *model.Track,
+	mbTrackMapByPos map[string]mbTrackInfo,
+	mbTrackMapByName map[string][]mbTrackInfo,
+	processedRecordingIDs map[string]bool,
+) (mbTrackInfo, bool, string) {
+	titleMatch, titleFound, titleCertain, titleSource := matchMBTrackByTitle(
+		ta,
+		trackObj,
+		mbTrackMapByName,
+		processedRecordingIDs,
+	)
+	trackPosKey := buildMBTrackPositionKey(trackObj.DiscNumber, trackObj.TrackNumber)
+
+	for _, candidate := range []struct {
+		discNumber  int8
+		trackNumber int8
+		source      string
+	}{
+		{discNumber: ta.DiscNumber, trackNumber: ta.TrackNumber, source: "track_album_position"},
+		{discNumber: trackObj.DiscNumber, trackNumber: trackObj.TrackNumber, source: "track_position"},
+	} {
+		posKey := buildMBTrackPositionKey(candidate.discNumber, candidate.trackNumber)
+		if posKey == "" {
+			continue
+		}
+		if mbTrack, found := mbTrackMapByPos[posKey]; found {
+			if candidate.source == "track_album_position" && trackPosKey != "" && trackPosKey != posKey {
+				return mbTrack, true, candidate.source
+			}
+			if candidate.source == "track_album_position" &&
+				titleFound &&
+				titleCertain &&
+				titleSource == "track_title" &&
+				normalizeMBTrackLookupKey(trackObj.Track) != "" &&
+				normalizeMBTrackLookupKey(trackObj.Track) != normalizeMBTrackLookupKey(ta.Track) &&
+				normalizeMBTrackLookupKey(trackObj.Track) != normalizeMBTrackLookupKey(mbTrack.Title) &&
+				string(titleMatch.Recording.ID) != string(mbTrack.Recording.ID) {
+				return titleMatch, true, titleSource + "_override_position"
+			}
+			if mbTrackMatchesAnyLocalTitle(mbTrack, ta.Track, trackObj.Track) {
+				return mbTrack, true, candidate.source
+			}
+			if titleFound && titleCertain && string(titleMatch.Recording.ID) != string(mbTrack.Recording.ID) {
+				return titleMatch, true, titleSource + "_override_position"
+			}
+			return mbTrack, true, candidate.source
+		}
+	}
+
+	if titleFound {
+		return titleMatch, true, titleSource
+	}
+
+	return mbTrackInfo{}, false, ""
+}
 
 // InitializeAlbums from existing tracks
 func InitializeAlbums(ctx context.Context) error {
@@ -49,9 +250,12 @@ func InitializeAlbums(ctx context.Context) error {
 
 		// 3. Link Track to Album
 		ta := &model.TrackAlbum{
-			TrackID:     t.ID,
-			AlbumID:     album.ID,
-			TrackNumber: t.TrackNumber,
+			TrackID:                t.ID,
+			AlbumID:                album.ID,
+			Track:                  t.Track,
+			TrackNumber:            t.TrackNumber,
+			DiscNumber:             t.DiscNumber,
+			MusicBrainzRecordingID: t.MusicBrainzID,
 		}
 		if err := model.GetOrCreateTrackAlbum(ctx, ta); err != nil {
 			log.Warn(
@@ -80,8 +284,8 @@ func escapeLucene(in string) string {
 	return out
 }
 
-// SearchAndCacheReleases searches for releases and saves them to release_mb
-func SearchAndCacheReleases(ctx context.Context, albumID int64) error {
+// searchAndCacheReleases searches for releases and saves them to release_mb
+func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 	album, err := model.GetAlbum(ctx, albumID)
 	if err != nil {
 		log.Error(ctx, "GetAlbum failed", zap.Int64("album_id", albumID), zap.Error(err))
@@ -90,17 +294,18 @@ func SearchAndCacheReleases(ctx context.Context, albumID int64) error {
 
 	// 如果状态为3（精选完成），需要清除之前的MB关联数据，重新开始
 	if album.SyncStatus == 3 {
-		// 清除 album_release_mb 关联记录
-		if err := model.GetDB().WithContext(ctx).Where(
-			"album_id = ?", albumID,
-		).Delete(&model.AlbumReleaseMB{}).Error; err != nil {
-			log.Warn(ctx, "Clear album_release_mb failed", zap.Int64("album_id", albumID), zap.Error(err))
-		}
-		// 清除 track_album 中的 mb_recording_id
-		if err := model.GetDB().WithContext(ctx).Model(&model.TrackAlbum{}).Where(
-			"album_id = ?", albumID,
-		).Update("mb_recording_id", "").Error; err != nil {
-			log.Warn(ctx, "Clear mb_recording_id failed", zap.Int64("album_id", albumID), zap.Error(err))
+		if err := model.InTx(
+			ctx, func(tx *gorm.DB) error {
+				if err := model.DeleteAlbumReleaseMBByAlbumIDTx(tx, albumID); err != nil {
+					return err
+				}
+				if err := model.ClearTrackAlbumMBRecordingIDByAlbumIDTx(tx, albumID); err != nil {
+					return err
+				}
+				return model.UpdateAlbumSyncStatusTx(tx, albumID, 1)
+			},
+		); err != nil {
+			log.Warn(ctx, "Reset album musicbrainz links failed", zap.Int64("album_id", albumID), zap.Error(err))
 		}
 		log.Info(ctx, "Reset album sync status from 3 to 1", zap.Int64("album_id", albumID))
 	}
@@ -143,7 +348,7 @@ func SearchAndCacheReleases(ctx context.Context, albumID int64) error {
 
 	// 更新专辑状态为初选进行中/完成（此处可根据业务定义，目前先标记为1表示已搜过候选）
 	album.SyncStatus = 1
-	if err := model.GetDB().WithContext(ctx).Model(album).Update("sync_status", 1).Error; err != nil {
+	if err := model.UpdateAlbumSyncStatus(ctx, albumID, 1); err != nil {
 		log.Warn(ctx, "Update sync_status failed", zap.Int64("album_id", albumID), zap.Error(err))
 	}
 
@@ -165,14 +370,19 @@ func SearchAndCacheReleases(ctx context.Context, albumID int64) error {
 // 现在遇到的情况就是the wall 这张专辑在track_album 分别有 TrackNumber 1 1 两首以此类推其他的序号也是两个 深度维护应该按照歌曲名字 补充上DiscNumber
 // 参考json在@internal/logic/musicbrainz/lookUpRelease.json
 
-// DeepingMaintenance performs a lookup and updates track numbers
-func DeepingMaintenance(ctx context.Context, albumID int64) error {
-	log.Info(ctx, "Starting DeepingMaintenance", zap.Int64("album_id", albumID))
+// deepingMaintenance performs a lookup and updates track numbers
+func deepingMaintenance(ctx context.Context, albumID int64) error {
+	log.Info(ctx, "Starting deepingMaintenance", zap.Int64("album_id", albumID))
 
 	// 1. Get confirmed MBID
 	link, err := model.GetAlbumReleaseMBByAlbumID(ctx, albumID)
 	if err != nil {
 		log.Error(ctx, "GetAlbumReleaseMBByAlbumID failed", zap.Int64("album_id", albumID), zap.Error(err))
+		return err
+	}
+	albumObj, err := model.GetAlbum(ctx, albumID)
+	if err != nil {
+		log.Error(ctx, "GetAlbum failed", zap.Int64("album_id", albumID), zap.Error(err))
 		return err
 	}
 
@@ -191,14 +401,9 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 	}
 
 	// 3. 建立映射关系
-	type MBTrackInfo struct {
-		musicbrainzws2.Track
-		DiscNumber int8
-	}
-	mbTrackMapByName := make(map[string][]MBTrackInfo) // 一个名字可能对应多个（多碟重复）
-	mbTrackMapByPos := make(map[string]MBTrackInfo)   // 碟号|轨道号 -> 信息 (物理唯一)
-	mbTrackMapByName2ToLower := make(map[string]string)
-	mbTracks := make([]MBTrackInfo, 0)
+	mbTrackMapByName := make(map[string][]mbTrackInfo) // 一个名字可能对应多个（多碟重复）
+	mbTrackMapByPos := make(map[string]mbTrackInfo)    // 碟号|轨道号 -> 信息 (物理唯一)
+	mbTracks := make([]mbTrackInfo, 0)
 
 	totalDiscs := len(release.Media)
 	discInfosMap := make(map[int]int)
@@ -206,52 +411,53 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 	for _, medium := range release.Media {
 		discInfosMap[medium.Position] = medium.TrackCount
 		for _, t := range medium.Tracks {
-			key := ""
 			org := musicbrainz.TrackTitleWithFeat(t)
 			title := common.UnityFixAll(org)
-			// 判断是否是是中文 中文转简体
-			if common.IsExistsChineseSimplified(title) {
-				conversionSimplified := common.ConversionSimplifiedFx(title)
-				key = strings.ToLower(conversionSimplified)
-			} else {
-				key = strings.ToLower(title)
-			}
+			key := normalizeMBTrackLookupKey(title)
 			// 英文 将 Title 转为小写以支持大小写不敏感匹配 (兼容数据库 utf8mb4_unicode_ci)
 			t.Title = title
 			t.Recording.Title = title
 
-			info := MBTrackInfo{
+			info := mbTrackInfo{
 				Track:      t,
 				DiscNumber: int8(medium.Position),
 			}
-			mbTrackMapByName2ToLower[key] = org
 			mbTrackMapByName[key] = append(mbTrackMapByName[key], info)
-			mbTrackMapByPos[fmt.Sprintf("%d|%d", info.DiscNumber, info.Position)] = info
+			mbTrackMapByPos[buildMBTrackPositionKey(info.DiscNumber, int8(info.Position))] = info
 			mbTracks = append(mbTracks, info)
 		}
 	}
 	discInfosBytes, _ := json.Marshal(discInfosMap)
 	discInfosStr := string(discInfosBytes)
+	releaseDate := release.Date.String()
+	var genreStr string
+	if len(release.Genres) > 0 {
+		var genres []string
+		for _, g := range release.Genres {
+			genres = append(genres, g.Name)
+		}
+		genreStr = strings.Join(genres, ",")
+	}
 
 	// 开启事务处理所有数据库操作
-	err = model.GetDB().WithContext(ctx).Transaction(
+	err = model.InTx(
+		ctx,
 		func(tx *gorm.DB) error {
 			// A. Update release_mb cache
 			jsonData, _ := json.Marshal(release)
-			var rmb model.ReleaseMB
-			if err := tx.Where("album_id = ? AND mbid = ?", albumID, link.MBID).First(&rmb).Error; err == nil {
-				rmb.JSONData = string(jsonData)
-				if err := tx.Save(&rmb).Error; err != nil {
-					return err
-				}
+			updated, err := model.UpdateReleaseMBJSONDataTx(tx, albumID, link.MBID, string(jsonData))
+			if err != nil {
+				return err
+			}
+			if updated {
 				log.Info(
 					ctx, "Updated release_mb JSON cache", zap.Int64("album_id", albumID), zap.String("mbid", link.MBID),
 				)
 			}
 
 			// B. 获取此专辑在本地已有的关联
-			var tas []*model.TrackAlbum
-			if err := tx.Where("album_id = ?", albumID).Find(&tas).Error; err != nil {
+			tas, err := model.GetTrackAlbumsByAlbumTx(tx, albumID)
+			if err != nil {
 				return err
 			}
 
@@ -263,33 +469,15 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 				if ta.TrackID == 0 {
 					continue
 				}
-				var trackObj model.Track
-				if err := tx.First(&trackObj, ta.TrackID).Error; err == nil {
-					// 1. 优先尝试物理位置匹配 (如果本地已有物理坐标)
-					posKey := fmt.Sprintf("%d|%d", trackObj.DiscNumber, trackObj.TrackNumber)
-					mbTrack, found := mbTrackMapByPos[posKey]
-
-					// 2. 如果位置匹配失败，退而求其次使用名称匹配
-					if !found {
-						key := strings.ToLower(trackObj.Track)
-						if infos, ok := mbTrackMapByName[key]; ok && len(infos) > 0 {
-							// 如果只有一个匹配，直接对齐
-							if len(infos) == 1 {
-								mbTrack = infos[0]
-								found = true
-							} else {
-								// 如果有多个同名歌曲（多碟情况），这里需要非常谨慎
-								// 暂时根据 processedRecordingIDs 找一个还没处理过的
-								for _, info := range infos {
-									if !processedRecordingIDs[string(info.Recording.ID)] {
-										mbTrack = info
-										found = true
-										break
-									}
-								}
-							}
-						}
-					}
+				trackObj, err := model.GetTrackByIDTx(tx, ta.TrackID)
+				if err == nil {
+					mbTrack, found, matchSource := findMBTrackForHeardTrack(
+						ta,
+						trackObj,
+						mbTrackMapByPos,
+						mbTrackMapByName,
+						processedRecordingIDs,
+					)
 
 					if found {
 						recordingID := string(mbTrack.Recording.ID)
@@ -298,29 +486,28 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 						log.Info(
 							ctx, "Aligning heard track", zap.String("track", trackObj.Track),
 							zap.String("recording_id", recordingID), zap.Int("pos", mbTrack.Position),
-							zap.Int8("disc", mbTrack.DiscNumber),
+							zap.Int8("disc", mbTrack.DiscNumber), zap.String("match_source", matchSource),
 						)
 
 						// 更新本地 track 元数据
-						if err := tx.Model(&trackObj).Updates(
-							map[string]interface{}{
-								"music_brainz_id": recordingID,
-								"disc_number":     mbTrack.DiscNumber,
-								"track_number":    int8(mbTrack.Position),
-							},
-						).Error; err != nil {
+						if err := model.UpdateTrackMusicBrainzPositionTx(
+							tx, trackObj.ID, recordingID, mbTrack.DiscNumber, int8(mbTrack.Position),
+						); err != nil {
 							return err
 						}
 
-						// 更新关联表
-						if err := tx.Model(ta).Updates(
-							map[string]interface{}{
-								"track_number":    int8(mbTrack.Position),
-								"disc_number":     mbTrack.DiscNumber,
-								"track":           mbTrack.Title,
-								"mb_recording_id": recordingID,
+						// 更新关联表，并自动回收同位置的占位符
+						if err := model.UpsertTrackAlbumTx(
+							tx, &model.TrackAlbum{
+								TrackID:                ta.TrackID,
+								AlbumID:                ta.AlbumID,
+								TrackNumber:            int8(mbTrack.Position),
+								DiscNumber:             mbTrack.DiscNumber,
+								Track:                  mbTrack.Title,
+								MusicBrainzRecordingID: recordingID,
 							},
-						).Error; err != nil {
+							false,
+						); err != nil {
 							return err
 						}
 						completedCount++
@@ -328,80 +515,110 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 				}
 			}
 
-			// D. 处理未听过的歌曲（创建占位符记录 TrackID=0）
-			placeholderCount := 0
+			// D. 处理未听过的歌曲（创建真实 Track + TrackAlbum，播放次数保持 0）
+			unheardLinkedCount := 0
 			for _, mbTrack := range mbTracks {
 				recordingID := string(mbTrack.Recording.ID)
 				if processedRecordingIDs[recordingID] {
 					continue
 				}
-				// utf8mb4_unicode_ci ci表示大小写不敏感 LOWER(track) 完全是多余的
-				/*
-					SHOW FULL COLUMNS FROM multimedia.track_album; -- track utf8mb4_unicode_ci
 
-					UPDATE MY_TABLE SET Field = 'track', Type = 'varchar(255)', Collation = 'utf8mb4_unicode_ci', `Null` = 'YES', `Key` = '', `Default` = null, Extra = '', Privileges = 'select,insert,update,references', Comment = 'track 冗余';
-
-				*/
-				// 尝试匹配尚未建立 TrackID 关联但名称吻合的占位符 (大小写不敏感)
-				var ta model.TrackAlbum
-				if err := tx.Where(
-					// "album_id = ? AND LOWER(track) = ? AND track_id = 0", albumID, mbTrack.Title,
-					"album_id = ? AND track = ? AND track_id = 0", albumID, mbTrack.Title,
-				).First(&ta).Error; err == nil {
-					// 发现占位符，校正数据
-					ta.TrackNumber = int8(mbTrack.Position)
-					ta.DiscNumber = mbTrack.DiscNumber
-					ta.MusicBrainzRecordingID = recordingID
-					if err := tx.Save(&ta).Error; err != nil {
-						return err
+				existingTA, err := model.GetTrackAlbumByAlbumAndRecordingIDTx(tx, albumID, recordingID)
+				if err == nil {
+					if existingTA.ID > 0 && existingTA.TrackID > 0 {
+						if err := model.UpdateTrackMusicBrainzPositionTx(
+							tx, existingTA.TrackID, recordingID, mbTrack.DiscNumber, int8(mbTrack.Position),
+						); err != nil {
+							return err
+						}
+						if err := model.UpsertTrackAlbumTx(
+							tx, &model.TrackAlbum{
+								TrackID:                existingTA.ID,
+								AlbumID:                albumID,
+								TrackNumber:            int8(mbTrack.Position),
+								DiscNumber:             mbTrack.DiscNumber,
+								Track:                  mbTrack.Title,
+								MusicBrainzRecordingID: recordingID,
+							},
+							false,
+						); err != nil {
+							return err
+						}
+						processedRecordingIDs[recordingID] = true
+						completedCount++
+						continue
+					} else if existingTA.ID > 0 && existingTA.TrackID == 0 { // 历史遗留解决数据=0的情况
+						/*if err := model.UpsertTrackAlbumTx(
+							tx, &model.TrackAlbum{
+								ID:                     existingTA.ID,
+								TrackID:                trackObj.ID,
+								AlbumID:                albumID,
+								TrackNumber:            int8(mbTrack.Position),
+								DiscNumber:             mbTrack.DiscNumber,
+								Track:                  mbTrack.Title,
+								MusicBrainzRecordingID: recordingID,
+							},
+							false,
+						); err != nil {
+							return err
+						}*/
+						log.Warn(ctx, "ta 出现 track 0数据", zap.Any("ta", existingTA))
 					}
-					log.Info(
-						ctx, "Aligned existing placeholder", zap.String("track", ta.Track),
-						zap.String("recording_id", recordingID), zap.Int("pos", int(ta.TrackNumber)),
-					)
-					processedRecordingIDs[recordingID] = true // Mark as processed
-					completedCount++
-					continue // Move to next mbTrack
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
 				}
 
-				// 检查是否已经存在该录音 ID 的关联
-				var count int64
-				tx.Model(&model.TrackAlbum{}).Where(
-					"album_id = ? AND mb_recording_id = ?", albumID, recordingID,
-				).Count(&count)
-				if count == 0 {
-					newTA := &model.TrackAlbum{
-						TrackID:                0,
+				// 创建歌曲
+				trackObj, err := model.GetOrCreateTrackByIdentityTx(
+					tx,
+					&model.Track{
+						Artist:        albumObj.Artist,
+						AlbumArtist:   albumObj.Artist,
+						Album:         albumObj.Name,
+						Track:         mbTrack.Title,
+						TrackNumber:   int8(mbTrack.Position),
+						DiscNumber:    mbTrack.DiscNumber,
+						Genre:         genreStr,
+						ReleaseDate:   releaseDate,
+						MusicBrainzID: recordingID,
+						Source:        "MusicBrainz",
+					},
+				)
+				if err != nil {
+					return err
+				}
+
+				if err := model.UpdateTrackMusicBrainzPositionTx(
+					tx, trackObj.ID, recordingID, mbTrack.DiscNumber, int8(mbTrack.Position),
+				); err != nil {
+					return err
+				}
+				if err := model.UpsertTrackAlbumTx(
+					tx, &model.TrackAlbum{
+						TrackID:                trackObj.ID,
 						Track:                  mbTrack.Title,
 						AlbumID:                albumID,
 						TrackNumber:            int8(mbTrack.Position),
 						DiscNumber:             mbTrack.DiscNumber,
 						MusicBrainzRecordingID: recordingID,
-					}
-					if err := tx.Create(newTA).Error; err != nil {
-						return err
-					}
-					placeholderCount++
+					},
+					true,
+				); err != nil {
+					return err
 				}
+
+				processedRecordingIDs[recordingID] = true
+				unheardLinkedCount++
 			}
 
 			// E. 更新专辑状态及元数据
-			var genreStr string
-			if len(release.Genres) > 0 {
-				var genres []string
-				for _, g := range release.Genres {
-					genres = append(genres, g.Name)
-				}
-				genreStr = strings.Join(genres, ",")
-			}
-
 			updateFields := map[string]interface{}{
 				"sync_status": 3,
 				"total_discs": totalDiscs,
 				"disc_infos":  discInfosStr,
 			}
-			if release.Date.String() != "" {
-				updateFields["release_date"] = release.Date.String()
+			if releaseDate != "" {
+				updateFields["release_date"] = releaseDate
 			}
 			if genreStr != "" {
 				updateFields["genre"] = genreStr
@@ -419,15 +636,15 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 				updateFields["barcode"] = string(release.Barcode)
 			}
 
-			if err := tx.Model(&model.Album{}).Where("id = ?", albumID).Updates(updateFields).Error; err != nil {
+			if err := model.UpdateAlbumFieldsTx(tx, albumID, updateFields); err != nil {
 				return err
 			}
 
 			log.Info(
-				ctx, "DeepingMaintenance transaction completed",
+				ctx, "deepingMaintenance transaction completed",
 				zap.Int64("album_id", albumID),
 				zap.Int("aligned_tracks", completedCount),
-				zap.Int("new_placeholders", placeholderCount),
+				zap.Int("linked_unheard_tracks", unheardLinkedCount),
 			)
 
 			return nil
@@ -435,7 +652,7 @@ func DeepingMaintenance(ctx context.Context, albumID int64) error {
 	)
 
 	if err != nil {
-		log.Error(ctx, "DeepingMaintenance failed", zap.Int64("album_id", albumID), zap.Error(err))
+		log.Error(ctx, "deepingMaintenance failed", zap.Int64("album_id", albumID), zap.Error(err))
 	}
 
 	return err

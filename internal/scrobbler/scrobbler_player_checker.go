@@ -2,6 +2,7 @@ package scrobbler
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/common"
-	"github.com/vincentchyu/sonic-lens/core/lastfm"
+	"github.com/vincentchyu/sonic-lens/core/artwork"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
@@ -19,7 +20,7 @@ import (
 
 // NewBasePlayerChecker 创建基础播放器检查器
 func NewBasePlayerChecker(
-	controller PlayerController,
+	controller common.PlayerController,
 	source common.PlayerType,
 	pushCount *atomic.Uint32,
 	atomicPlaying *atomic.Bool,
@@ -33,11 +34,70 @@ func NewBasePlayerChecker(
 		longSleep:           time.Second * longSleep,
 		checkCount:          checkCount,
 		percentScrobble:     percentScrobble,
-		mapedTracks:         make(map[string]bool),
+		scrobbledTracks:     make(map[string]bool),
 		pushCount:           pushCount,
 		atomicPlaying:       atomicPlaying,
 		currentPlayingCache: currentPlayingCache,
 		trackService:        trackService,
+	}
+}
+
+func (b *BasePlayerChecker) buildTrackMetadata(playerInfo common.PlayerInfoHandler) model.TrackMetadata {
+	metadata := model.TrackMetadata{
+		AlbumArtist:   playerInfo.GetAlbumArtist(),
+		TrackNumber:   int8(playerInfo.GetTrackNumber()),
+		Duration:      playerInfo.GetDuration(),
+		Genre:         playerInfo.GetGenre(),
+		Composer:      playerInfo.GetComposer(),
+		ReleaseDate:   playerInfo.GetReleaseDate(),
+		MusicBrainzID: playerInfo.GetMusicBrainzID(),
+		Source:        playerInfo.GetSource(),
+		BundleID:      playerInfo.GetBundleID(),
+		UniqueID:      playerInfo.GetUniqueID(),
+		DiscNumber:    playerInfo.GetDiscNumber(),
+		PlayerType:    string(b.source),
+	}
+	if metadata.Source == "" {
+		metadata.Source = string(b.source)
+	}
+
+	metadata.Confidence = common.TrackMetadataConfidenceMedium
+	switch b.source {
+	case common.PlayerAudirvana:
+		metadata.Confidence = common.TrackMetadataConfidenceHigh
+	case common.PlayerRoon:
+		metadata.Confidence = common.TrackMetadataConfidenceLow
+	case common.PlayerAppleMusic:
+		metadata.Confidence = b.appleMusicMetadataConfidence(playerInfo)
+	}
+
+	if appleInfo, ok := playerInfo.(*AppleMusicTrackInfoWrapper); ok && appleInfo != nil && appleInfo.TrackInfo != nil {
+		metadata.ReleaseYear = appleInfo.Year
+	}
+
+	return metadata
+}
+
+func (b *BasePlayerChecker) appleMusicMetadataConfidence(
+	playerInfo common.PlayerInfoHandler,
+) common.TrackMetadataConfidence {
+	appleInfo, ok := playerInfo.(*AppleMusicTrackInfoWrapper)
+	if !ok || appleInfo == nil || appleInfo.TrackInfo == nil {
+		return common.TrackMetadataConfidenceMedium
+	}
+
+	kind := strings.TrimSpace(strings.ToLower(appleInfo.Kind))
+	switch {
+	case strings.Contains(kind, "保真"), strings.Contains(kind, "lossless"), strings.Contains(
+		kind, "wav",
+	), strings.Contains(kind, "aiff"), strings.Contains(kind, "mpeg"):
+		return common.TrackMetadataConfidenceHigh
+	case strings.Contains(kind, "apple music aac"):
+		return common.TrackMetadataConfidenceMedium
+	case kind == "":
+		return common.TrackMetadataConfidenceLow
+	default:
+		return common.TrackMetadataConfidenceMedium
 	}
 }
 
@@ -47,6 +107,8 @@ func (b *BasePlayerChecker) CheckPlayingTrack(ctx context.Context, stop <-chan s
 	b.tmpCount = 0
 	b.previousTrack = ""
 	b.currentTrack = ""
+	b.currentArtURL = ""
+	b.currentArtMime = ""
 
 	for {
 		select {
@@ -69,6 +131,7 @@ func (b *BasePlayerChecker) checkCycle(ctx context.Context) {
 
 	log.Debug(checkCtx, string(b.source)+" Checking playing track..."+time.Now().String())
 
+	// 我觉得这里做的监控就几件事 检查新的信息 信息是什么触发上报，提供上下文数据 仅此而已
 	b.tmpCount++
 	if b.tmpCount > b.checkCount && !b.isLongCheck { // 检查100次依旧没有播放检查轮训放大到60秒
 		b.timer.Reset(b.longSleep)
@@ -85,7 +148,7 @@ func (b *BasePlayerChecker) checkCycle(ctx context.Context) {
 	running := b.controller.IsRunning(checkCtx)
 	log.Debug(checkCtx, string(b.source)+" 程序运行是否运行", zap.Bool("running", running))
 
-	var playerInfo PlayerInfoHandler
+	var playerInfo common.PlayerInfoHandler
 	if running {
 		playerInfo = nil
 		state, _ := b.controller.GetState(checkCtx)
@@ -106,6 +169,7 @@ func (b *BasePlayerChecker) checkCycle(ctx context.Context) {
 	}
 
 	if playerInfo != nil {
+		// todo 怎么解耦 现在只是暂时拆去service，后续考虑异步分发
 		b.processPlayingTrack(checkCtx, playerInfo)
 	}
 }
@@ -131,7 +195,7 @@ func (b *BasePlayerChecker) handleStopEvent(ctx context.Context) {
 	if shouldStop {
 		websocket.BroadcastMessage(
 			ctx,
-			&websocket.WsTrackInfo{
+			&websocket.WsInfo{
 				Type:   "stop",
 				Source: string(b.source),
 			},
@@ -141,429 +205,93 @@ func (b *BasePlayerChecker) handleStopEvent(ctx context.Context) {
 }
 
 // processPlayingTrack 处理正在播放的曲目
-func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo PlayerInfoHandler) {
-	// 根据播放器类型生成 track 标识
-	tmpTrack := playerInfo.GetTitle()
-	// 对于 Audirvana，使用 URL + Title 防止 cue 文件问题
-	if b.source == common.PlayerAudirvana {
-		if url := playerInfo.GetUrl(); url != "" {
-			tmpTrack = url + playerInfo.GetTitle()
-		}
-	}
+func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo common.PlayerInfoHandler) {
+	snapshot := b.buildPlayingTrackSnapshot(ctx, playerInfo)
+	b.currentArtURL = snapshot.coverArtURL
+	b.currentArtMime = snapshot.coverArtMime
 
-	b.currentTrack = tmpTrack
-	position := playerInfo.GetPosition()
-	duration := playerInfo.GetDuration()
+	// 统一探测并同步当前曲目的收藏状态
+	favoriteState := b.trackService.ProbeAndSyncTrackFavorite(
+		ctx,
+		snapshot.toPlaybackEventInput(b.source, b.now),
+	)
 
-	// 查询数据库获取喜欢标志 检查喜欢状态并处理
-	appleMusicFav, lastFmFav := b.trackLikeCheckAndHandle(ctx, playerInfo)
-
-	wti := &websocket.WsTrackInfo{
+	wti := &websocket.WsInfo{
 		Type:   "now_playing",
 		Source: string(b.source),
-		Data: struct {
-			Title       string `json:"title"`
-			Album       string `json:"album"`
-			Artist      string `json:"artist"`
-			AppleMusic  bool   `json:"apple_music"`
-			LastFM      bool   `json:"lastfm"`
-			Duration    int64  `json:"duration"`     // 歌曲时长，单位秒
-			Position    int64  `json:"position"`     // 歌曲当前播放位置，单位秒
-			TrackNumber int8   `json:"track_number"` // 曲目号
-			DiscNumber  int8   `json:"disc_number"`  // 盘号
-		}{
-			Title:       playerInfo.GetTitle(),
-			Album:       playerInfo.GetAlbum(),
-			Artist:      playerInfo.GetArtist(),
-			AppleMusic:  appleMusicFav,
-			LastFM:      lastFmFav,
-			Duration:    duration,
-			Position:    int64(position),
-			TrackNumber: int8(playerInfo.GetTrackNumber()),
-			DiscNumber:  int8(playerInfo.GetDiscNumber()),
+		Data: websocket.WsTrackData{
+			Title:             playerInfo.GetTitle(),
+			Album:             playerInfo.GetAlbum(),
+			Artist:            playerInfo.GetArtist(),
+			AppleMusic:        favoriteState.AppleMusicFavorite,
+			LastFM:            favoriteState.LastFmFavorite,
+			Duration:          snapshot.duration,
+			Position:          int64(snapshot.position),
+			TrackNumber:       int8(playerInfo.GetTrackNumber()),
+			DiscNumber:        int8(playerInfo.GetDiscNumber()),
+			CoverArtURL:       b.currentArtURL,
+			CoverArtMime:      b.currentArtMime,
+			Confidence:        favoriteState.Confidence,
+			PlayerInfoHandler: playerInfo,
 		},
 	}
-	// 向WebSocket客户端广播播放信息
-	// 将播放信息写入本地缓存
+	// 向WebSocket客户端广播播放信息、将播放信息写入本地缓存
 	b.currentPlayingCache.Store(b.source, wti)
 	b.atomicPlaying.Store(true)
 	websocket.BroadcastMessage(ctx, wti)
 
-	// 检查是否需要标记听歌完成
-	if position/float64(duration) > b.percentScrobble && !b.mapedTracks[b.currentTrack] {
-		b.handleTrackScrobble(ctx, playerInfo)
+	if snapshot.trackChanged {
+		b.handleNewTrack(ctx, snapshot)
+	}
+	if snapshot.reachedScrobbleThreshold {
+		b.handleTrackScrobble(ctx, snapshot)
 	}
 
-	// 检查是否是新歌曲
-	if b.currentTrack != b.previousTrack {
-		b.handleNewTrack(ctx, playerInfo)
-	}
-
-	b.previousTrack = tmpTrack
+	b.previousTrack = snapshot.trackKey
 }
 
-func (b *BasePlayerChecker) trackLikeCheckAndHandle(ctx context.Context, playerInfo PlayerInfoHandler) (bool, bool) {
-	appleMusicFav := false
-	lastFmFav := false
-	if getTrack, _ := b.trackService.GetTrack(
-		ctx, playerInfo.GetArtist(), playerInfo.GetAlbum(), playerInfo.GetTitle(),
-	); getTrack != nil {
-		appleMusicFav = getTrack.IsAppleMusicFav
-		lastFmFav = getTrack.IsLastFmFav
-		// 当前歌曲没有标记为苹果喜欢状态
-		if !getTrack.IsAppleMusicFav && !getTrack.IsLastFmFav {
-			switch b.source {
-			case common.PlayerAppleMusic:
-				// 检查Apple Music喜欢状态
-				favorite := b.controller.IsFavorite(ctx)
-				appleMusicFav = favorite
-				if favorite {
-					err := b.trackService.SetAppleMusicFavorite(
-						model.SetFavoriteParams{
-							Ctx:           ctx,
-							Artist:        getTrack.Artist,
-							Album:         getTrack.Album,
-							Track:         getTrack.Track,
-							IsFavorite:    true,
-							TrackMetadata: model.TrackMetadata{},
-						},
-					)
-					if err != nil {
-						log.Warn(
-							ctx, string(b.source)+" processPlayingTrack SetAppleMusicFavorite err", zap.Error(err),
-						)
-					}
-				}
-			case common.PlayerAudirvana:
-			}
-
-			// 更新lastfm 同步（因为苹果喜欢lastfm 也必须喜欢）
-			// dbLastFm喜欢状态 没有被设置过，检查lastfm是否喜欢
-			favorite, err := lastfm.IsFavorite(ctx, getTrack.Artist, getTrack.Track)
-			if err != nil {
-				log.Warn(
-					ctx, string(b.source)+" processPlayingTrack lastfm Favorite err", zap.Error(err),
-				)
-			}
-			lastFmFav = favorite
-			if favorite {
-				err := b.trackService.SetLastFmFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        getTrack.Artist,
-						Album:         getTrack.Album,
-						Track:         getTrack.Track,
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-				if err != nil {
-					log.Warn(
-						ctx, string(b.source)+" processPlayingTrack SetLastFmFavorite err", zap.Error(err),
-					)
-				}
-
-			}
-		} else if getTrack.IsLastFmFav && !getTrack.IsAppleMusicFav {
-			// 曾经在auridrvana 标记喜欢的歌曲，切换到Apple Music 播放，自动标记为Apple Music喜欢
-			if b.source == common.PlayerAppleMusic {
-				err := b.trackService.SetAppleMusicFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        getTrack.Artist,
-						Album:         getTrack.Album,
-						Track:         getTrack.Track,
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-				if err != nil {
-					log.Warn(
-						ctx, string(b.source)+" processPlayingTrack SetAppleMusicFavorite err", zap.Error(err),
-					)
-				}
-				appleMusicFav = true
-			}
-		} else if getTrack.IsAppleMusicFav {
-			if b.source == common.PlayerAppleMusic {
-				favorite := b.controller.IsFavorite(ctx)
-				appleMusicFav = favorite
-				if favorite && !getTrack.IsLastFmFav {
-					err := b.trackService.SetLastFmFavorite(
-						model.SetFavoriteParams{
-							Ctx:           ctx,
-							Artist:        getTrack.Artist,
-							Album:         getTrack.Album,
-							Track:         getTrack.Track,
-							IsFavorite:    true,
-							TrackMetadata: model.TrackMetadata{},
-						},
-					)
-					if err != nil {
-						log.Warn(
-							ctx, string(b.source)+" processPlayingTrack SetLastFmFavorite err", zap.Error(err),
-						)
-					}
-				}
-			}
-		} else if !getTrack.IsAppleMusicFav {
-			if b.source == common.PlayerAppleMusic {
-				favorite := b.controller.IsFavorite(ctx)
-				appleMusicFav = favorite
-				if favorite {
-					err := b.trackService.SetAppleMusicFavorite(
-						model.SetFavoriteParams{
-							Ctx:           ctx,
-							Artist:        getTrack.Artist,
-							Album:         getTrack.Album,
-							Track:         getTrack.Track,
-							IsFavorite:    true,
-							TrackMetadata: model.TrackMetadata{},
-						},
-					)
-					if err != nil {
-						log.Warn(
-							ctx, string(b.source)+" processPlayingTrack SetAppleMusicFavorite err", zap.Error(err),
-						)
-					}
-				}
-			}
-		}
-	} else {
-		// 检查Apple Music喜欢状态
-		if b.source == common.PlayerAppleMusic {
-			appleMusicFavorite := b.controller.IsFavorite(ctx)
-			lastfmFavorite, err := lastfm.IsFavorite(ctx, playerInfo.GetArtist(), playerInfo.GetTitle())
-			if err != nil {
-				log.Warn(
-					ctx, string(b.source)+" processPlayingTrack lastfm Favorite err", zap.Error(err),
-				)
-			}
-			appleMusicFav = appleMusicFavorite
-			lastfmFavorite = lastfmFavorite
-			if appleMusicFavorite {
-				err := b.trackService.SetAppleMusicFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        playerInfo.GetArtist(),
-						Album:         playerInfo.GetAlbum(),
-						Track:         playerInfo.GetTitle(),
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-				if err != nil {
-					log.Warn(
-						ctx, string(b.source)+" processPlayingTrack SetAppleMusicFavorite err", zap.Error(err),
-					)
-				}
-				_ = b.trackService.SetLastFmFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        playerInfo.GetArtist(),
-						Album:         playerInfo.GetAlbum(),
-						Track:         playerInfo.GetTitle(),
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-			}
-			if lastfmFavorite {
-				err := b.trackService.SetAppleMusicFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        playerInfo.GetArtist(),
-						Album:         playerInfo.GetAlbum(),
-						Track:         playerInfo.GetTitle(),
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-				if err != nil {
-					log.Warn(
-						ctx, string(b.source)+" processPlayingTrack SetAppleMusicFavorite err", zap.Error(err),
-					)
-				}
-				_ = b.trackService.SetLastFmFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        playerInfo.GetArtist(),
-						Album:         playerInfo.GetAlbum(),
-						Track:         playerInfo.GetTitle(),
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-			}
-		} else {
-			// dbLastFm喜欢状态 没有被设置过，检查lastfm是否喜欢
-			favorite, err := lastfm.IsFavorite(ctx, playerInfo.GetArtist(), playerInfo.GetTitle())
-			if err != nil {
-				log.Warn(
-					ctx, string(b.source)+" processPlayingTrack lastfm Favorite err", zap.Error(err),
-				)
-			}
-			lastFmFav = favorite
-			if favorite {
-				err := b.trackService.SetLastFmFavorite(
-					model.SetFavoriteParams{
-						Ctx:           ctx,
-						Artist:        playerInfo.GetArtist(),
-						Album:         playerInfo.GetAlbum(),
-						Track:         playerInfo.GetTitle(),
-						IsFavorite:    true,
-						TrackMetadata: model.TrackMetadata{},
-					},
-				)
-				if err != nil {
-					log.Warn(
-						ctx, string(b.source)+" processPlayingTrack SetLastFmFavorite err", zap.Error(err),
-					)
-				}
-			}
-		}
+func (b *BasePlayerChecker) resolveArtwork(ctx context.Context, playerInfo common.PlayerInfoHandler) (string, string) {
+	provider, ok := playerInfo.(common.ArtworkProvider)
+	if !ok {
+		return "", ""
 	}
-	return appleMusicFav, lastFmFav
+	seed := artwork.DefaultStore.GetKeyForSeed(provider.GetArtworkKey(ctx))
+	if e, ok := artwork.DefaultStore.Get(seed); ok {
+		return artwork.URLForKey(seed), e.MimeType
+	}
+
+	art, err := provider.GetArtwork(ctx)
+	if err != nil {
+		log.Warn(ctx, string(b.source)+"resolveArtwork get artwork err", zap.Error(err))
+		return "", ""
+	}
+	if art == nil || len(art.Data) == 0 {
+		log.Warn(ctx, string(b.source)+"resolveArtwork art == nil")
+		return "", ""
+	}
+
+	key := artwork.DefaultStore.Put(art.CacheKey, art.Data, art.MimeType)
+	return artwork.URLForKey(key), art.MimeType
 }
 
 // handleTrackScrobble 处理曲目标记
-func (b *BasePlayerChecker) handleTrackScrobble(ctx context.Context, playerInfo PlayerInfoHandler) {
-	// 标记听歌完成
-	pushTrackScrobbleReq := &lastfm.PushTrackScrobbleReq{
-		Artist:      playerInfo.GetArtist(),
-		AlbumArtist: playerInfo.GetArtist(),
-		Track:       playerInfo.GetTitle(),
-		Album:       playerInfo.GetAlbum(),
-		Duration:    playerInfo.GetDuration(),
-		Timestamp:   b.now.UTC().Unix(),
-	}
-
-	// Save to database
-	record := &model.TrackPlayRecord{
-		Artist:        pushTrackScrobbleReq.Artist,
-		AlbumArtist:   pushTrackScrobbleReq.AlbumArtist,
-		Track:         pushTrackScrobbleReq.Track,
-		Album:         pushTrackScrobbleReq.Album,
-		Duration:      pushTrackScrobbleReq.Duration,
-		PlayTime:      time.Unix(pushTrackScrobbleReq.Timestamp, 0),
-		Scrobbled:     true,
-		MusicBrainzID: pushTrackScrobbleReq.MusicBrainzTrackID,
-		TrackNumber:   int8(pushTrackScrobbleReq.TrackNumber),
-		Source:        string(b.source),
-	}
-	_, err := lastfm.PushTrackScrobble(ctx, pushTrackScrobbleReq)
-	if err != nil {
-		log.Warn(ctx, string(b.source)+" handleTrackScrobble err", zap.Error(err))
-		record.Scrobbled = false
-	}
-
-	if err := b.trackService.InsertTrackPlayRecord(ctx, record); err != nil {
-		log.Warn(ctx, string(b.source)+" Failed to insert track play record", zap.Error(err))
-	}
-
-	// Update track play count
-	incrementTrackPlayCountParams := model.IncrementTrackPlayCountParams{
-		Ctx:    ctx,
-		Artist: playerInfo.GetArtist(),
-		Album:  playerInfo.GetAlbum(),
-		Track:  playerInfo.GetTitle(),
-		TrackMetadata: model.TrackMetadata{
-			AlbumArtist:   playerInfo.GetAlbumArtist(),
-			TrackNumber:   int8(playerInfo.GetTrackNumber()),
-			Duration:      playerInfo.GetDuration(),
-			Genre:         playerInfo.GetGenre(),
-			Composer:      playerInfo.GetComposer(),
-			ReleaseDate:   playerInfo.GetReleaseDate(),
-			MusicBrainzID: playerInfo.GetMusicBrainzID(),
-			Source:        playerInfo.GetUrl(), // 优先地址
-			BundleID:      playerInfo.GetBundleID(),
-			UniqueID:      playerInfo.GetUniqueID(),
-			DiscNumber:    playerInfo.GetDiscNumber(),
-		},
-	}
-	if incrementTrackPlayCountParams.TrackMetadata.Source == "" {
-		incrementTrackPlayCountParams.TrackMetadata.Source = playerInfo.GetSource()
-	} else {
-		incrementTrackPlayCountParams.TrackMetadata.BundleID = playerInfo.GetSource()
-	}
-	if err := b.trackService.IncrementTrackPlayCount(
-		incrementTrackPlayCountParams,
-	); err != nil {
-		log.Warn(ctx, string(b.source)+" Failed to increment track play count", zap.Error(err))
-	}
-
-	go func() {
-		if getTrack, _ := b.trackService.GetTrack(ctx, record.Artist, record.Artist, record.Track); getTrack != nil {
-			// 暂时重点关注 PlayerAppleMusic
-			if b.source == common.PlayerAppleMusic {
-				if !getTrack.IsAppleMusicFav {
-					favorite := b.controller.IsFavorite(ctx)
-					if favorite {
-						err := b.trackService.SetAppleMusicFavorite(
-							model.SetFavoriteParams{
-								Ctx:           ctx,
-								Artist:        getTrack.Artist,
-								Album:         getTrack.Album,
-								Track:         getTrack.Track,
-								IsFavorite:    true,
-								TrackMetadata: model.TrackMetadata{
-									// AlbumArtist:   playerInfo.GetAlbumArtist(),
-									// TrackNumber:   playerInfo.GetTrackNumber(),
-									// Duration:      playerInfo.GetDuration(),
-									// Genre:         playerInfo.GetGenre(),
-									// Composer:      playerInfo.GetComposer(),
-									// ReleaseDate:   playerInfo.GetReleaseDate(),
-									// MusicBrainzID: playerInfo.GetMusicBrainzID(),
-									// Source:        playerInfo.GetUrl(),
-									// BundleID:      playerInfo.GetBundleID(),
-									// UniqueID:      playerInfo.GetUniqueID(),
-								},
-							},
-						)
-						if err != nil {
-							log.Warn(
-								ctx, string(b.source)+" handleTrackScrobble SetAppleMusicFavorite err", zap.Error(err),
-							)
-						}
-						isFavorite, err := lastfm.IsFavorite(ctx, getTrack.Album, getTrack.Track)
-						if err != nil {
-							log.Warn(ctx, string(b.source)+" handleTrackScrobble lastfm IsFavorite err", zap.Error(err))
-						}
-						if isFavorite {
-							_ = lastfm.SetFavorite(ctx, getTrack.Album, getTrack.Track, true)
-						}
-					}
-				}
-			}
-		}
-	}()
-
-	b.mapedTracks[b.currentTrack] = true
+func (b *BasePlayerChecker) handleTrackScrobble(ctx context.Context, snapshot playingTrackSnapshot) {
+	result := b.trackService.HandleTrackPlaybackThreshold(ctx, snapshot.toPlaybackEventInput(b.source, b.now))
+	b.scrobbledTracks[snapshot.trackKey] = true
 	b.pushCount.Add(1)
 	log.Info(
-		ctx, string(b.source)+"标记听歌完成", zap.String("track", pushTrackScrobbleReq.Track),
-		zap.Bool("scrobbled", record.Scrobbled),
+		ctx, string(b.source)+"标记听歌完成",
+		zap.String("track", snapshot.playerInfo.GetTitle()),
+		zap.Bool("scrobbled", result.Scrobbled),
 	)
 }
 
 // handleNewTrack 处理新曲目
-func (b *BasePlayerChecker) handleNewTrack(ctx context.Context, playerInfo PlayerInfoHandler) {
-	// 产生新歌曲
-	delete(b.mapedTracks, b.previousTrack)
+func (b *BasePlayerChecker) handleNewTrack(ctx context.Context, snapshot playingTrackSnapshot) {
+	delete(b.scrobbledTracks, b.previousTrack)
 	b.now = time.Now()
-	playingReq := lastfm.TrackUpdateNowPlayingReq{
-		Artist:      playerInfo.GetArtist(),
-		AlbumArtist: playerInfo.GetArtist(),
-		Track:       playerInfo.GetTitle(),
-		Album:       playerInfo.GetAlbum(),
-		Duration:    playerInfo.GetDuration(),
-	}
-
 	log.Info(
-		ctx, string(b.source)+"NowPlayingTrackInfo", zap.Any("playerInfo", playerInfo),
+		ctx, string(b.source)+"NowPlayingTrackInfo", zap.Any("playerInfo", snapshot.playerInfo),
 	)
-	err := lastfm.TrackUpdateNowPlaying(ctx, &playingReq)
-	if err != nil {
-		log.Warn(ctx, string(b.source)+" TrackUpdateNowPlaying err", zap.Error(err))
-	}
+	b.trackService.HandleNowPlayingStarted(ctx, snapshot.toPlaybackEventInput(b.source, b.now))
 }

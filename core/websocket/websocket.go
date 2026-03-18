@@ -3,12 +3,15 @@ package websocket
 import (
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
+	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/log"
 )
 
@@ -16,6 +19,8 @@ import (
 var (
 	clients      = make(map[*websocket.Conn]bool)
 	clientsMutex = sync.RWMutex{}
+
+	libraryUpdateBatch = newLibraryUpdateBatcher(2*time.Minute, broadcastLibraryUpdateNow)
 )
 
 // WebSocket升级器
@@ -44,24 +49,163 @@ func HandleWebSocketMessages(conn *websocket.Conn) {
 	}
 }
 
-type WsTrackInfo struct {
-	Type   string `json:"type"`
-	Source string `json:"source"`
-	Data   struct {
-		Title       string `json:"title"`
-		Album       string `json:"album"`
-		Artist      string `json:"artist"`
-		AppleMusic  bool   `json:"apple_music"`
-		LastFM      bool   `json:"lastfm"`
-		Duration    int64  `json:"duration"`     // 歌曲时长，单位秒
-		Position    int64  `json:"position"`     // 歌曲当前播放位置，单位秒
-		TrackNumber int8   `json:"track_number"` // 曲目号
-		DiscNumber  int8   `json:"disc_number"`  // 盘号
-	} `json:"data"`
+type WsInfo struct {
+	Type   string      `json:"type"`
+	Source string      `json:"source"`
+	Data   WsTrackData `json:"data"`
+}
+
+type WsLibraryUpdate struct {
+	Type    string `json:"type"`
+	Version int64  `json:"version"`
+}
+
+type libraryUpdateEvent struct {
+	EntityType string
+	EntityID   int64
+	Operation  string
+	Version    int64
+}
+
+type libraryUpdateBatcher struct {
+	mu            sync.Mutex
+	flushInterval time.Duration
+	pending       map[string]libraryUpdateEvent
+	timer         *time.Timer
+	emit          func(ctx context.Context, version int64)
+}
+
+type WsTrackData struct {
+	Title        string `json:"title"`
+	Album        string `json:"album"`
+	Artist       string `json:"artist"`
+	AppleMusic   bool   `json:"apple_music"`   // todo error
+	LastFM       bool   `json:"lastfm"`        // todo error
+	Duration     int64  `json:"duration"`      // 歌曲时长，单位秒
+	Position     int64  `json:"position"`      // 歌曲当前播放位置，单位秒
+	TrackNumber  int8   `json:"track_number"`  // 曲目号
+	DiscNumber   int8   `json:"disc_number"`   // 盘号
+	CoverArtURL  string `json:"cover_art_url"` // 专辑封面访问地址
+	CoverArtMime string `json:"cover_art_mime"`
+
+	Confidence        common.TrackMetadataConfidence `json:"confidence"`
+	PlayerInfoHandler common.PlayerInfoHandler
 }
 
 // 向所有连接的客户端广播消息
-func BroadcastMessage(ctx context.Context, message *WsTrackInfo) {
+func BroadcastMessage(ctx context.Context, message *WsInfo) {
+	broadcastJSON(ctx, message)
+}
+
+func BroadcastLibraryUpdate(ctx context.Context, entityType string, entityID int64, operation string, version int64) {
+	libraryUpdateBatch.enqueue(
+		ctx, libraryUpdateEvent{
+			EntityType: entityType,
+			EntityID:   entityID,
+			Operation:  operation,
+			Version:    version,
+		},
+	)
+}
+
+func broadcastLibraryUpdateNow(ctx context.Context, version int64) {
+	broadcastJSON(
+		ctx, &WsLibraryUpdate{
+			Type:    "library_updated",
+			Version: version,
+		},
+	)
+}
+
+func newLibraryUpdateBatcher(
+	flushInterval time.Duration, emit func(ctx context.Context, version int64),
+) *libraryUpdateBatcher {
+	return &libraryUpdateBatcher{
+		flushInterval: flushInterval,
+		pending:       make(map[string]libraryUpdateEvent),
+		emit:          emit,
+	}
+}
+
+func (b *libraryUpdateBatcher) enqueue(ctx context.Context, event libraryUpdateEvent) {
+	if b == nil || event.EntityID <= 0 || event.Version <= 0 {
+		return
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.pending[b.pendingKey(event.EntityType, event.EntityID)] = event
+	if b.timer != nil {
+		return
+	}
+
+	b.timer = time.AfterFunc(
+		b.flushInterval, func() {
+			b.flush(context.Background())
+		},
+	)
+
+	if log.Logger != nil {
+		log.Info(
+			ctx,
+			"Schedule library update batch flush",
+			zap.Duration("flush_interval", b.flushInterval),
+			zap.Int("pending_count", len(b.pending)),
+		)
+	}
+}
+
+func (b *libraryUpdateBatcher) flush(ctx context.Context) {
+	if b == nil {
+		return
+	}
+
+	b.mu.Lock()
+	if len(b.pending) == 0 {
+		b.timer = nil
+		b.mu.Unlock()
+		return
+	}
+
+	maxVersion := int64(0)
+	upsertCount := 0
+	deleteCount := 0
+	for _, event := range b.pending {
+		if event.Version > maxVersion {
+			maxVersion = event.Version
+		}
+		if event.Operation == "delete" {
+			deleteCount++
+		} else {
+			upsertCount++
+		}
+	}
+
+	pendingCount := len(b.pending)
+	b.pending = make(map[string]libraryUpdateEvent)
+	b.timer = nil
+	b.mu.Unlock()
+
+	if log.Logger != nil {
+		log.Info(
+			ctx,
+			"Flush library update batch",
+			zap.Int("pending_count", pendingCount),
+			zap.Int("upsert_count", upsertCount),
+			zap.Int("delete_count", deleteCount),
+			zap.Int64("version", maxVersion),
+		)
+	}
+
+	b.emit(ctx, maxVersion)
+}
+
+func (b *libraryUpdateBatcher) pendingKey(entityType string, entityID int64) string {
+	return fmt.Sprintf("%s:%d", entityType, entityID)
+}
+
+func broadcastJSON(ctx context.Context, message interface{}) {
 	clientsMutex.RLock()
 	defer clientsMutex.RUnlock()
 

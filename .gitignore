@@ -5,6 +5,7 @@
 /internal/scrobbler/.logs/
 /.logs/
 /.storage/
+/.derivedData/
 /.tmp/
 /shell/bin/nowplaying-cli-mac
 /venv/
@@ -22,3 +23,8 @@ frontend/dist/
 /.iflow/
 /.cursor/
 /core/exec/exec1_test.go
+/docs/
+/.venv/
+/skills/
+/backup/
+/soniclens-bridge/build/

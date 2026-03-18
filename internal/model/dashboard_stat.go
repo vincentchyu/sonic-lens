@@ -111,14 +111,16 @@ func (PlayTrendHourlyStat) TableName() string {
 }
 
 type TrackRankStat struct {
-	ID         int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodType string    `gorm:"column:period_type;type:varchar(20);not null" json:"period_type"`
-	Artist     string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
-	Album      string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
-	Track      string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
-	PlayCount  int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
-	Rank       int       `gorm:"column:rank;type:int;not null" json:"rank"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	PeriodType  string    `gorm:"column:period_type;type:varchar(20);not null" json:"period_type"`
+	Artist      string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
+	Album       string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
+	Track       string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
+	TrackNumber int8      `gorm:"column:track_number;type:tinyint" json:"track_number"`
+	DiscNumber  int8      `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
+	PlayCount   int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
+	Rank        int       `gorm:"column:rank;type:int;not null" json:"rank"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 func (TrackRankStat) TableName() string {
@@ -758,10 +760,12 @@ func GetTrackPlayCountsFromStat(ctx context.Context, period string, limit, offse
 		result = append(
 			result,
 			&Track{
-				Artist:    row.Artist,
-				Album:     row.Album,
-				Track:     row.Track,
-				PlayCount: int(row.PlayCount),
+				Artist:      row.Artist,
+				Album:       row.Album,
+				Track:       row.Track,
+				TrackNumber: row.TrackNumber,
+				DiscNumber:  row.DiscNumber,
+				PlayCount:   int(row.PlayCount),
 			},
 		)
 	}
@@ -771,10 +775,12 @@ func GetTrackPlayCountsFromStat(ctx context.Context, period string, limit, offse
 func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 	topN = topN * 10
 	type aggRow struct {
-		Artist    string
-		Album     string
-		Track     string
-		PlayCount int64
+		Artist      string `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
+		Album       string `gorm:"column:album;type:varchar(255);not null" json:"album"`
+		Track       string `gorm:"column:track;type:varchar(255);not null" json:"track"`
+		TrackNumber int8   `gorm:"column:track_number;type:tinyint" json:"track_number"`
+		DiscNumber  int8   `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
+		PlayCount   int64  `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
 	}
 
 	for _, p := range periods {
@@ -784,7 +790,8 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 		switch period {
 		case "all":
 			if err := tx.Model(&Track{}).
-				Select("artist, album, track, play_count").
+				//uidx_t_aatdntn
+				Select("artist, album, track, track_number, disc_number, play_count").
 				Order("play_count DESC").
 				Limit(topN).
 				Find(&rows).Error; err != nil {
@@ -797,8 +804,8 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 			}
 			if err := tx.Model(&TrackPlayRecord{}).
 				Where("play_time >= ?", startTime).
-				Select("artist, album, track, COUNT(*) as play_count").
-				Group("artist, album, track").
+				Select("artist, album, track, track_number, disc_number, COUNT(*) as play_count").
+				Group("artist, album, track, track_number, disc_number").
 				Order("play_count DESC").
 				Limit(topN).
 				Find(&rows).Error; err != nil {
@@ -821,12 +828,14 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 			items = append(
 				items,
 				TrackRankStat{
-					PeriodType: period,
-					Artist:     row.Artist,
-					Album:      row.Album,
-					Track:      row.Track,
-					PlayCount:  row.PlayCount,
-					Rank:       i + 1,
+					PeriodType:  period,
+					Artist:      row.Artist,
+					Album:       row.Album,
+					Track:       row.Track,
+					TrackNumber: row.TrackNumber,
+					DiscNumber:  row.DiscNumber,
+					PlayCount:   row.PlayCount,
+					Rank:        i + 1,
 				},
 			)
 		}
@@ -855,7 +864,9 @@ func ensureTrackRankStatIndexes(ctx context.Context) error {
 	}
 	if !migrator.HasIndex(&TrackRankStat{}, "uk_track_rank_period_track") {
 		// utf8mb4 下联合唯一索引总长度不能超过 3072 bytes，使用前缀索引规避超长。
-		if err := db.Exec("ALTER TABLE track_rank_stat ADD UNIQUE KEY uk_track_rank_period_track (period_type, artist(191), album(191), track(191))").Error; err != nil {
+		if err := db.Exec(
+			"ALTER TABLE track_rank_stat ADD UNIQUE KEY uk_track_rank_period_track (period_type, artist(191), album(191), track(191), disc_number, track_number)",
+		).Error; err != nil {
 			return err
 		}
 	}

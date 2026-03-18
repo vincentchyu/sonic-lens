@@ -62,3 +62,9 @@ func TestUnityFeatFix(t *testing.T) {
 		fmt.Printf("'%s' -> '%s'\n", tc, UnityFeatFix(tc))
 	}
 }
+
+func TestUnityPunctuationMarksFix(t *testing.T) {
+	assert.Equal(t, "我讲给你一个笑话(南京场)", UnityPunctuationMarksFix("我讲给你一个笑话（南京场）"))
+	assert.Equal(t, "rock'n'roll", UnityPunctuationMarksFix("rock’n’roll"))
+	assert.Equal(t, "a,b", UnityPunctuationMarksFix("a，b"))
+}

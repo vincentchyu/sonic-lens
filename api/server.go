@@ -2,11 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"html/template"
 	"io"
 	"net/http"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,18 +16,33 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
+	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
+	"github.com/vincentchyu/sonic-lens/core/artwork"
 	"github.com/vincentchyu/sonic-lens/core/log"
-	"github.com/vincentchyu/sonic-lens/core/lyrics"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
-	"github.com/vincentchyu/sonic-lens/internal/logic/analysis"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
-	"github.com/vincentchyu/sonic-lens/internal/logic/musicbrainz"
+	musicbrainzlogic "github.com/vincentchyu/sonic-lens/internal/logic/musicbrainz"
+	pendingalbumlogic "github.com/vincentchyu/sonic-lens/internal/logic/pendingalbum"
 	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 	"github.com/vincentchyu/sonic-lens/internal/model"
+	"github.com/vincentchyu/sonic-lens/internal/scrobbler"
 )
+
+func parseInt8Query(c *gin.Context, key string) int8 {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return int8(v)
+}
 
 func setupRouter(name string) *gin.Engine {
 	r := gin.Default()
@@ -41,22 +56,34 @@ func setupRouter(name string) *gin.Engine {
 			c.Next()
 		},
 	)
-
-	// V2前端静态文件服务
-	/*r.Static("/v2/assets", "./frontend-v2/dist/assets")
-	r.StaticFile("/v2/favicon.ico", "./frontend-v2/dist/favicon.ico")
-	// SPA回退路由，所有/v2/*路由都返回index.html
-	r.GET("/v2/*filepath", func(c *gin.Context) {
-		c.File("./frontend-v2/dist/index.html")
-	})*/
-
+	// static files
 	r.StaticFile("/static/chartjs-adapter-date-fns.bundle.min.js", "./static/chartjs-adapter-date-fns.bundle.min.js")
+	r.StaticFile("/static/full.min.css", "./static/full.min.css")
 	r.StaticFile("/static/html2canvas.min.js", "./static/html2canvas.min.js")
+	r.StaticFile("/static/3.4.17", "./static/3.4.17")
 	r.StaticFile("/static/chart.js", "./static/chart.js")
 	r.StaticFile("/static/logo.svg", "./static/logo.svg")
 	r.StaticFile("/static/logo_black.svg", "./static/logo_black.svg")
 	r.StaticFile("/static/logo_all.svg", "./static/logo_all.svg")
 	r.StaticFile("/static/logo_all_black.svg", "./static/logo_all_black.svg")
+
+	r.GET(
+		"/api/artwork/:key", func(c *gin.Context) {
+			entry, ok := artwork.DefaultStore.Get(c.Param("key"))
+			if !ok || len(entry.Data) == 0 {
+				c.Status(http.StatusNotFound)
+				return
+			}
+
+			if entry.MimeType != "" {
+				c.Header("Content-Type", entry.MimeType)
+			} else {
+				c.Header("Content-Type", "application/octet-stream")
+			}
+			c.Header("Cache-Control", "public, max-age=3600")
+			_, _ = c.Writer.Write(entry.Data)
+		},
+	)
 
 	// 首页
 	r.GET(
@@ -102,6 +129,8 @@ func setupRouter(name string) *gin.Engine {
 
 	// Get track play counts with pagination
 	trackService := track.NewTrackService()
+	musicbrainzService := musicbrainzlogic.NewService()
+	pendingAlbumService := pendingalbumlogic.NewService()
 	// AI 歌词解析服务
 	insightService, insightErr := insight.NewService()
 	if insightErr != nil {
@@ -197,12 +226,16 @@ func setupRouter(name string) *gin.Engine {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")
+			trackNumber := parseInt8Query(c, "trackNumber")
+			discNumber := parseInt8Query(c, "discNumber")
 
 			if artist == "" || track == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "参数不足"})
 				return
 			}
-			insights, err := insightService.GetInsightOnly(c.Request.Context(), artist, album, track)
+			insights, err := insightService.GetInsightOnly(
+				c.Request.Context(), artist, album, track, trackNumber, discNumber,
+			)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -217,13 +250,17 @@ func setupRouter(name string) *gin.Engine {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			trackName := c.Query("trackName")
+			trackNumber := parseInt8Query(c, "trackNumber")
+			discNumber := parseInt8Query(c, "discNumber")
 
 			if artist == "" || album == "" || trackName == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "artist, album, and trackName are required"})
 				return
 			}
 
-			record, err := trackService.GetTrack(c.Request.Context(), artist, album, trackName)
+			record, err := trackService.GetTrackByIdentity(
+				c.Request.Context(), artist, album, trackName, trackNumber, discNumber,
+			)
 			if err != nil {
 				if err.Error() == "record not found" {
 					c.JSON(http.StatusOK, gin.H{"play_count": 0})
@@ -236,10 +273,7 @@ func setupRouter(name string) *gin.Engine {
 			// 通过 TrackAlbum 查询 album_id
 			albumID := int64(0)
 			if record.ID > 0 {
-				var ta model.TrackAlbum
-				if err := model.GetDB().WithContext(c.Request.Context()).Where(
-					"track_id = ?", record.ID,
-				).First(&ta).Error; err == nil {
+				if ta, err := trackService.GetTrackAlbumByTrackID(c.Request.Context(), record.ID); err == nil {
 					albumID = ta.AlbumID
 				}
 			}
@@ -278,10 +312,12 @@ func setupRouter(name string) *gin.Engine {
 			}
 
 			var req struct {
-				Artist    string `json:"artist"`
-				Album     string `json:"album"`
-				Track     string `json:"track"`
-				ModelType string `json:"modelType"`
+				Artist      string `json:"artist"`
+				Album       string `json:"album"`
+				Track       string `json:"track"`
+				TrackNumber int8   `json:"track_number"`
+				DiscNumber  int8   `json:"disc_number"`
+				ModelType   string `json:"modelType"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
@@ -291,7 +327,7 @@ func setupRouter(name string) *gin.Engine {
 			ctx := c.Request.Context()
 			// POST 接口语义为强制分析
 			insights, cached, err := insightService.GetOrCreateInsight(
-				ctx, req.Artist, req.Album, req.Track, true, req.ModelType,
+				ctx, req.Artist, req.Album, req.Track, req.TrackNumber, req.DiscNumber, true, req.ModelType,
 			)
 			if err != nil {
 				log.Error(
@@ -325,6 +361,8 @@ func setupRouter(name string) *gin.Engine {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")
+			trackNumber := parseInt8Query(c, "trackNumber")
+			discNumber := parseInt8Query(c, "discNumber")
 			force, _ := strconv.ParseBool(c.DefaultQuery("force", "false"))
 			modelType := c.Query("modelType")
 
@@ -334,7 +372,7 @@ func setupRouter(name string) *gin.Engine {
 			}
 
 			ch, _, err := insightService.GetOrCreateInsightStream(
-				c.Request.Context(), artist, album, track, force, modelType,
+				c.Request.Context(), artist, album, track, trackNumber, discNumber, force, modelType,
 			)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -501,21 +539,15 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			// 分页查询所有以找到目标（简单实现，建议在 Logic 层增加按 ID 特化查询）
-			insights, _, err := insightService.GetAllInsights(c.Request.Context(), 1000, 0, "")
+			target, err := insightService.GetInsightByID(c.Request.Context(), insightID)
 			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
+					return
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-
-			var target *model.TrackInsight
-			for _, ins := range insights {
-				if ins.ID == insightID {
-					target = ins
-					break
-				}
-			}
-
 			if target == nil {
 				c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
 				return
@@ -559,74 +591,24 @@ func setupRouter(name string) *gin.Engine {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")
+			trackNumber := parseInt8Query(c, "trackNumber")
+			discNumber := parseInt8Query(c, "discNumber")
 
 			if artist == "" || track == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必需参数 artist 和 track"})
 				return
 			}
 
-			// 尝试从服务层 helper 获取（重用逻辑）
-			// 由于 service 层没有暴露 getOrFetchLyrics，如果需要复用逻辑最好暴露出来，
-			// 或者在这里重新实现一遍查询 + 保存逻辑。
-			// 鉴于 server.go 不应包含太多业务逻辑，理想做法是在 insightService 暴露一个 GetLyrics 方法。
-			// 但既然现在在修改 server.go，我们可以直接查 model。
-
-			// 1. 查询数据库 TrackLyrics
-			ctx := c.Request.Context()
-			lyricsData, err := model.GetTrackLyrics(ctx, artist, album, track)
-
-			lrcContent := ""
-			if err == nil {
-				lrcContent = lyricsData.LyricsOriginal
-			} else {
-				// 2. 如果数据库没有，尝试调用 provider (这里简单的复用 insightService 可能没有直接暴露获取单独歌词的方法
-				// 如果 server.go 这里不能方便调用 lrcapi，那最好是在 insightService 加一个 GetLyrics 方法。
-				// 这里的代码我们暂时复用 logic/insight 里的逻辑，或者直接调用 provider。
-				// 为了保持整洁，我们在 handler 里临时实例化 provider 是不推荐的。
-				// 最好的方案：修改 api/server.go 为调用 insightService.GetLyrics(...)。
-				// 但现在为了快速修复编译错误并跑通功能，我们假设如果找不到就返回空，或者前端触发 /api/track-insight 时会自动补全。
-				// 用户需求里说“前端页面点击歌词查看歌词的时候可以直接调用lrcapi在没有歌词数据的时候获取歌词数据”。
-				// 所以这里必须实现“没有则获取”的逻辑。
-
-				// 简化起见，我们在 server.go 不直接依赖具体的 lrcapi implementation，
-				// 而是应该让 insight service 提供这个能力。
-				// 但由于 insight package 的 NewService 返回的是 interface，我们需要在 interface 加方法。
-				// 让我们先暂时在这里只读库。如果用户点击“分析”，分析过程会补全歌词。
-				// 如果用户只是点“查看歌词”，我们希望也能触发获取。
-				// 所以最好是修改 Insight Service 接口。
-
-				// **修正方案**：我们假设先只读库。如果为空，前端显示无歌词。
-				// 实际上用户期望的是“在没有歌词数据的时候获取歌词数据”。
-				// 我们可以在这里简单调用 lrcapi，因为 server.go 已经 import 了 "github.com/vincentchyu/sonic-lens/core/lyrics"
-
-				// 实例化一个临时的 provider 列表 (不太优雅但有效)
-				lrcProvider := lyrics.NewLrcAPIProvider()
-				fetched, lErr := lrcProvider.GetLyrics(ctx, artist, album, track)
-				if lErr == nil && fetched != "" {
-					lrcContent = fetched
-					// 异步入库
-					go func() {
-						bgCtx := context.Background()
-						newLyrics := &model.TrackLyrics{
-							Artist:         artist,
-							Album:          album,
-							Track:          track,
-							LyricsOriginal: fetched,
-							LyricsSource:   "lrcapi",
-							Synced:         strings.Contains(fetched, "[") && strings.Contains(fetched, "]"),
-						}
-						_, _ = model.GetOrCreateTrackLyrics(bgCtx, newLyrics)
-					}()
-				}
+			lyricsData, err := insightService.GetLyrics(
+				c.Request.Context(), artist, album, track, trackNumber, discNumber,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
 			}
 
-			// 判断歌词是否包含 LRC 时间戳格式
-			hasLRC := false
-			if lrcContent != "" {
-				lrcPattern := `\[\d{1,2}:\d{2}[\.\d]*\]`
-				matched, _ := regexp.MatchString(lrcPattern, lrcContent)
-				hasLRC = matched
-			}
+			lrcContent := lyricsData.LyricsOriginal
+			hasLRC := lyricsData.Synced
 
 			c.JSON(
 				http.StatusOK, gin.H{
@@ -639,6 +621,115 @@ func setupRouter(name string) *gin.Engine {
 
 	// --- MusicBrainz 相关接口 ---
 
+	r.GET(
+		"/api/pending-albums", func(c *gin.Context) {
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+			if limit > 200 {
+				limit = 200
+			}
+			groups, err := pendingAlbumService.GetPendingAlbumGroups(c.Request.Context(), limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"groups": groups})
+		},
+	)
+
+	r.POST(
+		"/api/pending-albums/work-items", func(c *gin.Context) {
+			var req struct {
+				IdentityKey string `json:"identity_key"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.IdentityKey) == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "identity_key is required"})
+				return
+			}
+			item, err := pendingAlbumService.CreateOrGetPendingAlbumWorkItem(c.Request.Context(), req.IdentityKey)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, item)
+		},
+	)
+
+	r.GET(
+		"/api/pending-albums/work-items/:id", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			detail, err := pendingAlbumService.GetPendingAlbumWorkItemDetail(c.Request.Context(), workItemID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, detail)
+		},
+	)
+
+	r.GET(
+		"/api/pending-albums/work-items/:id/musicbrainz/candidates", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			candidates, err := pendingAlbumService.SearchPendingAlbumMBReleases(c.Request.Context(), workItemID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, candidates)
+		},
+	)
+
+	r.POST(
+		"/api/pending-albums/work-items/:id/musicbrainz/link", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			var req struct {
+				ReleaseMBID int64  `json:"release_mb_id"`
+				MBID        string `json:"mbid"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.MBID) == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "mbid is required"})
+				return
+			}
+			if err := pendingAlbumService.LinkPendingAlbumMBRelease(
+				c.Request.Context(),
+				workItemID,
+				req.ReleaseMBID,
+				req.MBID,
+			); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	r.POST(
+		"/api/pending-albums/work-items/:id/deep-maintenance", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			report, err := pendingAlbumService.DeepMaintainPendingAlbumWorkItem(c.Request.Context(), workItemID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "report": report})
+		},
+	)
+
 	// 1. 搜索补全（初选候选）
 	r.GET(
 		"/api/musicbrainz/search-releases/:album_id", func(c *gin.Context) {
@@ -647,7 +738,7 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
 				return
 			}
-			if err := musicbrainz.SearchAndCacheReleases(c.Request.Context(), albumID); err != nil {
+			if err := musicbrainzService.SearchAndCacheReleases(c.Request.Context(), albumID); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -663,7 +754,7 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
 				return
 			}
-			candidates, err := model.GetReleasesByAlbumID(c.Request.Context(), albumID)
+			candidates, err := musicbrainzService.GetReleasesByAlbumID(c.Request.Context(), albumID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -684,7 +775,12 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "params error"})
 				return
 			}
-			if err := model.LinkAlbumToMBID(c.Request.Context(), req.AlbumID, req.ReleaseMBID, req.MBID); err != nil {
+			if err := musicbrainzService.LinkAlbumToMBID(
+				c.Request.Context(),
+				req.AlbumID,
+				req.ReleaseMBID,
+				req.MBID,
+			); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -700,16 +796,13 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
 				return
 			}
-			if err := musicbrainz.DeepingMaintenance(c.Request.Context(), albumID); err != nil {
+			if err := musicbrainzService.DeepingMaintenance(c.Request.Context(), albumID); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		},
 	)
-
-	// Generate music preference report
-	musicAnalysisService := analysis.NewMusicAnalysisService()
 
 	// Generate music recommendations
 
@@ -889,7 +982,7 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			detail, err := model.GetAlbumWithTracks(c.Request.Context(), albumID)
+			detail, err := trackService.GetAlbumDetail(c.Request.Context(), albumID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -914,53 +1007,12 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			// 删除关联记录
-			if err := model.GetDB().WithContext(c.Request.Context()).Where(
-				"track_id = ? AND album_id = ?", req.TrackID, req.AlbumID,
-			).Delete(&model.TrackAlbum{}).Error; err != nil {
+			if err := trackService.DeleteTrackAlbumLink(c.Request.Context(), req.TrackID, req.AlbumID); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
-		},
-	)
-
-	// 分析报告页面
-	r.GET(
-		"/report", func(c *gin.Context) {
-			// Create a background context for the report generation
-			ctx := c.Request.Context()
-
-			// Generate the report data
-			reportData, err := musicAnalysisService.GenerateMusicPreferenceReport(ctx)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			// Load HTML template
-			tmplPath := filepath.Join("templates", "report.html")
-			tmpl, err := template.New("report.html").Funcs(
-				template.FuncMap{
-					"addOne": func(i int) int {
-						return i + 1
-					},
-				},
-			).ParseFiles(tmplPath)
-			if err != nil {
-				log.Error(ctx, "Failed to parse template", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load template"})
-				return
-			}
-
-			// Set content type and write HTML response
-			c.Header("Content-Type", "text/html; charset=utf-8")
-			if err := tmpl.Execute(c.Writer, reportData); err != nil {
-				log.Error(ctx, "Failed to execute template", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template"})
-				return
-			}
 		},
 	)
 
@@ -1032,51 +1084,6 @@ func setupRouter(name string) *gin.Engine {
 			} else {
 				// Return JSON response for API clients
 				c.JSON(http.StatusOK, records)
-			}
-		},
-	)
-
-	// 音乐推荐页面
-	r.GET(
-		"/recommendations", func(c *gin.Context) {
-			// Create a background context for the recommendation generation
-			ctx := c.Request.Context()
-
-			// Generate recommendations
-			recommendations, err := musicAnalysisService.GenerateRecommendations(ctx)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			// Load HTML template
-			tmplPath := filepath.Join("templates", "recommendations.html")
-			tmpl, err := template.New("recommendations.html").Funcs(
-				template.FuncMap{
-					"addOne": func(i int) int {
-						return i + 1
-					},
-				},
-			).ParseFiles(tmplPath)
-			if err != nil {
-				log.Error(ctx, "Failed to parse template", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load template"})
-				return
-			}
-
-			// Execute template with recommendations data
-			data := struct {
-				Recommendations []analysis.MusicRecommendation
-			}{
-				Recommendations: recommendations,
-			}
-
-			// Set content type and write HTML response
-			c.Header("Content-Type", "text/html; charset=utf-8")
-			if err := tmpl.Execute(c.Writer, data); err != nil {
-				log.Error(ctx, "Failed to execute template", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template"})
-				return
 			}
 		},
 	)
@@ -1174,6 +1181,30 @@ func setupRouter(name string) *gin.Engine {
 	)
 
 	// 获取专辑列表（支持分页、搜索、自然排序）
+	r.GET(
+		"/api/library/sync", func(c *gin.Context) {
+			ctx := c.Request.Context()
+
+			sinceVersion, _ := strconv.ParseInt(c.DefaultQuery("since_version", "0"), 10, 64)
+			delta, err := trackService.GetLibrarySyncDelta(ctx, sinceVersion)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(
+				http.StatusOK, gin.H{
+					"sync_version":      delta.Version,
+					"generated_at":      time.Now().UTC(),
+					"albums":            delta.Albums,
+					"tracks":            delta.Tracks,
+					"deleted_album_ids": delta.DeletedAlbumIDs,
+					"deleted_track_ids": delta.DeletedTrackIDs,
+				},
+			)
+		},
+	)
+
 	r.GET(
 		"/api/albums", func(c *gin.Context) {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
@@ -1343,11 +1374,13 @@ func setupRouter(name string) *gin.Engine {
 			ctx := c.Request.Context()
 
 			var req struct {
-				Artist   string `json:"artist"`
-				Album    string `json:"album"`
-				Track    string `json:"track"`
-				Source   string `json:"source"`
-				Favorite bool   `json:"favorite"`
+				Artist      string `json:"artist"`
+				Album       string `json:"album"`
+				Track       string `json:"track"`
+				TrackNumber int8   `json:"track_number"`
+				DiscNumber  int8   `json:"disc_number"`
+				Source      string `json:"source"`
+				Favorite    bool   `json:"favorite"`
 			}
 
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -1360,11 +1393,52 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "artist, album, track, and source are required"})
 				return
 			}
+			var (
+				currentPlaying *websocket.WsInfo
+				ok             bool
+			)
 
+			if req.TrackNumber <= 0 || req.DiscNumber <= 0 {
+				if currentPlaying, ok = scrobbler.GetCurrentPlayingTrack(common.PlayerType(req.Source)); ok {
+					if currentPlaying.Data.Artist == req.Artist &&
+						currentPlaying.Data.Album == req.Album &&
+						currentPlaying.Data.Title == req.Track {
+						if req.TrackNumber <= 0 {
+							req.TrackNumber = currentPlaying.Data.TrackNumber
+						}
+						if req.DiscNumber <= 0 {
+							req.DiscNumber = currentPlaying.Data.DiscNumber
+						}
+					}
+				}
+			}
+			var metadata model.TrackMetadata
+			metadata.TrackNumber = req.TrackNumber
+			metadata.DiscNumber = req.DiscNumber
+			if currentPlaying != nil && currentPlaying.Data.PlayerInfoHandler != nil {
+				metadata.AlbumArtist = currentPlaying.Data.PlayerInfoHandler.GetAlbumArtist()
+				metadata.Duration = currentPlaying.Data.PlayerInfoHandler.GetDuration()
+				metadata.Genre = currentPlaying.Data.PlayerInfoHandler.GetGenre()
+				metadata.Composer = currentPlaying.Data.PlayerInfoHandler.GetComposer()
+				metadata.ReleaseDate = currentPlaying.Data.PlayerInfoHandler.GetReleaseDate()
+				metadata.MusicBrainzID = currentPlaying.Data.PlayerInfoHandler.GetMusicBrainzID()
+				metadata.Source = currentPlaying.Data.PlayerInfoHandler.GetSource()
+				metadata.BundleID = currentPlaying.Data.PlayerInfoHandler.GetBundleID()
+				metadata.UniqueID = currentPlaying.Data.PlayerInfoHandler.GetUniqueID()
+				metadata.PlayerType = req.Source
+				metadata.Confidence = currentPlaying.Data.Confidence
+			}
 			// 调用logic层方法处理收藏逻辑
 			appleMusicFav, lastFmFav, err := trackService.SetTrackFavorite(
-				ctx, req.Artist, req.Album, req.Track, req.Source, req.Favorite, model.TrackMetadata{},
+				ctx,
+				req.Artist,
+				req.Album,
+				req.Track,
+				req.Source,
+				req.Favorite,
+				metadata,
 			)
+
 			if err != nil {
 				log.Error(ctx, "Failed to set track favorite", zap.Error(err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set track favorite"})

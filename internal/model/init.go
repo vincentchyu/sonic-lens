@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 
 	"go.uber.org/zap"
@@ -44,6 +45,12 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err = GlobalDBForSqlLite.AutoMigrate(&TrackPlayRecord{}); err != nil {
 			return err
 		}
+		if err = GlobalDBForSqlLite.AutoMigrate(&TrackFavoriteEvent{}); err != nil {
+			return err
+		}
+		if err = GlobalDBForSqlLite.AutoMigrate(&PendingAlbumWorkItem{}); err != nil {
+			return err
+		}
 		if err = GlobalDBForSqlLite.AutoMigrate(&Track{}); err != nil {
 			return err
 		}
@@ -64,7 +71,9 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			return err
 		}
 		// Auto migrate MusicBrainz related tables
-		if err = GlobalDBForSqlLite.AutoMigrate(&Album{}, &TrackAlbum{}, &ReleaseMB{}, &AlbumReleaseMB{}); err != nil {
+		if err = GlobalDBForSqlLite.AutoMigrate(
+			&Album{}, &TrackAlbum{}, &ReleaseMB{}, &AlbumReleaseMB{}, &LibraryChangeLog{},
+		); err != nil {
 			return err
 		}
 	case string(common.DatabaseTypeMySQL):
@@ -77,9 +86,18 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err != nil {
 			return err
 		}
+		if err = ensureTrackIdentitySchema(context.Background()); err != nil {
+			return err
+		}
 		if config.ConfigObj.IsDev {
 			// Auto migrate the schema for core tables
 			if err = GlobalDBForMysql.AutoMigrate(&TrackPlayRecord{}); err != nil {
+				return err
+			}
+			if err = GlobalDBForMysql.AutoMigrate(&TrackFavoriteEvent{}); err != nil {
+				return err
+			}
+			if err = GlobalDBForMysql.AutoMigrate(&PendingAlbumWorkItem{}); err != nil {
 				return err
 			}
 			if err = GlobalDBForMysql.AutoMigrate(&Track{}); err != nil {
@@ -102,7 +120,9 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 				return err
 			}
 			// Auto migrate MusicBrainz related tables
-			if err = GlobalDBForMysql.AutoMigrate(&Album{}, &TrackAlbum{}, &ReleaseMB{}, &AlbumReleaseMB{}); err != nil {
+			if err = GlobalDBForMysql.AutoMigrate(
+				&Album{}, &TrackAlbum{}, &ReleaseMB{}, &AlbumReleaseMB{}, &LibraryChangeLog{},
+			); err != nil {
 				return err
 			}
 		}

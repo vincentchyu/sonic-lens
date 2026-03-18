@@ -20,6 +20,16 @@ const (
 	PlayerStatePaused  = "Paused"
 )
 
+// TrackMetadataConfidence 定义曲目元数据置信度。
+type TrackMetadataConfidence int8
+
+const (
+	TrackMetadataConfidenceLow           TrackMetadataConfidence = 1
+	TrackMetadataConfidenceMedium        TrackMetadataConfidence = 2
+	TrackMetadataConfidenceHigh          TrackMetadataConfidence = 3
+	TrackMetadataConfidenceAuthoritative TrackMetadataConfidence = 4
+)
+
 // PlayerType 定义播放器类型
 type PlayerType string
 

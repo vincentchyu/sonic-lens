@@ -18,6 +18,9 @@ type customLogger struct {
 
 // NewCustomLogger creates a new custom logger
 func NewCustomLogger(log *zap.Logger) logger.Interface {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &customLogger{
 		logger: log,
 	}

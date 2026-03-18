@@ -20,21 +20,44 @@ type TrackLyrics struct {
 	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
+type TrackLyricsLookup struct {
+	TrackID int64
+	Artist  string
+	Album   string
+	Track   string
+}
+
 // TableName 自定义表名
 func (TrackLyrics) TableName() string {
 	return "track_lyrics"
 }
 
-// GetTrackLyrics 查询歌词
-func GetTrackLyrics(ctx context.Context, artist, album, track string) (*TrackLyrics, error) {
+// GetTrackLyricsByLookup 查询歌词，优先按 track_id 命中
+func GetTrackLyricsByLookup(ctx context.Context, lookup TrackLyricsLookup) (*TrackLyrics, error) {
 	var lyrics TrackLyrics
-	err := GetDB().WithContext(ctx).
-		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
-		First(&lyrics).Error
+	db := GetDB().WithContext(ctx)
+	var err error
+	if lookup.TrackID > 0 {
+		err = db.Where("track_id = ?", lookup.TrackID).First(&lyrics).Error
+		if err == nil {
+			return &lyrics, nil
+		}
+	}
+	err = db.Where(
+		"artist = ? AND album = ? AND track = ?", lookup.Artist, lookup.Album, lookup.Track,
+	).First(&lyrics).Error
 	if err != nil {
 		return nil, err
 	}
 	return &lyrics, nil
+}
+
+// GetTrackLyrics 查询歌词
+func GetTrackLyrics(ctx context.Context, artist, album, track string) (*TrackLyrics, error) {
+	return GetTrackLyricsByLookup(
+		ctx,
+		TrackLyricsLookup{Artist: artist, Album: album, Track: track},
+	)
 }
 
 // CreateTrackLyrics 创建歌词记录
@@ -49,7 +72,15 @@ func UpdateTrackLyrics(ctx context.Context, lyrics *TrackLyrics) error {
 
 // GetOrCreateTrackLyrics 获取或创建歌词记录(用于并发安全的获取)
 func GetOrCreateTrackLyrics(ctx context.Context, lyrics *TrackLyrics) (*TrackLyrics, error) {
-	existing, err := GetTrackLyrics(ctx, lyrics.Artist, lyrics.Album, lyrics.Track)
+	existing, err := GetTrackLyricsByLookup(
+		ctx,
+		TrackLyricsLookup{
+			TrackID: lyrics.TrackID,
+			Artist:  lyrics.Artist,
+			Album:   lyrics.Album,
+			Track:   lyrics.Track,
+		},
+	)
 	if err == nil {
 		return existing, nil
 	}
@@ -57,7 +88,15 @@ func GetOrCreateTrackLyrics(ctx context.Context, lyrics *TrackLyrics) (*TrackLyr
 	// 如果不存在,创建新记录
 	if err := CreateTrackLyrics(ctx, lyrics); err != nil {
 		// 可能是并发插入导致的唯一索引冲突,再次查询
-		existing, err = GetTrackLyrics(ctx, lyrics.Artist, lyrics.Album, lyrics.Track)
+		existing, err = GetTrackLyricsByLookup(
+			ctx,
+			TrackLyricsLookup{
+				TrackID: lyrics.TrackID,
+				Artist:  lyrics.Artist,
+				Album:   lyrics.Album,
+				Track:   lyrics.Track,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/applemusic"
+	"github.com/vincentchyu/sonic-lens/core/exec"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/internal/cache"
 )
@@ -72,7 +73,7 @@ func (a *AppleMusicTrackInfoWrapper) GetMusicBrainzID() string {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetSource() string {
-	return fmt.Sprintf("%d", a.DatabaseID)
+	return string(common.PlayerAppleMusic)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetBundleID() string {
@@ -87,6 +88,24 @@ func (a *AppleMusicTrackInfoWrapper) GetDiscNumber() int8 {
 	return int8(a.DiscNumber)
 }
 
+func (a *AppleMusicTrackInfoWrapper) GetArtwork(ctx context.Context) (*common.ArtworkData, error) {
+	cacheKey := a.GetArtworkKey(ctx)
+	controlNowPlayingImg, err := exec.GetMediaControlNowPlayingImg(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &common.ArtworkData{
+		Data:     controlNowPlayingImg.ArtworkData,
+		MimeType: controlNowPlayingImg.ArtworkMimeType,
+		CacheKey: cacheKey,
+	}, nil
+}
+func (a *AppleMusicTrackInfoWrapper) GetArtworkKey(ctx context.Context) string {
+	cacheKey := fmt.Sprintf("%s:%s:%s:%s", a.GetSource(), a.GetUniqueID(), a.Album, a.Artist)
+	return cacheKey
+}
+
 // AppleMusicPlayerController Apple Music播放器控制器
 type AppleMusicPlayerController struct{}
 
@@ -99,7 +118,7 @@ func (a *AppleMusicPlayerController) GetState(ctx context.Context) (string, erro
 	return string(state), err
 }
 
-func (a *AppleMusicPlayerController) GetNowPlayingTrackInfo(ctx context.Context) PlayerInfoHandler {
+func (a *AppleMusicPlayerController) GetNowPlayingTrackInfo(ctx context.Context) common.PlayerInfoHandler {
 	info := applemusic.GetNowPlayingTrackInfoV2(ctx)
 	if info == nil {
 		return nil

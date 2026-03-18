@@ -22,20 +22,22 @@ import (
 type Service interface {
 	// GetOrCreateInsight 获取或创建某首歌的解析结果，第二个返回值表示是否命中缓存
 	GetOrCreateInsight(
-		ctx context.Context, artist, album, track string, force bool, modelType string,
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
 	) ([]*model.TrackInsight, bool, error)
 	// RecordFeedback 记录用户点赞/点踩反馈
 	RecordFeedback(ctx context.Context, insightID int64, score int, comment string) error
 	// GetOrCreateInsightStream 获取大模型流式解析结果，第二个返回值表示是否命中缓存
 	GetOrCreateInsightStream(
-		ctx context.Context, artist, album, track string, force bool, modelType string,
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
 	) (<-chan string, bool, error)
 	// GetAvailableAIProviders 获取当前系统可用的 AI 服务模型
 	GetAvailableAIProviders() []string
 	// GetInsightOnly 仅从数据库获取已有的解析结果，不触发 AI 分析
-	GetInsightOnly(ctx context.Context, artist, album, track string) ([]*InsightWithScore, error)
+	GetInsightOnly(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) ([]*InsightWithScore, error)
 	// GetAllInsights 分页获取所有解析记录
 	GetAllInsights(ctx context.Context, limit, offset int, keyword string) ([]*model.TrackInsight, int64, error)
+	// GetInsightByID 按主键获取解析记录，避免上层通过分页结果回扫定位。
+	GetInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error)
 	// ToggleInsightStatus 切换解析记录的禁用状态
 	ToggleInsightStatus(ctx context.Context, id int64) error
 	// GetTrackCallLogs 获取某曲目的 LLM 调用流水
@@ -44,6 +46,8 @@ type Service interface {
 	DeleteInsight(ctx context.Context, id int64) error
 	// GetInsightFeedbacks 获取关联反馈
 	GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
+	// GetLyrics 获取歌词内容，缺失时自动回源并写入缓存。
+	GetLyrics(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.TrackLyrics, error)
 }
 
 type serviceImpl struct {
@@ -90,12 +94,19 @@ func (s *serviceImpl) GetAvailableAIProviders() []string {
 }
 
 // GetInsightOnly 仅从数据库获取已有的解析结果
-func (s *serviceImpl) GetInsightOnly(ctx context.Context, artist, album, track string) ([]*InsightWithScore, error) {
+func (s *serviceImpl) GetInsightOnly(
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+) ([]*InsightWithScore, error) {
 	artist = strings.TrimSpace(artist)
 	album = strings.TrimSpace(album)
 	track = strings.TrimSpace(track)
 
-	insights, err := model.GetTrackInsights(ctx, artist, album, track)
+	trackObj, _ := model.GetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
+	lookup := model.TrackInsightLookup{Artist: artist, Album: album, Track: track}
+	if trackObj != nil {
+		lookup.TrackID = trackObj.ID
+	}
+	insights, err := model.GetTrackInsightsByLookup(ctx, lookup)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +142,7 @@ func (s *serviceImpl) GetInsightOnly(ctx context.Context, artist, album, track s
 
 // GetOrCreateInsight 获取或创建某首歌的解析结果
 func (s *serviceImpl) GetOrCreateInsight(
-	ctx context.Context, artist, album, track string, force bool, modelType string,
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
 ) ([]*model.TrackInsight, bool, error) {
 	artist = strings.TrimSpace(artist)
 	album = strings.TrimSpace(album)
@@ -142,7 +153,13 @@ func (s *serviceImpl) GetOrCreateInsight(
 	}
 
 	// 先尝试从数据库中获取已存在的解析
-	insights, err := model.GetTrackInsights(ctx, artist, album, track)
+	trackObj, _ := model.GetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
+	lookup := model.TrackInsightLookup{Artist: artist, Album: album, Track: track}
+	if trackObj != nil {
+		lookup.TrackID = trackObj.ID
+	}
+
+	insights, err := model.GetTrackInsightsByLookup(ctx, lookup)
 	if err == nil && len(insights) > 0 && !force {
 		// 命中缓存，更新最近一条的使用时间
 		insights[0].LastUsedAt = time.Now()
@@ -155,7 +172,7 @@ func (s *serviceImpl) GetOrCreateInsight(
 	}
 
 	// 准备歌词
-	lyrics, err := s.getOrFetchLyrics(ctx, artist, album, track)
+	lyrics, err := s.getOrFetchLyrics(ctx, artist, album, track, trackNumber, discNumber)
 	if err != nil {
 		log.Warn(
 			ctx, "获取歌词失败，将使用空歌词进行分析",
@@ -167,9 +184,7 @@ func (s *serviceImpl) GetOrCreateInsight(
 
 	// 查询历史差评反馈，用于改进分析质量
 	feedbackCtx := ""
-	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByTrack(
-		ctx, artist, album, track,
-	); fbErr == nil && len(negativeFeedbacks) > 0 {
+	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(ctx, lookup); fbErr == nil && len(negativeFeedbacks) > 0 {
 		var feedbackComments []string
 		for _, fb := range negativeFeedbacks {
 			if fb.Comment != "" {
@@ -213,6 +228,7 @@ func (s *serviceImpl) GetOrCreateInsight(
 
 	// 将结果落库
 	newInsight := &model.TrackInsight{
+		TrackID:           lookup.TrackID,
 		Artist:            artist,
 		Album:             album,
 		Track:             track,
@@ -237,7 +253,7 @@ func (s *serviceImpl) GetOrCreateInsight(
 	}
 
 	// 重新获取完整列表
-	insights, err = model.GetTrackInsights(ctx, artist, album, track)
+	insights, err = model.GetTrackInsightsByLookup(ctx, lookup)
 	if err != nil {
 		// 降级：只返回新创建的
 		return []*model.TrackInsight{newInsight}, false, nil
@@ -248,14 +264,19 @@ func (s *serviceImpl) GetOrCreateInsight(
 
 // GetOrCreateInsightStream 获取流式解析结果
 func (s *serviceImpl) GetOrCreateInsightStream(
-	ctx context.Context, artist, album, track string, force bool, modelType string,
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
 ) (<-chan string, bool, error) {
 	artist = strings.TrimSpace(artist)
 	album = strings.TrimSpace(album)
 	track = strings.TrimSpace(track)
 
 	// 先尝试从数据库中获取已存在的解析
-	insights, err := model.GetTrackInsights(ctx, artist, album, track)
+	trackObj, _ := model.GetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
+	lookup := model.TrackInsightLookup{Artist: artist, Album: album, Track: track}
+	if trackObj != nil {
+		lookup.TrackID = trackObj.ID
+	}
+	insights, err := model.GetTrackInsightsByLookup(ctx, lookup)
 	if err == nil && len(insights) > 0 && !force {
 		// 命中缓存，模拟流式输出，返回整个列表的 JSON
 		out := make(chan string, 1)
@@ -268,16 +289,14 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 	}
 
 	// 准备歌词
-	lyrics, err := s.getOrFetchLyrics(ctx, artist, album, track)
+	lyrics, err := s.getOrFetchLyrics(ctx, artist, album, track, trackNumber, discNumber)
 	if err != nil {
 		log.Warn(ctx, "获取歌词失败，流式分析使用空歌词", zap.Error(err))
 	}
 
 	// 查询历史差评反馈，用于改进分析质量
 	feedbackCtx := ""
-	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByTrack(
-		ctx, artist, album, track,
-	); fbErr == nil && len(negativeFeedbacks) > 0 {
+	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(ctx, lookup); fbErr == nil && len(negativeFeedbacks) > 0 {
 		var feedbackComments []string
 		for _, fb := range negativeFeedbacks {
 			if fb.Comment != "" {
@@ -340,9 +359,10 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 
 						// 保存搜索到的结果
 						newInsight := &model.TrackInsight{
-							Artist: artist,
-							Album:  album,
-							Track:  track,
+							TrackID: lookup.TrackID,
+							Artist:  artist,
+							Album:   album,
+							Track:   track,
 							// LyricsOriginal:    lyrics, // 移除
 							LyricsTranslation: llmResp.LyricsTranslation,
 							AnalysisBySection: llmResp.AnalysisBySection,
@@ -356,9 +376,7 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 						}
 
 						// 检查是否已存在记录，存在则更新
-						if existing, eErr := model.GetTrackInsight(
-							context.Background(), artist, album, track,
-						); eErr == nil {
+						if existing, eErr := model.GetTrackInsightByLookup(context.Background(), lookup); eErr == nil {
 							newInsight.ID = existing.ID
 							_ = model.UpdateTrackInsight(context.Background(), newInsight)
 						} else {
@@ -408,18 +426,20 @@ func (s *serviceImpl) RecordFeedback(
 }
 
 func getInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error) {
-	var insight model.TrackInsight
-	err := model.GetDB().WithContext(ctx).First(&insight, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &insight, nil
+	return model.GetTrackInsightByID(ctx, id)
 }
 
 // getOrFetchLyrics 优先从数据库获取歌词，如果没有则调用 provider 获取并入库
-func (s *serviceImpl) getOrFetchLyrics(ctx context.Context, artist, album, track string) (string, error) {
+func (s *serviceImpl) getOrFetchLyrics(
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+) (string, error) {
 	// 1. 先查询歌词表
-	lyrics, err := model.GetTrackLyrics(ctx, artist, album, track)
+	trackObj, _ := model.GetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
+	lookup := model.TrackLyricsLookup{Artist: artist, Album: album, Track: track}
+	if trackObj != nil {
+		lookup.TrackID = trackObj.ID
+	}
+	lyrics, err := model.GetTrackLyricsByLookup(ctx, lookup)
 	if err == nil && lyrics.LyricsOriginal != "" {
 		return lyrics.LyricsOriginal, nil
 	}
@@ -463,6 +483,7 @@ func (s *serviceImpl) getOrFetchLyrics(ctx context.Context, artist, album, track
 	synced := strings.Contains(lyricsText, "[") && strings.Contains(lyricsText, "]")
 
 	newLyrics := &model.TrackLyrics{
+		TrackID:        lookup.TrackID,
 		Artist:         artist,
 		Album:          album,
 		Track:          track,
@@ -497,6 +518,11 @@ func (s *serviceImpl) GetAllInsights(ctx context.Context, limit, offset int, key
 	return model.GetAllTrackInsights(ctx, limit, offset, keyword)
 }
 
+// GetInsightByID 按 ID 直接获取解析记录，避免上层回扫分页结果。
+func (s *serviceImpl) GetInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error) {
+	return getInsightByID(ctx, id)
+}
+
 // ToggleInsightStatus 切换解析记录的禁用状态
 func (s *serviceImpl) ToggleInsightStatus(ctx context.Context, id int64) error {
 	insight, err := getInsightByID(ctx, id)
@@ -521,4 +547,42 @@ func (s *serviceImpl) DeleteInsight(ctx context.Context, id int64) error {
 // GetInsightFeedbacks 获取关联反馈
 func (s *serviceImpl) GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error) {
 	return model.GetTrackInsightFeedbacks(ctx, insightID)
+}
+
+// GetLyrics 获取歌词内容，缺失时自动回源并复用歌词缓存写入逻辑。
+func (s *serviceImpl) GetLyrics(
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8,
+) (*model.TrackLyrics, error) {
+	artist = strings.TrimSpace(artist)
+	album = strings.TrimSpace(album)
+	track = strings.TrimSpace(track)
+
+	if artist == "" || track == "" {
+		return nil, errors.New("artist 和 track 不能为空")
+	}
+
+	lyricsText, err := s.getOrFetchLyrics(ctx, artist, album, track, trackNumber, discNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	trackObj, _ := model.GetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
+	lookup := model.TrackLyricsLookup{Artist: artist, Album: album, Track: track}
+	if trackObj != nil {
+		lookup.TrackID = trackObj.ID
+	}
+
+	lyricsData, lookupErr := model.GetTrackLyricsByLookup(ctx, lookup)
+	if lookupErr == nil {
+		return lyricsData, nil
+	}
+
+	return &model.TrackLyrics{
+		TrackID:        lookup.TrackID,
+		Artist:         artist,
+		Album:          album,
+		Track:          track,
+		LyricsOriginal: lyricsText,
+		Synced:         strings.Contains(lyricsText, "[") && strings.Contains(lyricsText, "]"),
+	}, nil
 }

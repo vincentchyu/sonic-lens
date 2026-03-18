@@ -62,6 +62,8 @@ func NewProviderByName(name string) (LLMProvider, error) {
 		return newOllamaProvider(aiCfg.Ollama)
 	case "doubao":
 		return newDoubaoProvider(aiCfg.Doubao)
+	case "custom":
+		return newCustomProviderFromConfigOrEnv(aiCfg.Custom)
 	default:
 		return nil, errors.New("不支持的 AI provider: " + name)
 	}

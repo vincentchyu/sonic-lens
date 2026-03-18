@@ -14,7 +14,9 @@ type Config struct {
 	Log        LogConfig        `yaml:"log"`
 	Database   DatabaseConfig   `yaml:"database"`
 	Dashboard  DashboardConfig  `yaml:"dashboard"`
+	PlayReplay PlayReplayConfig `yaml:"playReplay"`
 	HTTP       HTTPConfig       `yaml:"http"`
+	Bonjour    BonjourConfig    `yaml:"bonjour"`
 	Telemetry  TelemetryConfig  `yaml:"telemetry"`
 	Redis      RedisConfig      `yaml:"redis"`
 	Cloudflare CloudflareConfig `yaml:"cloudflare"`
@@ -52,6 +54,13 @@ type HTTPConfig struct {
 	Port string `yaml:"port"`
 }
 
+type BonjourConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Name        string `yaml:"name"`
+	ServiceType string `yaml:"serviceType"`
+	Domain      string `yaml:"domain"`
+}
+
 type DashboardConfig struct {
 	StatRefreshEnabled              bool `yaml:"statRefreshEnabled"`
 	StatRefreshIntervalMinutes      int  `yaml:"statRefreshIntervalMinutes"`
@@ -60,6 +69,15 @@ type DashboardConfig struct {
 	TopN                            int  `yaml:"topN"`
 	TrendDays                       int  `yaml:"trendDays"`
 	HourlyTrendDays                 int  `yaml:"hourlyTrendDays"`
+}
+
+type PlayReplayConfig struct {
+	Enabled         bool `yaml:"enabled"`
+	IntervalMinutes int  `yaml:"intervalMinutes"`
+	BatchSize       int  `yaml:"batchSize"`
+	OnlyUnapplied   bool `yaml:"onlyUnapplied"`
+	OnlyUnresolved  bool `yaml:"onlyUnresolved"`
+	RunOnStartup    bool `yaml:"runOnStartup"`
 }
 
 type MysqlConfig struct {
@@ -115,11 +133,12 @@ type CloudflareConfig struct {
 // AIConfig 大模型相关配置
 // provider 用于选择具体实现，例如：openai、gemini、ollama、doubao 等
 type AIConfig struct {
-	Provider string       `yaml:"provider"`
-	OpenAI   OpenAIConfig `yaml:"openai"`
-	Gemini   GeminiConfig `yaml:"gemini"`
-	Ollama   OllamaConfig `yaml:"ollama"`
-	Doubao   DoubaoConfig `yaml:"doubao"`
+	Provider string         `yaml:"provider"`
+	OpenAI   OpenAIConfig   `yaml:"openai"`
+	Gemini   GeminiConfig   `yaml:"gemini"`
+	Ollama   OllamaConfig   `yaml:"ollama"`
+	Doubao   DoubaoConfig   `yaml:"doubao"`
+	Custom   CustomAIConfig `yaml:"custom"`
 }
 
 // GetAvailableProviders 返回当前配置中所有已配置的 AI 提供商
@@ -137,11 +156,21 @@ func (c AIConfig) GetAvailableProviders() []string {
 	if c.Doubao.APIKey != "" {
 		providers = append(providers, "doubao")
 	}
+	if c.Custom.APIKey != "" {
+		providers = append(providers, "custom")
+	}
 	return providers
 }
 
 // OpenAIConfig OpenAI 配置
 type OpenAIConfig struct {
+	APIKey  string `yaml:"apiKey"`
+	BaseURL string `yaml:"baseUrl"`
+	Model   string `yaml:"model"`
+}
+
+// Custom AI 配置
+type CustomAIConfig struct {
 	APIKey  string `yaml:"apiKey"`
 	BaseURL string `yaml:"baseUrl"`
 	Model   string `yaml:"model"`

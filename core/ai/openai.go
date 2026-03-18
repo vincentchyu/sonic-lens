@@ -83,6 +83,35 @@ type openAIChatResponse struct {
 	} `json:"choices"`
 }
 
+type openAICompletionsRequest struct {
+	Model       string `json:"model"`
+	Prompt      string `json:"prompt"`
+	MaxTokens   int    `json:"max_tokens"`
+	Temperature int    `json:"temperature"`
+}
+type openAICompletionsResponse struct {
+	Id                string `json:"id"`
+	Object            string `json:"object"`
+	Created           int    `json:"created"`
+	Model             string `json:"model"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Choices           []struct {
+		Text         string      `json:"text"`
+		Index        int         `json:"index"`
+		Logprobs     interface{} `json:"logprobs"`
+		FinishReason string      `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+/*
+
+ */
+
 // AnalyzeTrack 调用 OpenAI 接口，对歌词进行翻译和深度解析
 func (p *OpenAIProvider) AnalyzeTrack(
 	ctx context.Context, req TrackAnalysisRequest,

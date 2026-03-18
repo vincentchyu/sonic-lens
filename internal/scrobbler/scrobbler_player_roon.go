@@ -115,7 +115,7 @@ func (r *RoonPlayerController) GetState(ctx context.Context) (string, error) {
 	return common.PlayerStateStopped, nil
 }
 
-func (r *RoonPlayerController) GetNowPlayingTrackInfo(ctx context.Context) PlayerInfoHandler {
+func (r *RoonPlayerController) GetNowPlayingTrackInfo(ctx context.Context) common.PlayerInfoHandler {
 	playing, err := exec.GetMediaControlNowPlaying(ctx)
 	if err != nil {
 		return nil

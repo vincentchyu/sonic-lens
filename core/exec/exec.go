@@ -64,6 +64,8 @@ type (
 		GetBundleID() string
 		GetUniqueID() string
 		GetDiscNumber() int8
+		HasPicture() bool
+		GetPictureMimeType() string
 	}
 	// todo Discnumber
 	// 增加 discNumber
@@ -85,16 +87,17 @@ type (
 	MediaControlNowPlayingInfo struct {
 		// media-control get -h --now
 		TrackID         string
-		Title           string `json:"title"`           // 标题
-		Album           string `json:"album"`           // 专辑
-		Artist          string `json:"artist"`          // 艺术家
-		Genre           string `json:"genre"`           // 流派
-		TrackNumber     int    `json:"trackNumber"`     // 曲目编号
-		TotalTrackCount int    `json:"totalTrackCount"` // 总曲目数
+		Title           string  `json:"title"`           // 标题
+		Album           string  `json:"album"`           // 专辑
+		Artist          string  `json:"artist"`          // 艺术家
+		Duration        float64 `json:"duration"`        // 总时长
+		ElapsedTime     float64 `json:"elapsedTime"`     // 已播放时长
+		PlaybackRate    float64 `json:"playbackRate"`    // 播放速率
+		Genre           string  `json:"genre"`           // 流派
+		TrackNumber     int     `json:"trackNumber"`     // 曲目编号
+		TotalTrackCount int     `json:"totalTrackCount"` // 总曲目数
 
 		Playing        bool    `json:"playing"`        // 是否正在播放
-		Duration       int64   `json:"duration"`       // 持续时间
-		ElapsedTime    float64 `json:"elapsedTime"`    // 播放时间（在暂时无用）
 		ElapsedTimeNow float64 `json:"elapsedTimeNow"` // 当前播放时间
 		IsMusicApp     bool    `json:"isMusicApp"`     // 是否是音乐应用
 
@@ -102,7 +105,7 @@ type (
 		BundleIdentifier      string `json:"bundleIdentifier"`      // 软件标识
 		ContentItemIdentifier string `json:"contentItemIdentifier"` // 疑似歌曲id
 
-		ArtworkData       string    `json:"artworkData"`       // 封面数据
+		ArtworkData       []byte    `json:"artworkData"`       // 封面数据
 		UniqueIdentifier  int64     `json:"uniqueIdentifier"`  // 唯一标识符
 		RepeatMode        int       `json:"repeatMode"`        // 重复模式
 		QueueIndex        int       `json:"queueIndex"`        // 队列索引
@@ -112,7 +115,6 @@ type (
 		ShuffleMode       int       `json:"shuffleMode"`       //	洗牌模式
 		ProcessIdentifier int       `json:"processIdentifier"` // 进程标识符
 		TotalQueueCount   int       `json:"totalQueueCount"`   // 总队列数
-		PlaybackRate      int       `json:"playbackRate"`      // 播放速率
 
 		Position   float64 // 播放位置
 		Url        string  // 歌曲链接
@@ -243,11 +245,21 @@ func (receiver ExiftoolInfo) GetTrackNumber() int64 {
 
 // GetDiscNumber GetDiscNumber
 func (receiver ExiftoolInfo) GetDiscNumber() int8 {
-	key1, key2, key3 := "DiscNumber", "Discnumber", "discnumber"
+	key1, key2, key3, key4 := "DiscNumber", "Discnumber", "discnumber", "DiskNumber"
 	//  "TrackNumber": "1 of 12",
 	//   "TrackNumber": 1,
+	// "DiskNumber": "1 of 1",
 	var val any
 	val, ok := receiver[key1]
+	if ok {
+		toString := cast.ToString(val)
+		if ok := strings.Contains(toString, "of"); ok {
+			split := strings.Split(toString, "of")
+			return cast.ToInt8(strings.TrimSpace(split[0]))
+		}
+		return cast.ToInt8(toString)
+	}
+	val, ok = receiver[key4]
 	if ok {
 		toString := cast.ToString(val)
 		if ok := strings.Contains(toString, "of"); ok {
@@ -358,7 +370,7 @@ func (receiver ExiftoolInfo) GetDuration() int64 {
 
 // GetReleaseDate returns the release date of the track
 func (receiver ExiftoolInfo) GetReleaseDate() string {
-	key1, key2, key3, key4 := "Originaldate", "ReleaseDate", "RELEASETIME", "OriginalDate"
+	key1, key2, key3, key4 := "date", "ReleaseDate", "RELEASETIME", "Date"
 	var val any
 	val, ok := receiver[key1]
 	if ok {
@@ -373,6 +385,19 @@ func (receiver ExiftoolInfo) GetReleaseDate() string {
 		return cast.ToString(val)
 	}
 	val, ok = receiver[key4]
+	if ok {
+		return cast.ToString(val)
+	}
+	return ""
+}
+func (receiver ExiftoolInfo) GetOriginalDate() string {
+	key1, key2 := "Originaldate", "OriginalDate"
+	var val any
+	val, ok := receiver[key1]
+	if ok {
+		return cast.ToString(val)
+	}
+	val, ok = receiver[key2]
 	if ok {
 		return cast.ToString(val)
 	}
@@ -434,6 +459,30 @@ func (receiver ExiftoolInfo) GetUniqueID() string {
 		return cast.ToString(val)
 	}
 	val, ok = receiver[key3]
+	if ok {
+		return cast.ToString(val)
+	}
+	return ""
+}
+
+// HasPicture 返回文件元数据是否声明存在内嵌封面。
+func (receiver ExiftoolInfo) HasPicture() bool {
+	val, ok := receiver["Picture"]
+	if !ok {
+		return false
+	}
+	return cast.ToString(val) != ""
+}
+
+// GetPictureMimeType 返回内嵌封面的 MIME 类型。
+func (receiver ExiftoolInfo) GetPictureMimeType() string {
+	key1, key2 := "PictureMIMEType", "PictureMimeType"
+	var val any
+	val, ok := receiver[key1]
+	if ok {
+		return cast.ToString(val)
+	}
+	val, ok = receiver[key2]
 	if ok {
 		return cast.ToString(val)
 	}
@@ -519,6 +568,16 @@ func (receiver WavInfo) GetDiscNumber() int8 {
 	return 1
 }
 
+// HasPicture 返回 WAV 元数据是否声明存在内嵌封面。
+func (receiver WavInfo) HasPicture() bool {
+	return false
+}
+
+// GetPictureMimeType 返回 WAV 元数据中的封面 MIME 类型。
+func (receiver WavInfo) GetPictureMimeType() string {
+	return ""
+}
+
 func GetMRMediaNowPlayingCli(ctx context.Context) (*MRMediaNowPlaying, error) {
 	// nowplaying-cli  get album title artist duration elapsedTime timestamp mediaType isMusicApp  uniqueIdentifier
 	args := []string{
@@ -575,6 +634,24 @@ func GetMRMediaNowPlayingCli(ctx context.Context) (*MRMediaNowPlaying, error) {
 func GetMediaControlNowPlaying(ctx context.Context) (*MediaControlNowPlayingInfo, error) {
 	// Execute: media-control get -h --now
 	output, err := runCommand(ctx, MediaControlCmd, MediaControlGet, MediaControlHelpFlag, MediaControlNowFlag)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse JSON output
+	var info MediaControlNowPlayingInfo
+	err = json.Unmarshal([]byte(output), &info)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing media-control output: %v", err)
+	}
+
+	return &info, nil
+}
+
+// GetMediaControlNowPlayingImg executes media-control command to get current playing track info
+func GetMediaControlNowPlayingImg(ctx context.Context) (*MediaControlNowPlayingInfo, error) {
+	// Execute: media-control get -h --now
+	output, err := runCommand(ctx, MediaControlCmd, MediaControlGet, MediaControlNowFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -669,4 +746,35 @@ func IsValidPath(ctx context.Context, path string) (bool, string, error) {
 }
 func GetFilePathExt(path string) string {
 	return filepath.Ext(path)
+}
+
+// ExtractEmbeddedArtwork 从媒体文件中提取主封面二进制。
+func ExtractEmbeddedArtwork(ctx context.Context, path string) ([]byte, error) {
+	ok, resolvedPath, err := IsValidPath(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("invalid media path: %s", path)
+	}
+
+	// 定义可能的封面标签，按优先级排序
+	tags := []string{"-Picture", "-CoverArt"}
+	var lastErr error
+
+	for _, tag := range tags {
+		cmd := exec.Command("exiftool", "-b", tag, resolvedPath)
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			return output, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("no embedded artwork found with tags %v: %s", tags, resolvedPath)
 }

@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // ReleaseMB stores the raw JSON data from MusicBrainz for a release
@@ -22,24 +24,45 @@ func (ReleaseMB) TableName() string {
 }
 
 func SaveReleaseMB(ctx context.Context, r *ReleaseMB) error {
+	return SaveReleaseMBTx(GetDB().WithContext(ctx), r)
+}
+
+// SaveReleaseMBTx 在事务内写入或更新 release_mb 缓存。
+func SaveReleaseMBTx(tx *gorm.DB, r *ReleaseMB) error {
 	var existing ReleaseMB
-	err := GetDB().WithContext(ctx).Where("mbid = ? AND album_id = ?", r.MBID, r.AlbumID).First(&existing).Error
+	err := tx.Where("mbid = ? AND album_id = ?", r.MBID, r.AlbumID).First(&existing).Error
 	if err == nil {
-		// 存在则更新
-		return GetDB().WithContext(ctx).Model(&existing).Updates(map[string]interface{}{
+		return tx.Model(&existing).Updates(map[string]interface{}{
 			"name":      r.Name,
 			"json_data": r.JSONData,
 		}).Error
 	}
 
-	// 不存在则创建
-	return GetDB().WithContext(ctx).Create(r).Error
+	return tx.Create(r).Error
 }
 
 func GetReleaseMBByMBID(ctx context.Context, albumID int64, mbid string) (*ReleaseMB, error) {
 	var r ReleaseMB
 	err := GetDB().WithContext(ctx).Where("album_id = ? AND mbid = ?", albumID, mbid).First(&r).Error
 	return &r, err
+}
+
+// UpdateReleaseMBJSONDataTx 在事务内刷新候选发行版缓存 JSON。
+func UpdateReleaseMBJSONDataTx(tx *gorm.DB, albumID int64, mbid string, jsonData string) (bool, error) {
+	var release ReleaseMB
+	err := tx.Where("album_id = ? AND mbid = ?", albumID, mbid).First(&release).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	release.JSONData = jsonData
+	if err := tx.Save(&release).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func GetReleasesByAlbumID(ctx context.Context, albumID int64) ([]*ReleaseMB, error) {
