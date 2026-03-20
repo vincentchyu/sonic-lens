@@ -34,6 +34,7 @@ type Service interface {
 	SearchPendingAlbumMBReleases(ctx context.Context, workItemID int64) ([]*model.ReleaseMB, error)
 	LinkPendingAlbumMBRelease(ctx context.Context, workItemID, releaseMBID int64, mbid string) error
 	DeepMaintainPendingAlbumWorkItem(ctx context.Context, workItemID int64) (*DeepMaintainPendingAlbumReport, error)
+	ListWorkItems(ctx context.Context, limit, offset int, keyword string, statusGroup string) ([]*model.PendingAlbumWorkItem, int64, error)
 }
 
 type serviceImpl struct{}
@@ -57,6 +58,12 @@ func (s *serviceImpl) GetPendingAlbumWorkItemDetail(
 	ctx context.Context, workItemID int64,
 ) (*model.PendingAlbumWorkItemDetail, error) {
 	return model.GetPendingAlbumWorkItemDetail(ctx, workItemID)
+}
+
+func (s *serviceImpl) ListWorkItems(
+	ctx context.Context, limit, offset int, keyword string, statusGroup string,
+) ([]*model.PendingAlbumWorkItem, int64, error) {
+	return model.ListPendingAlbumWorkItems(ctx, limit, offset, keyword, statusGroup)
 }
 
 func escapeLucene(in string) string {

@@ -33,7 +33,9 @@ type Service interface {
 	// GetAvailableAIProviders 获取当前系统可用的 AI 服务模型
 	GetAvailableAIProviders() []string
 	// GetInsightOnly 仅从数据库获取已有的解析结果，不触发 AI 分析
-	GetInsightOnly(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) ([]*InsightWithScore, error)
+	GetInsightOnly(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
+		[]*InsightWithScore, error,
+	)
 	// GetAllInsights 分页获取所有解析记录
 	GetAllInsights(ctx context.Context, limit, offset int, keyword string) ([]*model.TrackInsight, int64, error)
 	// GetInsightByID 按主键获取解析记录，避免上层通过分页结果回扫定位。
@@ -47,12 +49,14 @@ type Service interface {
 	// GetInsightFeedbacks 获取关联反馈
 	GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
 	// GetLyrics 获取歌词内容，缺失时自动回源并写入缓存。
-	GetLyrics(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.TrackLyrics, error)
+	GetLyrics(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
+		*model.TrackLyrics, error,
+	)
 }
 
 type serviceImpl struct {
 	llmCache  map[string]ai.LLMProvider
-	providers []lyrics.LyricsProvider
+	providers []lyrics.Provider
 }
 
 type InsightWithScore struct {
@@ -64,9 +68,9 @@ type InsightWithScore struct {
 func NewService() (Service, error) {
 	return &serviceImpl{
 		llmCache: make(map[string]ai.LLMProvider),
-		providers: []lyrics.LyricsProvider{
+		providers: []lyrics.Provider{
 			lyrics.NewLrcAPIProvider(),
-			lyrics.NewMusixmatchProvider(),
+			lyrics.NewMxmProvider(),
 		},
 	}, nil
 }
@@ -184,7 +188,9 @@ func (s *serviceImpl) GetOrCreateInsight(
 
 	// 查询历史差评反馈，用于改进分析质量
 	feedbackCtx := ""
-	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(ctx, lookup); fbErr == nil && len(negativeFeedbacks) > 0 {
+	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(
+		ctx, lookup,
+	); fbErr == nil && len(negativeFeedbacks) > 0 {
 		var feedbackComments []string
 		for _, fb := range negativeFeedbacks {
 			if fb.Comment != "" {
@@ -296,7 +302,9 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 
 	// 查询历史差评反馈，用于改进分析质量
 	feedbackCtx := ""
-	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(ctx, lookup); fbErr == nil && len(negativeFeedbacks) > 0 {
+	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(
+		ctx, lookup,
+	); fbErr == nil && len(negativeFeedbacks) > 0 {
 		var feedbackComments []string
 		for _, fb := range negativeFeedbacks {
 			if fb.Comment != "" {
@@ -439,9 +447,9 @@ func (s *serviceImpl) getOrFetchLyrics(
 	if trackObj != nil {
 		lookup.TrackID = trackObj.ID
 	}
-	lyrics, err := model.GetTrackLyricsByLookup(ctx, lookup)
-	if err == nil && lyrics.LyricsOriginal != "" {
-		return lyrics.LyricsOriginal, nil
+	lyricsRecord, err := model.GetTrackLyricsByLookup(ctx, lookup)
+	if err == nil && lyricsRecord.LyricsOriginal != "" {
+		return lyricsRecord.LyricsOriginal, nil
 	}
 
 	// 2. 如果没有，遍历 provider 获取
@@ -480,7 +488,7 @@ func (s *serviceImpl) getOrFetchLyrics(
 	// 3. 保存到歌词表
 	// 简单的语言检测逻辑（实际可换为库）
 	langCode := detectLanguage(lyricsText)
-	synced := strings.Contains(lyricsText, "[") && strings.Contains(lyricsText, "]")
+	synced := lyrics.IsSyncedLRC(lyricsText)
 
 	newLyrics := &model.TrackLyrics{
 		TrackID:        lookup.TrackID,
@@ -574,6 +582,13 @@ func (s *serviceImpl) GetLyrics(
 
 	lyricsData, lookupErr := model.GetTrackLyricsByLookup(ctx, lookup)
 	if lookupErr == nil {
+		normalizedSynced := lyrics.IsSyncedLRC(lyricsData.LyricsOriginal)
+		if lyricsData.Synced != normalizedSynced {
+			lyricsData.Synced = normalizedSynced
+			if err := model.UpdateTrackLyrics(ctx, lyricsData); err != nil {
+				log.Warn(ctx, "修正歌词同步标记失败", zap.Error(err))
+			}
+		}
 		return lyricsData, nil
 	}
 
@@ -583,6 +598,6 @@ func (s *serviceImpl) GetLyrics(
 		Album:          album,
 		Track:          track,
 		LyricsOriginal: lyricsText,
-		Synced:         strings.Contains(lyricsText, "[") && strings.Contains(lyricsText, "]"),
+		Synced:         lyrics.IsSyncedLRC(lyricsText),
 	}, nil
 }

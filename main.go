@@ -13,6 +13,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/bonjour"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/lyrics"
 	"github.com/vincentchyu/sonic-lens/core/musicbrainz"
 	"github.com/vincentchyu/sonic-lens/core/redis"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
@@ -92,7 +93,7 @@ func initServer() error {
 	if err := model.InitDB(config.ConfigObj.Database.Path, dbLogger); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
-
+	lyrics.InitMxmClient(config.ConfigObj.Musixmatch.ApiKey)
 	// Initialize genre cache with refresh timer
 	cancelFuncCacheInitializeGenreCache := cache.InitializeGenreCache(ctx)
 

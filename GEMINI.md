@@ -28,12 +28,14 @@
     - `db/`: GORM 数据库初始化与连接池管理，适配 SQLite/MySQL。
     - `redis/`: Redis 客户端封装与缓存访问抽象。
     - `websocket/`: 实时通信枢纽，负责 `now_playing` 等消息的广播与连接生命周期。
+        - 补充：`now_playing.data` 对外协议已同时提供整秒 `position` 与毫秒 `position_ms`；前端/Bridge 歌词同步必须优先消费 `position_ms`，`PlayerInfoHandler` 仅供服务端缓存元数据使用，禁止继续向客户端暴露其内部字段。
     - `telemetry/`: 基于 OpenTelemetry 的分布式链路追踪与性能监控指标上报。
     - `ai/`: AI 模型驱动适配器（支持 OpenAI, DeepSeek, 豆包等），处理 Prompt 注入。
     - `applemusic/`: Apple Music API 交互封装。
     - `lastfm/`: Last.fm API 交互封装，支持记录上报（Scrobble）与状态检查。
     - `musicbrainz/`: MusicBrainz 元数据查询，用于专辑/曲目信息的深度补全。
     - `lyrics/`: 统一歌词搜索与解析引擎。
+        - 补充：LRC 同步判定与时间标签解析已统一收口到 `core/lyrics`；`Synced/has_lrc` 必须基于合法时间标签判断，不能再用“是否包含 `[]`”做宽松推断。
     - `musixmatch/`: Musixmatch 歌词服务适配（辅助歌词源）。
     - `audirvana/`: Audirvana 播放器底层状态获取逻辑。
     - `roon/`: Roon 播放器 API 监听与控制。
@@ -66,7 +68,7 @@
 - **当前现状**: 大量核心功能承载于 `templates/*.html` (Go Templates) 配合 Vanilla JS。
 - **开发建议**: 在修改 `dashboard.html` 等文件时，需注意代码体量巨大且存在冗余定义（详见 3.1）。
 - **Bridge 资料库约束**: `soniclens-bridge` 的专辑/曲目列表已切换为“本地 SQLite 轻量索引 + FTS5 搜索 + `/api/library/sync` 增量同步 + `library_updated(version)` WebSocket 推送 + 详情页懒加载”模式。后续修改资料库列表时，不允许再回退到“远端分页 + 本地数组过滤/排序”的混合设计。
-- **Bridge 双端产品线约束**: `soniclens-bridge` 已拆分为 `SoniclensBridgeMac` 与 `SoniclensBridgePad` 两个独立 target / scheme。`SoniclensCore` 负责共享连接、播放态、收藏、Bonjour、WebSocket 与资料库本地索引同步；`RootView` 负责平台分流到 `MacRootView` / `PadRootView`。后续新增 Bridge 功能时，应优先共享业务层与子组件，允许 macOS / iPadOS 容器层、沉浸播放页和平台生命周期逻辑分别演进，不可把 `AppKit` 窗口语义重新泄漏进 iPad 端。
+- **Bridge 三端产品线约束**: `soniclens-bridge` 当前包含 `SoniclensBridgeMac`、`SoniclensBridgePad`、`SoniclensBridgePhone` 三个独立入口/产品线。`SoniclensCore` 与 `ViewModels` 是跨端共享层（连接、播放态、收藏、Bonjour、WebSocket、资料库本地索引同步）；`AppLayoutView` / `NowPlayingView`（macOS）、`Pad*` 族页面（iPad）、`Phone*` 族页面（iPhone）属于端私有容器/体验层。后续新增 Bridge 功能时，应优先下沉到共享层，再按端实现容器与交互差异，禁止将 macOS `AppKit` 窗口语义泄漏到 iPad/iPhone。详细清单见 `soniclens-bridge/Docs/CLIENT_MODULE_BOUNDARY.md`。
 
 ---
 
@@ -128,6 +130,7 @@
     - **功能**: AI 生成的歌曲赏析细节（背景、歌词翻译、时代背景）。
 - **[track_lyrics.go](./internal/model/track_lyrics.go)**: 
     - **功能**: 原始歌词与翻译歌词的持久化。
+    - **补充**: `track_lyrics.synced` 只表示“可解析出至少一个合法 LRC 时间标签”，`[Verse]`/`[ar:...]` 这类标签不能再单独触发同步歌词状态。
 - **[genre.go](./internal/model/genre.go)**: 
     - **功能**: 音乐流派库。
 - **[dashboard_stat.go](./internal/model/dashboard_stat.go)**: 
@@ -145,5 +148,5 @@
     - **规则**: DAO 层重构与事务治理优先补 model 级测试，优先校验 MySQL SQL 与事务顺序，避免再为 SQLite 兼容性让路。
 
 ---
-*最后更新日期：2026-03-15 | 文档版本: v2.1*
+*最后更新日期：2026-03-19 | 文档版本: v2.2*
 AI MUST READ THIS FILE BEFORE MODIFYING CODE.

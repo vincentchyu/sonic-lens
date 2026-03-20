@@ -450,6 +450,16 @@
             font-weight: 500;
         }
 
+        .line.section-label {
+            font-size: 0.72rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--muted);
+            opacity: 0.76;
+            padding-top: 12px;
+            padding-bottom: 2px;
+        }
+
         /* 仅低端设备放大字体（720p/1080p 电视盒子） */
         body.low-end .ambient-background {
             display: none;
@@ -601,14 +611,18 @@
 </div>
 <div class="player-progress-hover-zone" id="playerProgressHoverZone" aria-hidden="true"></div>
 
+<script src="/static/lrc-utils.js"></script>
 <script>
     let ws = null;
     let currentTrackInfo = null;
     let currentSource = "";
     let currentPosition = 0;
+    let currentPositionMs = 0;
+    let positionAnchorMs = 0;
+    let positionAnchorPerf = 0;
     let trackDuration = 0;
+    let trackDurationMs = 0;
     let progressInterval = null;
-    let lyricSyncInterval = null;
     let currentLyricsData = null;
     let lyricsLines = [];
     let activeLyricIndex = -1;
@@ -627,11 +641,45 @@
         return String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
     }
 
+    function resolveIncomingPositionMs(data) {
+        if (data && typeof data.position_ms === "number" && isFinite(data.position_ms)) {
+            return Math.max(0, Math.floor(data.position_ms));
+        }
+        if (data && typeof data.position === "number" && isFinite(data.position)) {
+            return Math.max(0, Math.round(data.position * 1000));
+        }
+        return 0;
+    }
+
+    function setPlaybackAnchor(positionMs) {
+        currentPositionMs = Math.max(0, Math.floor(positionMs || 0));
+        currentPosition = currentPositionMs / 1000;
+        positionAnchorMs = currentPositionMs;
+        positionAnchorPerf = performance.now();
+    }
+
+    function getCurrentPositionMs() {
+        let nextMs = positionAnchorMs;
+        if (trackDurationMs > 0) {
+            nextMs += Math.max(0, performance.now() - positionAnchorPerf);
+            nextMs = Math.min(nextMs, trackDurationMs);
+        }
+        return Math.max(0, Math.floor(nextMs));
+    }
+
+    function syncPlaybackClock() {
+        currentPositionMs = getCurrentPositionMs();
+        currentPosition = currentPositionMs / 1000;
+        return currentPositionMs;
+    }
+
     function updateProgressDisplay() {
         const fill = document.getElementById("playerProgressFill");
         const current = document.getElementById("playerCurrentTime");
         const total = document.getElementById("playerTotalTime");
         if (!fill || !current || !total) return;
+
+        syncPlaybackClock();
 
         const percent = trackDuration > 0 ? Math.min((currentPosition / trackDuration) * 100, 100) : 0;
         fill.style.width = percent + "%";
@@ -993,41 +1041,7 @@
     }
 
     function parseLRC(lrcText) {
-        const lines = lrcText.split("\n");
-        const lrcData = [];
-        const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
-
-        lines.forEach(function (line) {
-            const matches = [];
-            let match;
-            while ((match = timeRegex.exec(line)) !== null) {
-                matches.push(match);
-            }
-            timeRegex.lastIndex = 0;
-            const text = line.replace(timeRegex, "").trim();
-            if (!text || !matches.length) return;
-
-            // 支持一行多个时间标签，例如 [00:10.00][00:20.00]同一行歌词
-            matches.forEach(function (m) {
-                const minutes = parseInt(m[1], 10);
-                const seconds = parseInt(m[2], 10);
-                let milliseconds = 0;
-                if (m[3]) {
-                    let msText = m[3];
-                    while (msText.length < 3) msText += "0";
-                    milliseconds = parseInt(msText, 10);
-                }
-                lrcData.push({
-                    time: minutes * 60 + seconds + milliseconds / 1000,
-                    text: text
-                });
-            });
-        });
-
-        lrcData.sort(function (a, b) {
-            return a.time - b.time;
-        });
-        return lrcData;
+        return window.SonicLRC.parseLRC(lrcText);
     }
 
     function parseTaggedLyricLine(text) {
@@ -1082,9 +1096,14 @@
         lrcData.forEach(function (item, index) {
             const line = document.createElement("div");
             line.className = "line";
+            if (item.isSectionLabel) {
+                line.classList.add("section-label");
+            }
             line.dataset.index = index;
             const pair = parseTaggedLyricLine(item.text);
-            if (pair.hasTag) {
+            if (item.isSectionLabel) {
+                line.textContent = pair.original || item.text;
+            } else if (pair.hasTag) {
                 const originalEl = document.createElement("span");
                 originalEl.className = "line-original";
                 originalEl.textContent = pair.original || " ";
@@ -1162,7 +1181,13 @@
             return;
         }
         try {
-            currentInsight = await fetchInsight(artist, album, track, data.track_number, data.disc_number);
+            currentInsight = await fetchInsight(
+                artist,
+                album,
+                track,
+                currentTrackInfo.track_number || 0,
+                currentTrackInfo.disc_number || 0
+            );
         } catch (e) {
             currentInsight = null;
         }
@@ -1182,41 +1207,44 @@
             progressInterval = null;
         }
         updateProgressDisplay();
-        if (trackDuration <= 0) return;
+        if (trackDurationMs <= 0) return;
+        const intervalMs = document.body.classList.contains("low-end") ? 500 : 200;
         progressInterval = setInterval(function () {
-            currentPosition += 1;
+            syncPlaybackClock();
             updateProgressDisplay();
-            if (currentPosition >= trackDuration) {
+            updateLyricHighlight();
+            if (currentPositionMs >= trackDurationMs) {
                 clearInterval(progressInterval);
                 progressInterval = null;
             }
-        }, 1000);
+        }, intervalMs);
+    }
+
+    function updateLyricHighlight() {
+        if (!currentLyricsData || !currentLyricsData.length) return;
+        const next = window.SonicLRC.findActiveIndex(
+            currentLyricsData,
+            getCurrentPositionMs(),
+            activeLyricIndex
+        );
+        if (next === activeLyricIndex) return;
+        if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
+            lyricsLines[activeLyricIndex].classList.remove("active");
+        }
+        activeLyricIndex = next;
+        if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
+            const line = lyricsLines[activeLyricIndex];
+            line.classList.add("active");
+            line.scrollIntoView({block: "center"});
+        }
     }
 
     function startLyricSync() {
-        if (lyricSyncInterval) {
-            clearInterval(lyricSyncInterval);
-            lyricSyncInterval = null;
+        if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
+            lyricsLines[activeLyricIndex].classList.remove("active");
         }
-        if (!currentLyricsData || !currentLyricsData.length) return;
-        lyricSyncInterval = setInterval(function () {
-            if (!currentLyricsData || !currentLyricsData.length) return;
-            let next = -1;
-            for (let i = 0; i < currentLyricsData.length; i++) {
-                if (currentLyricsData[i].time <= currentPosition) next = i;
-                else break;
-            }
-            if (next === activeLyricIndex) return;
-            if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
-                lyricsLines[activeLyricIndex].classList.remove("active");
-            }
-            activeLyricIndex = next;
-            if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
-                const line = lyricsLines[activeLyricIndex];
-                line.classList.add("active");
-                line.scrollIntoView({block: "center"});
-            }
-        }, 220);
+        activeLyricIndex = -1;
+        updateLyricHighlight();
     }
 
     async function fetchLyrics(artist, album, track, trackNumber, discNumber) {
@@ -1268,7 +1296,7 @@
                 return;
             }
 
-            if (data.has_lrc) {
+            if (window.SonicLRC.isSyncedLRC(data.lyrics)) {
                 currentLyricsData = parseLRC(data.lyrics);
                 if (!currentLyricsData.length) {
                     renderPlain(data.lyrics);
@@ -1279,10 +1307,10 @@
             } else {
                 currentLyricsData = null;
                 renderPlain(data.lyrics);
-                if (lyricSyncInterval) {
-                    clearInterval(lyricSyncInterval);
-                    lyricSyncInterval = null;
+                if (activeLyricIndex >= 0 && lyricsLines[activeLyricIndex]) {
+                    lyricsLines[activeLyricIndex].classList.remove("active");
                 }
+                activeLyricIndex = -1;
             }
         } catch (e) {
             renderPlain("歌词加载失败，请稍后重试");
@@ -1344,8 +1372,9 @@
                 const changed = prevKey !== nextKey;
                 currentTrackInfo = data.data || {};
                 currentSource = data.source || "";
-                currentPosition = currentTrackInfo.position || 0;
+                setPlaybackAnchor(resolveIncomingPositionMs(currentTrackInfo));
                 trackDuration = currentTrackInfo.duration || 0;
+                trackDurationMs = trackDuration * 1000;
                 setTrackInfo(currentTrackInfo, data.source || "");
                 updateTrackDisplay(currentTrackInfo);
                 updateFavoriteButtonState(!!currentTrackInfo.apple_music, !!currentTrackInfo.lastfm);
@@ -1358,7 +1387,11 @@
                 currentTrackInfo = null;
                 currentSource = "";
                 currentPosition = 0;
+                currentPositionMs = 0;
+                positionAnchorMs = 0;
+                positionAnchorPerf = performance.now();
                 trackDuration = 0;
+                trackDurationMs = 0;
                 const coverArt = document.getElementById("trackCoverArt");
                 if (coverArt) {
                     coverArt.removeAttribute("src");
@@ -1388,6 +1421,7 @@
         const track = params.get("track") || "";
         const source = params.get("source") || "";
         const position = parseInt(params.get("position") || "0", 10);
+        const positionMs = parseInt(params.get("position_ms") || "0", 10);
         const duration = parseInt(params.get("duration") || "0", 10);
         if (!artist || !track) return;
 
@@ -1398,11 +1432,13 @@
             apple_music: false,
             lastfm: false,
             position: position,
+            position_ms: positionMs,
             duration: duration
         };
         currentSource = source;
-        currentPosition = position || 0;
+        setPlaybackAnchor(positionMs > 0 ? positionMs : position * 1000);
         trackDuration = duration || 0;
+        trackDurationMs = trackDuration * 1000;
         setTrackInfo(currentTrackInfo, source);
         updateFavoriteButtonState(false, false);
         startProgress();

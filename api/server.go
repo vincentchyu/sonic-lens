@@ -60,6 +60,7 @@ func setupRouter(name string) *gin.Engine {
 	r.StaticFile("/static/chartjs-adapter-date-fns.bundle.min.js", "./static/chartjs-adapter-date-fns.bundle.min.js")
 	r.StaticFile("/static/full.min.css", "./static/full.min.css")
 	r.StaticFile("/static/html2canvas.min.js", "./static/html2canvas.min.js")
+	r.StaticFile("/static/lrc-utils.js", "./static/lrc-utils.js")
 	r.StaticFile("/static/3.4.17", "./static/3.4.17")
 	r.StaticFile("/static/chart.js", "./static/chart.js")
 	r.StaticFile("/static/logo.svg", "./static/logo.svg")
@@ -653,7 +654,34 @@ func setupRouter(name string) *gin.Engine {
 			c.JSON(http.StatusOK, item)
 		},
 	)
-
+ 
+	r.GET(
+		"/api/pending-albums/work-items", func(c *gin.Context) {
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			keyword := c.Query("keyword")
+			statusGroup := c.Query("status_group")
+ 
+			if limit > 100 {
+				limit = 100
+			}
+ 
+			items, total, err := pendingAlbumService.ListWorkItems(c.Request.Context(), limit, offset, keyword, statusGroup)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(
+				http.StatusOK, gin.H{
+					"items":  items,
+					"total":  total,
+					"limit":  limit,
+					"offset": offset,
+				},
+			)
+		},
+	)
+ 
 	r.GET(
 		"/api/pending-albums/work-items/:id", func(c *gin.Context) {
 			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)

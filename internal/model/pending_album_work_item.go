@@ -298,6 +298,30 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 	return results, nil
 }
 
+// ListPendingAlbumWorkItems 返回分页的工作项列表。
+func ListPendingAlbumWorkItems(ctx context.Context, limit, offset int, keyword string, statusGroup string) ([]*PendingAlbumWorkItem, int64, error) {
+	db := GetDB().WithContext(ctx).Model(&PendingAlbumWorkItem{})
+	if keyword != "" {
+		key := "%" + keyword + "%"
+		db = db.Where("artist LIKE ? OR album LIKE ? OR album_artist LIKE ?", key, key, key)
+	}
+
+	if statusGroup == "completed" {
+		db = db.Where("status = ?", PendingAlbumWorkItemStatusCompleted)
+	} else if statusGroup == "open" {
+		db = db.Where("status IN ?", pendingAlbumOpenStatuses)
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var items []*PendingAlbumWorkItem
+	err := db.Order("updated_at DESC, id DESC").Limit(limit).Offset(offset).Find(&items).Error
+	return items, total, err
+}
+
 // CreateOrGetPendingAlbumWorkItem 根据 identity key 冻结当前上下文并返回工作项。
 func CreateOrGetPendingAlbumWorkItem(ctx context.Context, identityKey string) (*PendingAlbumWorkItem, error) {
 	groups, err := GetPendingAlbumGroups(ctx, 0)

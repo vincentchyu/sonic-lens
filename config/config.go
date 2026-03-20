@@ -58,7 +58,6 @@ type BonjourConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 	Name        string `yaml:"name"`
 	ServiceType string `yaml:"serviceType"`
-	Domain      string `yaml:"domain"`
 }
 
 type DashboardConfig struct {

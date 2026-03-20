@@ -2,6 +2,7 @@ package scrobbler
 
 import (
 	"context"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -227,6 +228,7 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 			LastFM:            favoriteState.LastFmFavorite,
 			Duration:          snapshot.duration,
 			Position:          int64(snapshot.position),
+			PositionMs:        int64(math.Round(snapshot.position * 1000)),
 			TrackNumber:       int8(playerInfo.GetTrackNumber()),
 			DiscNumber:        int8(playerInfo.GetDiscNumber()),
 			CoverArtURL:       b.currentArtURL,

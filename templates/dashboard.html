@@ -9,6 +9,7 @@
     <script src="../static/chart.js"></script>
     <script src="../static/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="../static/html2canvas.min.js"></script>
+    <script src="/static/lrc-utils.js"></script>
     <!-- 引入 Tailwind & DaisyUI CDN -->
     <link href="../static/full.min.css" rel="stylesheet" type="text/css" />
     <script src="../static/3.4.17"></script>
@@ -2181,6 +2182,16 @@
             font-weight: 500;
         }
 
+        .lyrics-line-section {
+            text-align: center;
+            font-size: 0.72rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            opacity: 0.72;
+            padding: 8px 0 2px;
+        }
+
         .lyrics-line.active {
             background-color: rgba(52, 152, 219, 0.15);
             color: var(--text-primary);
@@ -2572,12 +2583,35 @@
             <div class="module-trail"></div>
             <div class="card-header">
                 <div class="card-title">待归因专辑工作台</div>
-                <div>
-                    <button id="refreshPendingAlbumListBtn" class="time-filter">刷新</button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="refreshPendingAlbumListBtn" class="time-filter">刷新同步</button>
                 </div>
             </div>
+            
+            <div class="tabs-container" style="padding: 0 20px;">
+                <div class="time-filters" style="margin-bottom: 0;">
+                    <div class="time-filter active" id="tabPendingGroups" onclick="switchPendingWorkTab('pending_groups')">待归因聚合</div>
+                    <div class="time-filter" id="tabWorkingItems" onclick="switchPendingWorkTab('working_items')">维护中</div>
+                    <div class="time-filter" id="tabCompletedItems" onclick="switchPendingWorkTab('completed_items')">已深度维护</div>
+                </div>
+            </div>
+
+            <div id="pendingWorkSearchContainer" style="padding: 10px 20px; display: none; gap: 10px; align-items: center;">
+                <div style="position: relative; flex: 1;">
+                    <input type="text" id="pendingWorkSearchInput" placeholder="搜索艺术家或专辑..." 
+                        style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 100%; outline: none;">
+                    <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                </div>
+            </div>
+
             <div id="pendingAlbumListContent" class="list-view-content">
                 <div class="loading">加载中...</div>
+            </div>
+
+            <div id="pendingWorkPagination" class="pagination-container" style="display: none; justify-content: center; margin: 20px 0;">
+                <button id="pendingWorkPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="pendingWorkPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="pendingWorkNextPage" class="time-filter">下一页</button>
             </div>
         </div>
     </div>
@@ -2701,6 +2735,15 @@
     let currentAlbumKeyword = "";
     let albumSearchTimeout = null;
     let pendingAlbumGroups = [];
+    
+    // 待归因工作台变量
+    let currentPendingWorkTab = 'pending_groups'; // pending_groups, working_items, completed_items
+    let currentPendingWorkPage = 1;
+    let pendingWorkPageSize = 10;
+    let totalPendingWorkCount = 0;
+    let currentPendingWorkKeyword = "";
+    let pendingWorkSearchTimeout = null;
+
     let currentPendingAlbumWorkItemID = 0;
     let currentPendingCandidates = [];
     let currentPendingSelectedMBID = "";
@@ -2716,7 +2759,7 @@
     // 音眸列表分页变量
     let currentInsightPage = 1;
     let insightPageSize = 20;
-    let totalInsightsCount = 0;
+    let totalInsights = 0;
 
     // 自动切换日夜模式
     function toggleDarkModeBasedOnSystem() {
@@ -2917,6 +2960,12 @@
                     clearInterval(progressInterval);
                     progressInterval = null;
                 }
+                currentPosition = 0;
+                currentPositionMs = 0;
+                positionAnchorMs = 0;
+                positionAnchorPerf = performance.now();
+                trackDuration = 0;
+                trackDurationMs = 0;
             }
         };
 
@@ -2946,8 +2995,12 @@
     // 当前播放的曲目信息
     let currentTrackInfo = null;
     let currentSource = null;
-    let currentPosition = 0; // 当前播放位置
+    let currentPosition = 0; // 当前播放位置（秒）
+    let currentPositionMs = 0; // 当前播放位置（毫秒）
+    let positionAnchorMs = 0;
+    let positionAnchorPerf = 0;
     let trackDuration = 0; // 歌曲总时长
+    let trackDurationMs = 0;
     let progressInterval = null; // 进度更新定时器
     let currentTrackInsight = null; // 当前曲目的 AI 解析结果 (兼容旧代码)
     
@@ -2987,9 +3040,62 @@
             .padStart(2, "0")}`;
     }
 
+    function resolveIncomingPositionMs(data) {
+        if (data && typeof data.position_ms === "number" && isFinite(data.position_ms)) {
+            return Math.max(0, Math.floor(data.position_ms));
+        }
+        if (data && typeof data.position === "number" && isFinite(data.position)) {
+            return Math.max(0, Math.round(data.position * 1000));
+        }
+        return 0;
+    }
+
+    function setPlaybackAnchor(positionMs) {
+        currentPositionMs = Math.max(0, Math.floor(positionMs || 0));
+        currentPosition = currentPositionMs / 1000;
+        positionAnchorMs = currentPositionMs;
+        positionAnchorPerf = performance.now();
+    }
+
+    function getCurrentPositionMs() {
+        let nextMs = positionAnchorMs;
+        if (trackDurationMs > 0) {
+            nextMs += Math.max(0, performance.now() - positionAnchorPerf);
+            nextMs = Math.min(nextMs, trackDurationMs);
+        }
+        return Math.max(0, Math.floor(nextMs));
+    }
+
+    function syncPlaybackClock() {
+        currentPositionMs = getCurrentPositionMs();
+        currentPosition = currentPositionMs / 1000;
+        return currentPositionMs;
+    }
+
+    function startProgressTicker() {
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
+        updateProgressDisplay();
+        if (trackDurationMs <= 0) return;
+        const intervalMs = isLowEndMode() ? 500 : 200;
+        progressInterval = setInterval(() => {
+            syncPlaybackClock();
+            updateProgressDisplay();
+            updateLyricsHighlight();
+            if (currentPositionMs >= trackDurationMs) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }, intervalMs);
+    }
+
     // 更新播放进度显示
     function updateProgressDisplay() {
         if (trackDuration <= 0) return;
+
+        syncPlaybackClock();
 
         // 更新进度条
         const progressPercent = (currentPosition / trackDuration) * 100;
@@ -3003,15 +3109,6 @@
             formatTime(currentPosition);
         document.getElementById("totalTime").textContent =
             formatTime(trackDuration);
-
-        // 更新当前位置
-        currentPosition += 1;
-
-        // 如果播放完成，清除定时器
-        if (currentPosition >= trackDuration) {
-            clearInterval(progressInterval);
-            progressInterval = null;
-        }
     }
 
     // 更新正在播放的信息
@@ -3026,22 +3123,12 @@
         currentSource = source;
 
         // 重置播放进度
-        currentPosition = data.position || 0;
+        setPlaybackAnchor(resolveIncomingPositionMs(data));
         trackDuration = data.duration || 0;
+        trackDurationMs = trackDuration * 1000;
 
         // 清除之前的进度更新定时器
-        if (progressInterval) {
-            clearInterval(progressInterval);
-            progressInterval = null;
-        }
-
-        // 启动新的进度更新定时器（如果歌曲有持续时间）
-        if (trackDuration > 0) {
-            // 立即更新一次显示
-            updateProgressDisplay();
-            // 每秒更新一次进度
-            progressInterval = setInterval(updateProgressDisplay, 1000);
-        }
+        startProgressTicker();
 
         // 显示悬浮窗
         document.getElementById("nowPlaying").style.display = "block";
@@ -3272,36 +3359,47 @@
 
             await new Promise(resolve => setTimeout(resolve, 100));
 
-            const canvas = await html2canvas(container, {
-                scale: 3,
-                useCORS: true,
-                backgroundColor: null,
-                logging: false
-            });
+            // 临时禁用不支持 oklch 的外部 CSS (Tailwind/DaisyUI)
+            // 分享容器使用全内联样式，不依赖外部 CSS
+            const links = document.querySelectorAll('link[rel="stylesheet"]');
+            const targetLinks = Array.from(links).filter(l => l.href.includes('full.min.css'));
+            targetLinks.forEach(l => l.disabled = true);
 
-            container.style.position = "absolute";
-            container.style.left = "-9999px";
-            container.style.top = "-9999px";
+            try {
+                const canvas = await html2canvas(container, {
+                    scale: 3,
+                    useCORS: true,
+                    backgroundColor: null,
+                    logging: false
+                });
 
-            canvas.toBlob(async (blob) => {
-                if (!blob) {
-                    alert("生成图片失败");
-                    return;
-                }
-                try {
-                    await navigator.clipboard.write([
-                        new ClipboardItem({"image/png": blob})
-                    ]);
-                    alert("图片已复制到剪贴板！");
-                } catch (err) {
-                    console.error("复制失败:", err);
-                    const link = document.createElement("a");
-                    link.download = `insight-${trackInfo.artist}-${trackInfo.title}.png`;
-                    link.href = URL.createObjectURL(blob);
-                    link.click();
-                    URL.revokeObjectURL(link.href);
-                }
-            }, "image/png");
+                container.style.position = "absolute";
+                container.style.left = "-9999px";
+                container.style.top = "-9999px";
+
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        alert("生成图片失败");
+                        return;
+                    }
+                    try {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({"image/png": blob})
+                        ]);
+                        alert("图片已复制到剪贴板！");
+                    } catch (err) {
+                        console.error("复制失败:", err);
+                        const link = document.createElement("a");
+                        link.download = `insight-${trackInfo.artist}-${trackInfo.title}.png`;
+                        link.href = URL.createObjectURL(blob);
+                        link.click();
+                        URL.revokeObjectURL(link.href);
+                    }
+                }, "image/png");
+            } finally {
+                // 恢复样式
+                targetLinks.forEach(l => l.disabled = false);
+            }
 
         } catch (error) {
             console.error("分享失败:", error);
@@ -3358,36 +3456,46 @@
 
             await new Promise(resolve => setTimeout(resolve, 100));
 
-            const canvas = await html2canvas(container, {
-                scale: 3,
-                useCORS: true,
-                backgroundColor: null,
-                logging: false
-            });
+            // 临时禁用不支持 oklch 的外部 CSS (Tailwind/DaisyUI)
+            const links = document.querySelectorAll('link[rel="stylesheet"]');
+            const targetLinks = Array.from(links).filter(l => l.href.includes('full.min.css'));
+            targetLinks.forEach(l => l.disabled = true);
 
-            container.style.position = "absolute";
-            container.style.left = "-9999px";
-            container.style.top = "-9999px";
+            try {
+                const canvas = await html2canvas(container, {
+                    scale: 3,
+                    useCORS: true,
+                    backgroundColor: null,
+                    logging: false
+                });
 
-            canvas.toBlob(async (blob) => {
-                if (!blob) {
-                    alert("生成图片失败");
-                    return;
-                }
-                try {
-                    await navigator.clipboard.write([
-                        new ClipboardItem({"image/png": blob})
-                    ]);
-                    alert("图片已复制到剪贴板！");
-                } catch (err) {
-                    console.error("复制失败:", err);
-                    const link = document.createElement("a");
-                    link.download = `insight-${trackInfo.artist}-${trackInfo.title}.png`;
-                    link.href = URL.createObjectURL(blob);
-                    link.click();
-                    URL.revokeObjectURL(link.href);
-                }
-            }, "image/png");
+                container.style.position = "absolute";
+                container.style.left = "-9999px";
+                container.style.top = "-9999px";
+
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        alert("生成图片失败");
+                        return;
+                    }
+                    try {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({"image/png": blob})
+                        ]);
+                        alert("图片已复制到剪贴板！");
+                    } catch (err) {
+                        console.error("复制失败:", err);
+                        const link = document.createElement("a");
+                        link.download = `insight-${trackInfo.artist}-${trackInfo.title}.png`;
+                        link.href = URL.createObjectURL(blob);
+                        link.click();
+                        URL.revokeObjectURL(link.href);
+                    }
+                }, "image/png");
+            } finally {
+                // 恢复样式
+                targetLinks.forEach(l => l.disabled = false);
+            }
 
         } catch (error) {
             console.error("分享失败:", error);
@@ -3760,6 +3868,7 @@
     async function initAIModels() {
         try {
             const resp = await fetch("/api/ai-models");
+            if (!resp.ok) return;
             const data = await resp.json();
             const select = document.getElementById("aiModelSelect");
             if (data.models && data.models.length > 0) {
@@ -3813,8 +3922,13 @@
 
         // 如果有多个结果，显示 Tab
         if (insights.length > 1) {
-            const positiveTotal = insights.reduce((sum, i) => sum + Math.max(0, i.total_score || 0), 0);
-            html += '<div class="insight-tabs">';
+            // 增加安全检查，防止 total_score 为空导致 NaN
+            const positiveTotal = insights.reduce((sum, i) => {
+                const score = Number(i.total_score || 0);
+                return sum + (isNaN(score) ? 0 : Math.max(0, score));
+            }, 0);
+            
+            html += '<div class="insight-tabs sub-tabs" style="margin-bottom: 15px; border-bottom: 1px solid var(--border-color);">';
             insights.forEach((insight, index) => {
                 const date = new Date(insight.created_at || Date.now());
                 const timeStr = date.toLocaleString('zh-CN', {
@@ -3874,14 +3988,18 @@
         const modal = document.getElementById(`${contextType}InsightModal`);
         if (!modal) return;
 
-        // 切换标签页 UI
-        modal.querySelectorAll('.insight-tab').forEach(tab => {
-            const label = tab.textContent;
-            if (label.includes('详情') && tabName === 'summary') tab.classList.add('active');
-            else if (label.includes('反馈') && tabName === 'feedback') tab.classList.add('active');
-            else if (label.includes('原始') && tabName === 'raw') tab.classList.add('active');
-            else tab.classList.remove('active');
-        });
+        // 仅切换顶层标签页 UI (解析详情/用户反馈/原始数据)
+        // 使用针对性的选择器只寻找直接隶属于 modal-body > insight-tabs 的项，避免误伤内容区的小 Tab
+        const topTabsContainer = modal.querySelector('.modal-body > .insight-tabs');
+        if (topTabsContainer) {
+            topTabsContainer.querySelectorAll('.insight-tab').forEach(tab => {
+                const label = tab.textContent;
+                if (label.includes('详情') && tabName === 'summary') tab.classList.add('active');
+                else if (label.includes('反馈') && tabName === 'feedback') tab.classList.add('active');
+                else if (label.includes('原始') && tabName === 'raw') tab.classList.add('active');
+                else tab.classList.remove('active');
+            });
+        }
 
         // 切换内容区域
         const summaryTab = modal.querySelector(`#${contextType}-insightSummaryTab`);
@@ -4220,7 +4338,6 @@
 
     // ========== 歌词功能 ==========
     let currentLyricsData = null;
-    let lyricsUpdateInterval = null;
     let lyricsLineElements = [];
     let activeLyricIndex = -1;
     const lyricsCache = {};
@@ -4231,40 +4348,7 @@
     }
 
     function parseLRC(lrcText) {
-        const lines = lrcText.split('\n');
-        const lrcData = [];
-        const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
-
-        lines.forEach(line => {
-            const matches = [];
-            let match;
-            // 兼容旧浏览器：避免使用 String.prototype.matchAll
-            while ((match = timeRegex.exec(line)) !== null) {
-                matches.push(match);
-            }
-            timeRegex.lastIndex = 0;
-            if (matches.length > 0) {
-                const lastMatch = matches[matches.length - 1];
-                const minutes = parseInt(lastMatch[1]);
-                const seconds = parseInt(lastMatch[2]);
-                let milliseconds = 0;
-                if (lastMatch[3]) {
-                    // 兼容旧浏览器：避免使用 String.prototype.padEnd
-                    let msText = lastMatch[3];
-                    while (msText.length < 3) {
-                        msText += '0';
-                    }
-                    milliseconds = parseInt(msText);
-                }
-                const time = minutes * 60 + seconds + milliseconds / 1000;
-                const text = line.replace(timeRegex, '').trim();
-                if (text) {
-                    lrcData.push({time, text});
-                }
-            }
-        });
-        lrcData.sort((a, b) => a.time - b.time);
-        return lrcData;
+        return window.SonicLRC.parseLRC(lrcText);
     }
 
     function parseTaggedLyricLine(text) {
@@ -4389,7 +4473,7 @@
                 return;
             }
 
-            if (lyricsData.has_lrc) {
+            if (window.SonicLRC.isSyncedLRC(lyricsData.lyrics)) {
                 currentLyricsData = parseLRC(lyricsData.lyrics);
                 renderLRCLyrics(currentLyricsData);
                 startLyricsSync();
@@ -4415,8 +4499,13 @@
         lrcData.forEach((item, index) => {
             const lineDiv = document.createElement('div');
             lineDiv.className = 'lyrics-line';
+            if (item.isSectionLabel) {
+                lineDiv.classList.add('lyrics-line-section');
+            }
             const pair = parseTaggedLyricLine(item.text);
-            if (pair.hasTag) {
+            if (item.isSectionLabel) {
+                lineDiv.textContent = pair.original || item.text;
+            } else if (pair.hasTag) {
                 const originalDiv = document.createElement('div');
                 originalDiv.className = 'lyrics-line-original';
                 originalDiv.textContent = pair.original || ' ';
@@ -4431,7 +4520,7 @@
             } else {
                 lineDiv.textContent = pair.original || item.text;
             }
-            lineDiv.dataset.time = item.time;
+            lineDiv.dataset.timeMs = item.timeMs == null ? '' : String(item.timeMs);
             lineDiv.dataset.index = index;
             lyricsLineElements.push(lineDiv);
             fragment.appendChild(lineDiv);
@@ -4439,41 +4528,36 @@
         lyricsContainer.appendChild(fragment);
     }
 
+    function updateLyricsHighlight() {
+        if (!currentLyricsData || !currentTrackInfo) return;
+        const nextActiveIndex = window.SonicLRC.findActiveIndex(
+            currentLyricsData,
+            getCurrentPositionMs(),
+            activeLyricIndex
+        );
+
+        if (nextActiveIndex === activeLyricIndex) return;
+
+        if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
+            lyricsLineElements[activeLyricIndex].classList.remove('active');
+        }
+        activeLyricIndex = nextActiveIndex;
+
+        if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
+            const line = lyricsLineElements[activeLyricIndex];
+            line.classList.add('active');
+            keepLyricLineVisible(line);
+        }
+    }
+
     function startLyricsSync() {
         stopLyricsSync();
-        const syncInterval = isLowEndMode() ? 700 : 400;
-        lyricsUpdateInterval = setInterval(() => {
-            if (!currentLyricsData || !currentTrackInfo) return;
-            const currentTime = currentPosition || 0;
-            let nextActiveIndex = -1;
-            for (let i = 0; i < currentLyricsData.length; i++) {
-                if (currentLyricsData[i].time <= currentTime) {
-                    nextActiveIndex = i;
-                } else {
-                    break;
-                }
-            }
-
-            // 只有歌词高亮行发生变化时才更新 DOM，避免高频全量扫描
-            if (nextActiveIndex === activeLyricIndex) return;
-
-            if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
-                lyricsLineElements[activeLyricIndex].classList.remove('active');
-            }
-            activeLyricIndex = nextActiveIndex;
-
-            if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
-                const line = lyricsLineElements[activeLyricIndex];
-                line.classList.add('active');
-                keepLyricLineVisible(line);
-            }
-        }, syncInterval);
+        updateLyricsHighlight();
     }
 
     function stopLyricsSync() {
-        if (lyricsUpdateInterval) {
-            clearInterval(lyricsUpdateInterval);
-            lyricsUpdateInterval = null;
+        if (activeLyricIndex >= 0 && lyricsLineElements[activeLyricIndex]) {
+            lyricsLineElements[activeLyricIndex].classList.remove('active');
         }
         activeLyricIndex = -1;
     }
@@ -4606,6 +4690,7 @@
             params.set("album", currentTrackInfo.album || "");
             params.set("track", currentTrackInfo.title || currentTrackInfo.track || "");
             params.set("position", String(currentPosition || 0));
+            params.set("position_ms", String(currentPositionMs || 0));
             params.set("duration", String(trackDuration || 0));
             params.set("source", currentSource || "");
         }
@@ -4622,16 +4707,9 @@
 
     // 初始化 AI 歌词解析按钮
     function initAiInsightButton() {
-        const aiButton = document.getElementById("aiInsightButton");
         const reanalyzeButton = document.getElementById("reanalyzeInsightButton");
-
-        if (aiButton) {
-            aiButton.addEventListener("click", function () {
-                // 首次点击（或普通点击）调用 fetchTrackInsight(false)，上下文为 'nowPlaying'
-                fetchTrackInsight(false, null, 'nowPlaying');
-            });
-        }
-
+        // 移除冗余的 aiInsightButton 监听，HTML 中已声明 onclick="handleAiInsightClick()"
+        
         if (reanalyzeButton) {
             reanalyzeButton.addEventListener("click", function () {
                 // 点击“重新分析”调用模型选择器，上下文为 'nowPlaying'
@@ -8277,6 +8355,33 @@
         });
 
         // 取消所有导航激活状态
+        // 搜索框防抖
+        const pendingWorkSearchInput = document.getElementById('pendingWorkSearchInput');
+        if (pendingWorkSearchInput) {
+            pendingWorkSearchInput.addEventListener('input', (e) => {
+                currentPendingWorkKeyword = e.target.value.trim();
+                clearTimeout(pendingWorkSearchTimeout);
+                pendingWorkSearchTimeout = setTimeout(() => {
+                    loadPendingWorkItems(1);
+                }, 500);
+            });
+        }
+
+        // 分页按钮
+        const prevBtn = document.getElementById('pendingWorkPrevPage');
+        const nextBtn = document.getElementById('pendingWorkNextPage');
+        if (prevBtn) {
+            prevBtn.onclick = () => {
+                if (currentPendingWorkPage > 1) loadPendingWorkItems(currentPendingWorkPage - 1);
+            };
+        }
+        if (nextBtn) {
+            nextBtn.onclick = () => {
+                const totalPages = Math.ceil(totalPendingWorkCount / pendingWorkPageSize);
+                if (currentPendingWorkPage < totalPages) loadPendingWorkItems(currentPendingWorkPage + 1);
+            };
+        }
+
         document.querySelectorAll('.menu a').forEach(a => {
             a.classList.remove('active');
         });
@@ -8398,16 +8503,125 @@
     }
 
     async function loadPendingAlbumList() {
+        if (currentPendingWorkTab === 'pending_groups') {
+            const content = document.getElementById('pendingAlbumListContent');
+            content.innerHTML = '<div class="loading">加载中...</div>';
+            try {
+                const resp = await fetch('/api/pending-albums?limit=100');
+                const data = await resp.json();
+                pendingAlbumGroups = data.groups || [];
+                renderPendingAlbumList(pendingAlbumGroups);
+            } catch (err) {
+                content.innerHTML = `<div class="error">加载失败: ${err.message}</div>`;
+            }
+        } else {
+            loadPendingWorkItems(1);
+        }
+    }
+
+    function switchPendingWorkTab(tab) {
+        currentPendingWorkTab = tab;
+        
+        // 更新 UI 激活状态
+        document.querySelectorAll('#pendingAlbumListContainer .time-filter').forEach(el => {
+            if (el.id.startsWith('tab')) {
+                el.classList.remove('active');
+            }
+        });
+        
+        const tabIdMap = {
+            'pending_groups': 'tabPendingGroups',
+            'working_items': 'tabWorkingItems',
+            'completed_items': 'tabCompletedItems'
+        };
+        document.getElementById(tabIdMap[tab]).classList.add('active');
+        
+        // 控制搜索栏和分页容器显示
+        const searchContainer = document.getElementById('pendingWorkSearchContainer');
+        const paginationContainer = document.getElementById('pendingWorkPagination');
+        
+        if (tab === 'pending_groups') {
+            searchContainer.style.display = 'none';
+            paginationContainer.style.display = 'none';
+            loadPendingAlbumList();
+        } else {
+            searchContainer.style.display = 'flex';
+            paginationContainer.style.display = 'flex';
+            currentPendingWorkPage = 1;
+            loadPendingWorkItems(1);
+        }
+    }
+
+    async function loadPendingWorkItems(page = 1) {
+        currentPendingWorkPage = page;
         const content = document.getElementById('pendingAlbumListContent');
         content.innerHTML = '<div class="loading">加载中...</div>';
+        
+        const statusGroup = currentPendingWorkTab === 'working_items' ? 'open' : 'completed';
+        const offset = (page - 1) * pendingWorkPageSize;
+        
         try {
-            const resp = await fetch('/api/pending-albums?limit=100');
+            const url = `/api/pending-albums/work-items?limit=${pendingWorkPageSize}&offset=${offset}&status_group=${statusGroup}&keyword=${encodeURIComponent(currentPendingWorkKeyword)}`;
+            const resp = await fetch(url);
             const data = await resp.json();
-            pendingAlbumGroups = data.groups || [];
-            renderPendingAlbumList(pendingAlbumGroups);
+            
+            totalPendingWorkCount = data.total || 0;
+            renderPendingWorkItems(data.items || []);
+            updatePendingWorkPagination();
         } catch (err) {
             content.innerHTML = `<div class="error">加载失败: ${err.message}</div>`;
         }
+    }
+
+    function renderPendingWorkItems(items) {
+        const content = document.getElementById('pendingAlbumListContent');
+        if (!items || items.length === 0) {
+            content.innerHTML = '<div class="no-data">暂无维护项记录</div>';
+            return;
+        }
+
+        let html = '<div style="display: flex; flex-direction: column; gap: 14px;">';
+        items.forEach(item => {
+            const dateStr = new Date(item.created_at).toLocaleString();
+            const isCompleted = item.status === 'completed';
+            const statusLabel = isCompleted ? '<span style="color: #27ae60;">已完成</span>' : `<span style="color: #f39c12;">${item.status}</span>`;
+            
+            html += `
+                <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-card);">
+                    <div style="display: flex; justify-content: space-between; gap: 16px; align-items: flex-start;">
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${item.album}</div>
+                            <div style="margin-top: 4px; opacity: 0.65; color: var(--text-secondary);">${item.album_artist || item.artist || '-'}</div>
+                            <div style="margin-top: 10px; font-size: 0.82em; color: var(--text-secondary);">
+                                ID: #${item.id} · 状态: ${statusLabel} · 创建时间: ${dateStr}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                            <button class="time-filter" onclick="resumePendingAlbumWorkItem(${item.id})">查看详情</button>
+                            ${isCompleted && item.resolved_album_id > 0 ? 
+                                `<button class="time-filter" onclick="showAlbumDetails(${item.resolved_album_id})">查看专辑详情</button>` : 
+                                ''
+                            }
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        content.innerHTML = html;
+    }
+
+    function updatePendingWorkPagination() {
+        const totalPages = Math.ceil(totalPendingWorkCount / pendingWorkPageSize);
+        document.getElementById('pendingWorkPageInfo').textContent = `第 ${currentPendingWorkPage} 页 / 共 ${totalPages} 页 (总计 ${totalPendingWorkCount})`;
+        document.getElementById('pendingWorkPrevPage').disabled = currentPendingWorkPage <= 1;
+        document.getElementById('pendingWorkNextPage').disabled = currentPendingWorkPage >= totalPages || totalPages === 0;
+    }
+
+    function resumePendingAlbumWorkItem(id) {
+        currentPendingAlbumWorkItemID = id;
+        showModal('pendingAlbumWorkItemModal');
+        loadPendingAlbumWorkItemDetail();
     }
 
     function renderPendingAlbumList(groups) {
@@ -8511,9 +8725,16 @@
             </div>
         `).join('') : '<div class="no-data">暂无点赞事件</div>';
 
-        document.getElementById('pendingAlbumExecutionReport').textContent =
-            workItem.last_error ? `最近错误: ${workItem.last_error}` : '尚未执行';
-        document.getElementById('pendingAlbumDeepBtn').disabled = !workItem.selected_mbid;
+        let resultText = '尚未执行';
+        if (workItem.status === 'completed') {
+            resultText = '<span style="color: #27ae60;">执行完成</span>';
+        } else if (workItem.last_error) {
+            resultText = `<span style="color: #e74c3c;">最近错误: ${workItem.last_error}</span>`;
+        }
+        document.getElementById('pendingAlbumExecutionReport').innerHTML = resultText;
+        
+        // 禁用逻辑：如果是已完成状态，或者没有选择候选，则禁用按钮
+        document.getElementById('pendingAlbumDeepBtn').disabled = (workItem.status === 'completed' || !workItem.selected_mbid);
         if (currentPendingCandidates.length > 0) {
             renderPendingAlbumCandidates(currentPendingCandidates);
         }

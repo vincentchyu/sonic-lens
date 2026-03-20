@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package musixmatch
+package lyrics
 
 import (
 	"testing"

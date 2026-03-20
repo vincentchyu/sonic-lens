@@ -83,13 +83,14 @@ type WsTrackData struct {
 	LastFM       bool   `json:"lastfm"`        // todo error
 	Duration     int64  `json:"duration"`      // 歌曲时长，单位秒
 	Position     int64  `json:"position"`      // 歌曲当前播放位置，单位秒
+	PositionMs   int64  `json:"position_ms"`   // 歌曲当前播放位置，单位毫秒
 	TrackNumber  int8   `json:"track_number"`  // 曲目号
 	DiscNumber   int8   `json:"disc_number"`   // 盘号
 	CoverArtURL  string `json:"cover_art_url"` // 专辑封面访问地址
 	CoverArtMime string `json:"cover_art_mime"`
 
 	Confidence        common.TrackMetadataConfidence `json:"confidence"`
-	PlayerInfoHandler common.PlayerInfoHandler
+	PlayerInfoHandler common.PlayerInfoHandler       `json:"-"`
 }
 
 // 向所有连接的客户端广播消息
