@@ -19,56 +19,34 @@
 ### 1.1 核心模块树 (Module Tree)
 
 - **`main.go`**: 应用总入口。负责初始化配置、日志、数据库连接及启动 API Server。
-- **`cmd/`**: 独立命令行工具集。包含同步记录脚本（`sync_records.go`）及项目维护工具。
-- **`common/`**: 全局通用基础设施。
-    - `enum.go`: 统一定义播放器类型、数据库类型等枚举。
-    - `utils.go`: 通用验证（如 `ValidateTrackInfo`）与字符串处理助手。
-- **`core/`**: 系统“基座”模块（核心基础设施）。
-    - `log/`: 基于 Zap 的结构化日志实现，支持多级别输出与 Context 关联。
-    - `db/`: GORM 数据库初始化与连接池管理，适配 SQLite/MySQL。
-    - `redis/`: Redis 客户端封装与缓存访问抽象。
-    - `websocket/`: 实时通信枢纽，负责 `now_playing` 等消息的广播与连接生命周期。
-        - 补充：`now_playing.data` 对外协议已同时提供整秒 `position` 与毫秒 `position_ms`；前端/Bridge 歌词同步必须优先消费 `position_ms`，`PlayerInfoHandler` 仅供服务端缓存元数据使用，禁止继续向客户端暴露其内部字段。
-    - `telemetry/`: 基于 OpenTelemetry 的分布式链路追踪与性能监控指标上报。
-    - `ai/`: AI 模型驱动适配器（支持 OpenAI, DeepSeek, 豆包等），处理 Prompt 注入。
-    - `applemusic/`: Apple Music API 交互封装。
-    - `lastfm/`: Last.fm API 交互封装，支持记录上报（Scrobble）与状态检查。
-    - `musicbrainz/`: MusicBrainz 元数据查询，用于专辑/曲目信息的深度补全。
-    - `lyrics/`: 统一歌词搜索与解析引擎。
-        - 补充：LRC 同步判定与时间标签解析已统一收口到 `core/lyrics`；`Synced/has_lrc` 必须基于合法时间标签判断，不能再用“是否包含 `[]`”做宽松推断。
-    - `musixmatch/`: Musixmatch 歌词服务适配（辅助歌词源）。
-    - `audirvana/`: Audirvana 播放器底层状态获取逻辑。
-    - `roon/`: Roon 播放器 API 监听与控制。
-    - `applesciprt/` (拼写固定): AppleScript 执行封装，用于 macOS 本地播放器（如 AM）的自动化控制。
-    - `env/`: 环境变量解析与全局配置加载。
-    - `cache/`: 通用内存缓存工具类。
-    - `exec/`: 系统外部命令调用助手，提供超时控制与日志捕获。
-    - `fx/`: 基于 Uber Fx 的依赖注入定义集合，解决模块间的生命周期管理。
-- **`internal/`**: 业务黑盒（核心领域逻辑）。
-    - **`model/`**: **数据持久层 (DAO)**。
-        - 准则：所有直接操作数据库的代码必须在此文件夹内，且按表分文件。
-- **`logic/`**: **业务服务层 (Service)**。
-        - 准则：处理具体的业务流程（如 AI 赏析生成流程、MusicBrainz 补全逻辑）。
-        - 补充：`api/` 不应直接调用 model DAO；handler 需要的查询、回源、解绑、MusicBrainz 编排等能力应先下沉到对应 logic service。
-    - **`scrobbler/`**: **播放器适配层 (Drivers)**。
-        - 准则：负责与外部播放器（Apple Music, Audirvana 等）通信获取状态。
-- **`api/`**: **通信门户层 (Interface)**。
-    - 职责：Gin 路由定义、HTTP 处理函数（Handlers）、WebSocket 接口定义。
-    - 约束：只负责参数绑定、权限判断、响应编码与错误映射，不承载歌词回源、分页回扫定位、MusicBrainz 关联确认等业务流程。
-- **`templates/`**: **视觉展示层 (Views)**。
-    - 存放 `.html` 模板。注意：所有逻辑控制应尽量留在 JS 函数中。
-- **`static/`**: **静态资源库**。
-    - 存放 CSS、图片、Logo。
+- **`cmd/`**: 独立命令行工具集，用于同步、回放和维护任务。
+- **`common/`**: 通用枚举、转换与基础工具，供全项目复用。
+- **`core/`**: 基础设施与外部能力适配层，负责日志、数据库、缓存、WebSocket、歌词、AI、播放器/第三方服务集成等底座能力。
+- **`internal/`**: 核心领域层，负责 DAO、业务编排、播放器适配与后台同步任务。
+- **`api/`**: Gin 接口层，负责参数绑定、权限判断、响应编码与 WebSocket 接口暴露。
+- **`soniclens-bridge/`**: SwiftUI 客户端工作区，包含三端 target、共享核心层、ViewModels、Views 与客户端文档。
+- **`templates/`**: Web 模板层，承载历史 Web UI 与页面脚本入口。
+- **`static/`**: Web 静态资源层，存放 CSS、图片与前端素材。
+
+**快速定位梗概**
+
+- 数据库 CRUD 与事务入口看 `internal/model/`；不要在 `api/` 或 `logic/` 直接散落 GORM 细节。
+- 业务流程编排看 `internal/logic/`；播放器状态接入看 `internal/scrobbler/`；批处理/回放/补写任务看 `internal/sync/`。
+- 实时协议与播放态广播看 `core/websocket/`；歌词解析与 LRC 同步判定看 `core/lyrics/`；AI 结构化 schema 看 `core/ai/`。
+- Web 端页面逻辑主要落在 `templates/*.html`；Bridge 共享能力看 `soniclens-bridge/SoniclensCore/`，端侧容器与交互看 `soniclens-bridge/SoniclensBridge/ViewModels` 和 `soniclens-bridge/SoniclensBridge/Views`。
+- 涉及客户端边界、API 映射与构建验证时，优先查 `soniclens-bridge/Docs/`，不要只凭页面代码反推架构。
 
 ### 1.2 模块调用拓扑
 `Main` -> `API` -> `Internal/Logic` -> `Internal/Model` -> `Core/DB`
 `Scrobbler` -> `Internal/Logic` -> `Internal/Model`
+`Bridge App` -> `ViewModels` -> `SoniclensCore` -> `API/WebSocket`
 
-### 1.2 前端双轨制说明
-- **当前现状**: 大量核心功能承载于 `templates/*.html` (Go Templates) 配合 Vanilla JS。
-- **开发建议**: 在修改 `dashboard.html` 等文件时，需注意代码体量巨大且存在冗余定义（详见 3.1）。
-- **Bridge 资料库约束**: `soniclens-bridge` 的专辑/曲目列表已切换为“本地 SQLite 轻量索引 + FTS5 搜索 + `/api/library/sync` 增量同步 + `library_updated(version)` WebSocket 推送 + 详情页懒加载”模式。后续修改资料库列表时，不允许再回退到“远端分页 + 本地数组过滤/排序”的混合设计。
-- **Bridge 三端产品线约束**: `soniclens-bridge` 当前包含 `SoniclensBridgeMac`、`SoniclensBridgePad`、`SoniclensBridgePhone` 三个独立入口/产品线。`SoniclensCore` 与 `ViewModels` 是跨端共享层（连接、播放态、收藏、Bonjour、WebSocket、资料库本地索引同步）；`AppLayoutView` / `NowPlayingView`（macOS）、`Pad*` 族页面（iPad）、`Phone*` 族页面（iPhone）属于端私有容器/体验层。后续新增 Bridge 功能时，应优先下沉到共享层，再按端实现容器与交互差异，禁止将 macOS `AppKit` 窗口语义泄漏到 iPad/iPhone。详细清单见 `soniclens-bridge/Docs/CLIENT_MODULE_BOUNDARY.md`。
+### 1.3 前端双轨制说明
+- **当前现状**: Web 端大量核心功能仍承载于 `templates/*.html` (Go Templates) + Vanilla JS；Bridge 是独立的 SwiftUI 客户端体系。修改 `dashboard.html` 等历史页面时，需预期其代码体量大且存在冗余定义。
+- **Bridge 资料库红线**: `soniclens-bridge` 的专辑/曲目列表必须坚持“本地 SQLite 轻量索引 + FTS5 搜索 + `/api/library/sync` 增量同步 + `library_updated(version)` WebSocket 推送 + 详情页懒加载”模式，禁止回退到“远端分页 + 本地数组过滤/排序”的混合设计。
+- **Bridge 模块边界红线**: `soniclens-bridge` 当前包含 `SoniclensBridgeMac`、`SoniclensBridgePad`、`SoniclensBridgePhone` 三个产品线。新增能力时应优先下沉到 `SoniclensCore` / `ViewModels` 共享层，再按端实现容器与交互差异，禁止将 macOS `AppKit` 窗口语义泄漏到 iPad/iPhone。详细边界见 `soniclens-bridge/Docs/CLIENT_MODULE_BOUNDARY.md`。
+- **Bridge 音眸渲染红线**: 音眸的数据契约与标签语义必须以 `core/ai/agent.go` 的 `GetTrackInsightSchema()` 和 `templates/lyrics_live.html` 为唯一事实标准；`analysis_by_section`、`<original>/<translation>/<explain>` 解析、主 insight 选择与富渲染树必须收口到共享层，端差异只允许体现在外层容器与排版。
+- **细节归档原则**: 具体 UI 规格、排序规则、专辑详情布局、多碟展示与高密度滚动性能策略，不再堆叠在本核心记忆中；应优先维护在 `soniclens-bridge/Docs/` 下的专题文档，以及 `memory/2026-03-15/library_index_sync_bridge_feature_manifest.md`、`memory/2026-03-18/bridge_dual_platform_product_line_manifest.md`、`memory/2026-03-20/bridge_album_library_three_platform_closure_manifest.md`、`memory/2026-03-20/bridge_three_platform_insight_closure_manifest.md` 等特性清单。
 
 ---
 
@@ -128,6 +106,8 @@
     - **功能**: 记录专辑与曲目的增删改事件，为 Bridge `/api/library/sync` 提供版本游标、upsert 集合与删除 tombstone。
 - **[track_insight.go](./internal/model/track_insight.go)**: 
     - **功能**: AI 生成的歌曲赏析细节（背景、歌词翻译、时代背景）。
+    - **补充**: 结构化 insight 的事实标准不是 Bridge 自行猜测的扁平字段，而是 `core/ai/agent.go` 中 `GetTrackInsightSchema()` 定义的 JSON Schema；`analysis_by_section` 是核心字段，`appreciate_analysis` 内允许出现 `<original>/<translation>/<explain>` 标签串。
+    - **补充**: Bridge 客户端当前只展示后端排序后的第一条 insight；共享解码与富渲染规则位于 `soniclens-bridge/SoniclensCore/Models/LibraryModels.swift` 与 `soniclens-bridge/SoniclensBridge/Views/InsightDetailView.swift`。
 - **[track_lyrics.go](./internal/model/track_lyrics.go)**: 
     - **功能**: 原始歌词与翻译歌词的持久化。
     - **补充**: `track_lyrics.synced` 只表示“可解析出至少一个合法 LRC 时间标签”，`[Verse]`/`[ar:...]` 这类标签不能再单独触发同步歌词状态。
@@ -148,5 +128,5 @@
     - **规则**: DAO 层重构与事务治理优先补 model 级测试，优先校验 MySQL SQL 与事务顺序，避免再为 SQLite 兼容性让路。
 
 ---
-*最后更新日期：2026-03-19 | 文档版本: v2.2*
+*最后更新日期：2026-03-20 | 文档版本: v2.5*
 AI MUST READ THIS FILE BEFORE MODIFYING CODE.

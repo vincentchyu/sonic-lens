@@ -1,0 +1,137 @@
+name: SoniclensBridge
+options:
+  bundleIdPrefix: com.vincentchyu
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  minimumXcodeGenVersion: 2.45.3
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    DEVELOPMENT_TEAM: ""
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: 1
+
+packages:
+  Nuke:
+    url: https://github.com/kean/Nuke.git
+    from: 12.9.0
+
+schemes:
+  SoniclensBridgeMac:
+    build:
+      targets:
+        SoniclensBridgeMac: all
+  SoniclensBridgePad:
+    build:
+      targets:
+        SoniclensBridgePad: all
+  SoniclensBridgePhone:
+    build:
+      targets:
+        SoniclensBridgePhone: all
+
+
+# Targets
+
+targets:
+  SoniclensBridgeMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.mac
+        INFOPLIST_FILE: SoniclensBridge/Info-macOS.plist
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    sources:
+      - path: SoniclensBridge
+        # excludes 表示“不会加入该 target”，不是“该 target 使用这些文件”
+        excludes:
+          - Info.plist
+          - Info-macOS.plist
+          - LaunchScreen.storyboard
+          - SoniclensBridgePadApp.swift
+          - SoniclensBridgePhoneApp.swift
+          - Views/PadAppLayoutView.swift
+          - Views/PadHomeView.swift
+          - Views/PadNowPlayingView.swift
+          - Views/PadRootView.swift
+      - path: SoniclensCore
+    dependencies:
+      - package: Nuke
+        product: NukeUI
+    info:
+      path: SoniclensBridge/Info-macOS.plist
+      properties:
+        CFBundleName: "Soniclens Bridge"
+        NSLocalNetworkUsageDescription: "用于发现并连接 SonicLens 服务端"
+        NSBonjourServices: ["_soniclens._tcp"]
+
+  SoniclensBridgePad:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.pad
+        INFOPLIST_FILE: SoniclensBridge/Info.plist
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    sources:
+      - path: SoniclensBridge
+        # excludes 表示“不会加入该 target”，Pad 仅保留 SoniclensBridgePadApp.swift
+        excludes:
+          - Info.plist
+          - Info-macOS.plist
+          - SoniclensBridgeApp.swift
+          - SoniclensBridgePhoneApp.swift
+      - path: SoniclensCore
+    dependencies:
+      - package: Nuke
+        product: NukeUI
+    info:
+      path: SoniclensBridge/Info.plist
+      properties:
+        CFBundleName: "Soniclens Bridge Pad"
+        NSLocalNetworkUsageDescription: "用于发现并连接 SonicLens 服务端"
+        NSBonjourServices: ["_soniclens._tcp"]
+        UILaunchStoryboardName: LaunchScreen
+
+  SoniclensBridgePhone:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.phone
+        INFOPLIST_FILE: SoniclensBridge/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    sources:
+      - path: SoniclensBridge
+        # excludes 表示“不会加入该 target”，Phone 仅保留 SoniclensBridgePhoneApp.swift
+        excludes:
+          - Info.plist
+          - Info-macOS.plist
+          - SoniclensBridgeApp.swift
+          - SoniclensBridgePadApp.swift
+      - path: SoniclensCore
+    dependencies:
+      - package: Nuke
+        product: NukeUI
+    info:
+      path: SoniclensBridge/Info.plist
+      properties:
+        CFBundleName: "Soniclens Bridge Phone"
+        NSLocalNetworkUsageDescription: "用于发现并连接 SonicLens 服务端"
+        NSBonjourServices: ["_soniclens._tcp"]
+        UILaunchStoryboardName: LaunchScreen
