@@ -51,6 +51,7 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	originalModelLastSet := modelSetLastFmFavorite
 	originalGetApple := modelGetAppleMusicFavoriteByIdentity
 	originalGetLast := modelGetLastFmFavoriteByIdentity
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	t.Cleanup(func() {
 		lastfmPushTrackScrobble = originalPush
 		modelInsertTrackPlayRecord = originalInsert
@@ -61,6 +62,7 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 		modelSetLastFmFavorite = originalModelLastSet
 		modelGetAppleMusicFavoriteByIdentity = originalGetApple
 		modelGetLastFmFavoriteByIdentity = originalGetLast
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 	})
 
 	var capturedReq lastfm.PushTrackScrobbleReq
@@ -119,6 +121,7 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 	originalModelLastSet := modelSetLastFmFavorite
 	originalGetApple := modelGetAppleMusicFavoriteByIdentity
 	originalGetLast := modelGetLastFmFavoriteByIdentity
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
 		lastfmIsFavorite = originalIsFavorite
@@ -128,8 +131,11 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 		modelSetLastFmFavorite = originalModelLastSet
 		modelGetAppleMusicFavoriteByIdentity = originalGetApple
 		modelGetLastFmFavoriteByIdentity = originalGetLast
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 	})
 
+	appleApplied := false
+	lastApplied := false
 	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
 		return &model.Track{
 			Artist:          artist,
@@ -137,8 +143,8 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 			Track:           track,
 			TrackNumber:     trackNumber,
 			DiscNumber:      discNumber,
-			IsAppleMusicFav: false,
-			IsLastFmFav:     false,
+			IsAppleMusicFav: appleApplied,
+			IsLastFmFav:     lastApplied,
 		}, nil
 	}
 	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
@@ -151,18 +157,27 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 		require.True(t, favorited)
 		return nil
 	}
-	modelSetAppleMusicFavorite = func(params model.SetFavoriteParams) error { return nil }
+	modelSetAppleMusicFavorite = func(params model.SetFavoriteParams) error {
+		appleApplied = params.IsFavorite
+		return nil
+	}
 	lastfmSetFavorite = func(ctx context.Context, artist, track string, favorited bool) error {
 		lastfmCalls++
 		require.True(t, favorited)
 		return nil
 	}
-	modelSetLastFmFavorite = func(params model.SetFavoriteParams) error { return nil }
+	modelSetLastFmFavorite = func(params model.SetFavoriteParams) error {
+		lastApplied = params.IsFavorite
+		return nil
+	}
 	modelGetAppleMusicFavoriteByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (bool, error) {
 		return true, nil
 	}
 	modelGetLastFmFavoriteByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (bool, error) {
 		return true, nil
+	}
+	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
+		return &model.TrackFavoritePendingSnapshot{}, nil
 	}
 
 	service := &TrackServiceImpl{}
@@ -183,8 +198,10 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 		},
 	})
 
-	require.True(t, result.AppleMusicFavorite)
-	require.True(t, result.LastFmFavorite)
+	require.True(t, result.AppleMusic)
+	require.True(t, result.LastFM)
+	require.Equal(t, common.TrackFavoriteStateFavorited, result.AppleMusicState)
+	require.Equal(t, common.TrackFavoriteStateFavorited, result.LastFMState)
 	require.Equal(t, 1, appleCalls)
 	require.Equal(t, 1, lastfmCalls)
 }
@@ -192,9 +209,11 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 func TestProbeAndSyncTrackFavoriteSkipsUnsafeLookup(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
 	originalIsFavorite := lastfmIsFavorite
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
 		lastfmIsFavorite = originalIsFavorite
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 	})
 
 	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
@@ -202,6 +221,9 @@ func TestProbeAndSyncTrackFavoriteSkipsUnsafeLookup(t *testing.T) {
 	}
 	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
 		return false, errors.New("should not be called")
+	}
+	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
+		return &model.TrackFavoritePendingSnapshot{}, nil
 	}
 
 	service := &TrackServiceImpl{}
@@ -212,7 +234,8 @@ func TestProbeAndSyncTrackFavoriteSkipsUnsafeLookup(t *testing.T) {
 		Metadata: model.TrackMetadata{Confidence: common.TrackMetadataConfidenceLow},
 	})
 
-	require.False(t, result.AppleMusicFavorite)
-	require.False(t, result.LastFmFavorite)
+	require.False(t, result.AppleMusic)
+	require.False(t, result.LastFM)
+	require.Equal(t, common.TrackFavoriteStateNotFavorited, result.FavoriteState)
 	require.Equal(t, common.TrackMetadataConfidenceLow, result.Confidence)
 }

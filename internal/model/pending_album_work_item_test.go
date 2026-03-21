@@ -70,6 +70,122 @@ func TestGetPendingAlbumGroupsAndCreateWorkItem(t *testing.T) {
 	require.Len(t, detail.ContextTracks, 2)
 }
 
+func TestPendingAlbumWorkItemDetailRefreshesStaleContext(t *testing.T) {
+	db := newTrackResolutionTestDB(t, "pending_album_detail_refresh")
+	ctx := context.Background()
+
+	baseTime := time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
+	require.NoError(
+		t,
+		db.Create(&TrackPlayRecord{
+			ID:          10,
+			Artist:      "Yorushika",
+			AlbumArtist: "Yorushika",
+			Album:       "second person",
+			Track:       "Become a cloud before",
+			Source:      "Apple Music",
+			PlayTime:    baseTime,
+		}).Error,
+	)
+	require.NoError(
+		t,
+		db.Create(&TrackPlayRecord{
+			ID:          11,
+			Artist:      "Yorushika",
+			AlbumArtist: "Yorushika",
+			Album:       "second person",
+			Track:       "Forget it",
+			Source:      "Apple Music",
+			PlayTime:    baseTime.Add(-time.Hour),
+		}).Error,
+	)
+
+	groups, err := GetPendingAlbumGroups(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+
+	item, err := CreateOrGetPendingAlbumWorkItem(ctx, groups[0].IdentityKey)
+	require.NoError(t, err)
+
+	require.NoError(
+		t,
+		db.Create(&TrackPlayRecord{
+			ID:          12,
+			Artist:      "Yorushika",
+			AlbumArtist: "Yorushika",
+			Album:       "second person",
+			Track:       "If I were a cloud",
+			Source:      "Last.fm",
+			PlayTime:    baseTime.Add(time.Minute),
+		}).Error,
+	)
+
+	detail, err := GetPendingAlbumWorkItemDetail(ctx, item.ID)
+	require.NoError(t, err)
+	require.True(t, detail.ContextStale)
+	require.NotNil(t, detail.LiveGroup)
+	require.Equal(t, 3, detail.LiveGroup.PlayRecordCount)
+	require.Len(t, detail.PlayRecords, 2)
+
+	refreshed, err := RefreshPendingAlbumWorkItemContext(ctx, item.ID)
+	require.NoError(t, err)
+	require.Equal(t, PendingAlbumWorkItemStatusOpen, refreshed.Status)
+
+	freshDetail, err := GetPendingAlbumWorkItemDetail(ctx, item.ID)
+	require.NoError(t, err)
+	require.False(t, freshDetail.ContextStale)
+	require.NotNil(t, freshDetail.LiveGroup)
+	require.Equal(t, 3, freshDetail.LiveGroup.PlayRecordCount)
+	require.Len(t, freshDetail.PlayRecords, 3)
+}
+
+func TestPendingAlbumWorkItemDetailDoesNotFlagCompletedAsStale(t *testing.T) {
+	db := newTrackResolutionTestDB(t, "pending_album_completed_detail")
+	ctx := context.Background()
+
+	baseTime := time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
+	require.NoError(
+		t,
+		db.Create(&TrackPlayRecord{
+			ID:          30,
+			Artist:      "Yorushika",
+			AlbumArtist: "Yorushika",
+			Album:       "second person",
+			Track:       "Become a cloud before",
+			Source:      "Apple Music",
+			PlayTime:    baseTime,
+		}).Error,
+	)
+
+	groups, err := GetPendingAlbumGroups(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+
+	item, err := CreateOrGetPendingAlbumWorkItem(ctx, groups[0].IdentityKey)
+	require.NoError(t, err)
+
+	require.NoError(t, UpdatePendingAlbumWorkItemProgress(ctx, item.ID, PendingAlbumWorkItemStatusCompleted, 123, ""))
+
+	require.NoError(
+		t,
+		db.Create(&TrackPlayRecord{
+			ID:          31,
+			Artist:      "Yorushika",
+			AlbumArtist: "Yorushika",
+			Album:       "second person",
+			Track:       "If I were a cloud",
+			Source:      "Last.fm",
+			PlayTime:    baseTime.Add(time.Minute),
+		}).Error,
+	)
+
+	detail, err := GetPendingAlbumWorkItemDetail(ctx, item.ID)
+	require.NoError(t, err)
+	require.False(t, detail.ContextStale)
+	require.Nil(t, detail.LiveGroup)
+	require.Len(t, detail.PlayRecords, 1)
+}
+
 func TestApplyTrackFavoriteEventsByIDs(t *testing.T) {
 	db := newTrackResolutionTestDB(t, "pending_album_apply_favorite")
 	ctx := context.Background()

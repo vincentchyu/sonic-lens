@@ -28,9 +28,9 @@ enum PadSidebarDestination: String, CaseIterable, Hashable {
         case .home:
             return "仪表盘与播放中入口"
         case .albums:
-            return "本地索引专辑库"
+            return "快乐中国的喇叭花"
         case .tracks:
-            return "长列表与筛选"
+            return "列表与筛选"
         case .sonicLens:
             return "洞察与解析"
         case .unreported:
@@ -75,16 +75,14 @@ struct PadAppLayoutView: View {
             NavigationStack {
                 detailContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(AppBackground())
+                    .background(AppBackground(useMaterial: false))
                     .toolbar {
                         ToolbarItem(placement: .principal) {
-                            VStack(spacing: 2) {
-                                Text(selection.title)
-                                    .font(.headline)
-                                Text(selection.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            ToolbarTitleSubtitleView(
+                                title: selection.title,
+                                subtitle: toolbarSubtitle
+                            )
+                            .equatable()
                         }
 
                         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -138,6 +136,17 @@ struct PadAppLayoutView: View {
         }
     }
 
+    private var toolbarSubtitle: String? {
+        switch selection {
+        case .albums:
+            return LibraryStatusSummary.album(sort: albumSort)
+        case .tracks:
+            return LibraryStatusSummary.track(sort: trackSort, filter: trackFilter)
+        default:
+            return selection.subtitle
+        }
+    }
+
     @ViewBuilder
     private var detailContent: some View {
         switch selection {
@@ -148,7 +157,12 @@ struct PadAppLayoutView: View {
                 }
             })
         case .albums:
-            AlbumGridView(viewModel: libraryViewModel, sort: albumSort, query: albumQuery)
+            AlbumGridView(
+                viewModel: libraryViewModel,
+                sort: albumSort,
+                query: albumQuery,
+                artworkBaseURL: store.currentServer?.artworkBaseURL
+            )
         case .tracks:
             TrackListView(
                 viewModel: libraryViewModel,
@@ -199,11 +213,11 @@ private struct PadSidebarView: View {
                 sidebarLink(for: .home)
                 sidebarLink(for: .albums)
                 sidebarLink(for: .tracks)
+                sidebarLink(for: .unreported)
             }
 
             Section("深度内容") {
                 sidebarLink(for: .sonicLens)
-                sidebarLink(for: .unreported)
             }
         }
         .listStyle(.sidebar)
@@ -215,17 +229,10 @@ private struct PadSidebarView: View {
             selection = destination
         } label: {
             Label(destination.title, systemImage: destination.systemImage)
+                .foregroundStyle(selection == destination ? Color.accentColor : Color.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(selection == destination ? Color.accentColor.opacity(0.18) : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(selection == destination ? Color.accentColor.opacity(0.28) : Color.clear, lineWidth: 1)
-                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 )
 
@@ -145,28 +145,30 @@ func (gc *GenreCache) StartRefreshTimer(ctx context.Context) context.CancelFunc 
 	// Create a ticker for 6 hours
 	gc.ticker = time.NewTicker(1 * time.Hour)
 
-	go func() {
-		defer gc.ticker.Stop()
+	telemetry.GoOnlySafe(
+		timerCtx, func(asyncCtx context.Context) {
+			defer gc.ticker.Stop()
 
-		// Refresh immediately on startup
-		if err := gc.RefreshFromDB(timerCtx); err != nil {
-			log.Error(timerCtx, "Failed to refresh genre cache on startup", zap.Error(err))
-		}
-
-		for {
-			select {
-			case <-gc.ticker.C:
-				if err := gc.RefreshFromDB(timerCtx); err != nil {
-					log.Error(timerCtx, "Failed to refresh genre cache", zap.Error(err))
-				} else {
-					log.Info(timerCtx, "Genre cache refreshed successfully")
-				}
-			case <-timerCtx.Done():
-				log.Info(timerCtx, "Genre cache exit")
-				return
+			// Refresh immediately on startup
+			if err := gc.RefreshFromDB(asyncCtx); err != nil {
+				log.Error(asyncCtx, "Failed to refresh genre cache on startup", zap.Error(err))
 			}
-		}
-	}()
+
+			for {
+				select {
+				case <-gc.ticker.C:
+					if err := gc.RefreshFromDB(asyncCtx); err != nil {
+						log.Error(asyncCtx, "Failed to refresh genre cache", zap.Error(err))
+					} else {
+						log.Info(asyncCtx, "Genre cache refreshed successfully")
+					}
+				case <-asyncCtx.Done():
+					log.Info(asyncCtx, "Genre cache exit")
+					return
+				}
+			}
+		},
+	)
 
 	return gc.cancel
 }
@@ -198,17 +200,16 @@ func GetEnglishGenre(genre string) string {
 		normalized := common.NormalizeChineseGenre(genre)
 		if english, ok := globalGenreCache.GetC2E(normalized); ok {
 			return english
-		} else {
-			// todo 说明数据库中没有这个这个中文分类
-			return genre // 如果没有对应的英文分类，返回原始分类
 		}
+		// todo 说明数据库中没有这个这个中文分类
+		return genre // 如果没有对应的英文分类，返回原始分类
 	}
 	// 说明是纯英文
 	if e2cGenre, ok := globalGenreCache.GetE2C(genre); ok {
-		fmt.Println(e2cGenre)
-		return genre // 并且说明命中缓存
-	} else {
-		// todo 说明数据库中没有这个这个英文
+		// fmt.Println(e2cGenre)
+		return e2cGenre // 并且说明命中缓存
 	}
+
+	// todo 说明数据库中没有这个这个英文
 	return genre // 如果不是简体中文，直接返回原始分类
 }

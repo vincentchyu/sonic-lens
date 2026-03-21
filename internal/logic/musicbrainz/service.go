@@ -15,6 +15,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/musicbrainz"
+	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -218,7 +219,8 @@ func findMBTrackForHeardTrack(
 	return mbTrackInfo{}, false, ""
 }
 
-// InitializeAlbums from existing tracks
+/*
+// InitializeAlbums from existing tracks 不是使用直接忽略
 func InitializeAlbums(ctx context.Context) error {
 	log.Info(ctx, "Starting InitializeAlbums from existing tracks")
 	// 1. Get all tracks
@@ -227,6 +229,7 @@ func InitializeAlbums(ctx context.Context) error {
 		log.Error(ctx, "GetAllTrackPlayCounts failed", zap.Error(err))
 		return err
 	}
+	ensuredAlbumCovers := make(map[int64]struct{})
 
 	for _, t := range tracks {
 		if t.Album == "" {
@@ -246,6 +249,27 @@ func InitializeAlbums(ctx context.Context) error {
 		if err := model.GetOrCreateAlbum(ctx, album); err != nil {
 			log.Warn(ctx, "GetOrCreateAlbum failed", zap.String("album", album.Name), zap.Error(err))
 			return err
+		}
+		if _, covered := ensuredAlbumCovers[album.ID]; !covered {
+			if coverErr := artworklogic.EnsureAlbumCover(
+				ctx,
+				artworklogic.EnsureAlbumCoverInput{
+					AlbumID:     album.ID,
+					AlbumArtist: album.Artist,
+					Artist:      t.Artist,
+					Album:       album.Name,
+				},
+			); coverErr != nil {
+				log.Warn(
+					ctx,
+					"InitializeAlbums ensure album cover err",
+					zap.Int64("album_id", album.ID),
+					zap.String("album", album.Name),
+					zap.Error(coverErr),
+				)
+			} else {
+				ensuredAlbumCovers[album.ID] = struct{}{}
+			}
 		}
 
 		// 3. Link Track to Album
@@ -268,7 +292,7 @@ func InitializeAlbums(ctx context.Context) error {
 	log.Info(ctx, "Successfully initialized albums", zap.Int("total_tracks", len(tracks)))
 	return nil
 }
-
+*/
 // escapeLucene escapes special characters in Lucene query syntax
 func escapeLucene(in string) string {
 	// 针对 MusicBrainz 主要是转义引号、反斜杠和其他 Lucene 特殊字符
@@ -286,6 +310,7 @@ func escapeLucene(in string) string {
 
 // searchAndCacheReleases searches for releases and saves them to release_mb
 func searchAndCacheReleases(ctx context.Context, albumID int64) error {
+	log.Info(ctx, "开始搜索并缓存 MusicBrainz 候选发行版", zap.Int64("album_id", albumID))
 	album, err := model.GetAlbum(ctx, albumID)
 	if err != nil {
 		log.Error(ctx, "GetAlbum failed", zap.Int64("album_id", albumID), zap.Error(err))
@@ -315,14 +340,12 @@ func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 		zap.String("artist", album.Artist),
 	)
 
-	client := musicbrainz.GetClient()
-
 	// Search - Escape names to avoid Lucene query errors (e.g. quotes in album names)
 	escapedAlbum := escapeLucene(album.Name)
 	escapedArtist := escapeLucene(album.Artist)
 	query := fmt.Sprintf("release:\"%s\" AND artist:\"%s\"", escapedAlbum, escapedArtist)
 
-	searchRes, err := client.SearchReleases(
+	searchRes, err := musicbrainz.SearchReleases(
 		ctx, musicbrainzws2.SearchFilter{
 			Query: query,
 		}, musicbrainzws2.Paginator{Limit: 10},
@@ -353,7 +376,7 @@ func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 	}
 
 	log.Info(
-		ctx, "Successfully cached candidates", zap.Int64("album_id", albumID),
+		ctx, "MusicBrainz 候选发行版缓存完成", zap.Int64("album_id", albumID),
 		zap.Int("count", len(searchRes.Releases)),
 	)
 	return nil
@@ -372,7 +395,7 @@ func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 
 // deepingMaintenance performs a lookup and updates track numbers
 func deepingMaintenance(ctx context.Context, albumID int64) error {
-	log.Info(ctx, "Starting deepingMaintenance", zap.Int64("album_id", albumID))
+	log.Info(ctx, "开始执行 MusicBrainz 深度维护", zap.Int64("album_id", albumID))
 
 	// 1. Get confirmed MBID
 	link, err := model.GetAlbumReleaseMBByAlbumID(ctx, albumID)
@@ -386,11 +409,9 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 		return err
 	}
 
-	client := musicbrainz.GetClient()
-
 	// 2. Lookup Release with details
 	log.Info(ctx, "Fetching MB release details", zap.String("mbid", link.MBID))
-	release, err := client.LookupRelease(
+	release, err := musicbrainz.LookupRelease(
 		ctx, mbtypes.MBID(link.MBID), musicbrainzws2.IncludesFilter{
 			Includes: []string{"recordings", "media", "artist-credits", "genres"},
 		},
@@ -653,7 +674,29 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 
 	if err != nil {
 		log.Error(ctx, "deepingMaintenance failed", zap.Int64("album_id", albumID), zap.Error(err))
+		return err
+	}
+	log.Info(
+		ctx,
+		"MusicBrainz 深度维护完成",
+		zap.Int64("album_id", albumID),
+	)
+	if coverErr := artworklogic.EnsureAlbumCover(
+		ctx,
+		artworklogic.EnsureAlbumCoverInput{
+			AlbumID:     albumID,
+			AlbumArtist: albumObj.Artist,
+			Artist:      albumObj.Artist,
+			Album:       albumObj.Name,
+		},
+	); coverErr != nil {
+		log.Warn(
+			ctx,
+			"deepingMaintenance ensure album cover err",
+			zap.Int64("album_id", albumID),
+			zap.Error(coverErr),
+		)
 	}
 
-	return err
+	return nil
 }

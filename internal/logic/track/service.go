@@ -26,6 +26,8 @@ var (
 	modelGetAppleMusicFavoriteByIdentity = model.GetAppleMusicFavoriteByIdentity
 	modelGetLastFmFavorite               = model.GetLastFmFavorite
 	modelGetLastFmFavoriteByIdentity     = model.GetLastFmFavoriteByIdentity
+	modelGetPendingTrackFavoriteSnapshot = model.GetPendingTrackFavoriteSnapshot
+	modelGetTrackPlayRecordByID          = model.GetTrackPlayRecordByID
 )
 
 // TrackService 定义曲目相关服务接口
@@ -85,9 +87,7 @@ type TrackService interface {
 	// SetTrackFavorite 设置曲目喜欢状态
 	SetTrackFavorite(
 		ctx context.Context, artist, album, track, source string, isFavorite bool, metadata model.TrackMetadata,
-	) (
-		appleMusicFav bool, lastFmFav bool, err error,
-	)
+	) (TrackFavoriteProjection, error)
 	// GetTopAlbumsByPlayCount 获取按播放次数统计的热门专辑
 	GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*model.TopAlbum, error)
 	// Genre related methods
@@ -252,12 +252,19 @@ func (s *TrackServiceImpl) SyncUnscrobbledRecords(ctx context.Context, limit int
 func (s *TrackServiceImpl) SyncSelectedUnscrobbledRecords(ctx context.Context, ids []int64) (
 	successCount int, failedRecords []*model.TrackPlayRecord, err error,
 ) {
+	log.Info(
+		ctx,
+		"开始同步选中的未上报记录",
+		zap.Int("record_count", len(ids)),
+	)
 	// 获取指定ID的未同步记录
 	records, err := model.GetUnscrobbledRecordsByIds(ctx, ids)
 	if err != nil {
+		log.Error(ctx, "获取未上报记录失败", zap.Error(err), zap.Int("record_count", len(ids)))
 		return 0, nil, err
 	}
 	if len(records) == 0 {
+		log.Info(ctx, "没有需要同步的未上报记录", zap.Int("record_count", len(ids)))
 		return 0, nil, nil
 	}
 
@@ -278,7 +285,7 @@ func (s *TrackServiceImpl) SyncSelectedUnscrobbledRecords(ctx context.Context, i
 
 		_, err := lastfm.PushTrackScrobble(ctx, req)
 		if err != nil {
-			log.Error(ctx, "Failed to scrobble track", zap.String("track", record.Track), zap.Error(err))
+			log.Warn(ctx, "同步单条曲目到 Last.fm 失败", zap.String("track", record.Track), zap.Error(err))
 			failedRecords = append(failedRecords, record)
 			continue
 		}
@@ -289,10 +296,17 @@ func (s *TrackServiceImpl) SyncSelectedUnscrobbledRecords(ctx context.Context, i
 	// 批量更新成功同步的记录状态
 	if len(successIDs) > 0 {
 		if err := model.BatchUpdateScrobbledStatus(ctx, successIDs, true); err != nil {
+			log.Error(ctx, "批量更新已同步状态失败", zap.Error(err), zap.Int("success_count", len(successIDs)))
 			return 0, nil, err
 		}
 	}
 
+	log.Info(
+		ctx,
+		"选中的未上报记录同步完成",
+		zap.Int("success_count", len(successIDs)),
+		zap.Int("failed_count", len(failedRecords)),
+	)
 	return len(successIDs), failedRecords, nil
 }
 
@@ -341,7 +355,16 @@ func (s *TrackServiceImpl) GetLastFmFavoriteByIdentity(
 // SetTrackFavorite 设置曲目喜欢状态
 func (s *TrackServiceImpl) SetTrackFavorite(
 	ctx context.Context, artist, album, track, source string, isFavorite bool, metadata model.TrackMetadata,
-) (appleMusicFav bool, lastFmFav bool, err error) {
+) (TrackFavoriteProjection, error) {
+	log.Info(
+		ctx,
+		"开始设置曲目喜欢状态",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+		zap.String("source", source),
+		zap.Bool("is_favorite", isFavorite),
+	)
 	params := model.SetFavoriteParams{
 		Ctx:           ctx,
 		Artist:        artist,
@@ -349,6 +372,14 @@ func (s *TrackServiceImpl) SetTrackFavorite(
 		Track:         track,
 		IsFavorite:    isFavorite,
 		TrackMetadata: metadata,
+	}
+	projectionInput := FavoriteProjectionInput{
+		Artist:      artist,
+		Album:       album,
+		Track:       track,
+		TrackNumber: metadata.TrackNumber,
+		DiscNumber:  metadata.DiscNumber,
+		Metadata:    metadata,
 	}
 
 	var callErr error
@@ -363,15 +394,21 @@ func (s *TrackServiceImpl) SetTrackFavorite(
 		callErr = errors.Join(callErr, lfmErr)
 	}
 
-	// 获取更新后的最终状态，确保返回给前端的数据是准确的
-	appleMusicFav, _ = s.GetAppleMusicFavoriteByIdentity(
-		ctx, artist, album, track, metadata.TrackNumber, metadata.DiscNumber,
-	)
-	lastFmFav, _ = s.GetLastFmFavoriteByIdentity(
-		ctx, artist, album, track, metadata.TrackNumber, metadata.DiscNumber,
-	)
+	projection, projectionErr := s.buildFavoriteProjection(ctx, projectionInput)
+	if projectionErr != nil {
+		callErr = errors.Join(callErr, projectionErr)
+	}
 
-	return appleMusicFav, lastFmFav, callErr
+	log.Info(
+		ctx,
+		"设置曲目喜欢状态完成",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+		zap.Bool("apple_music_favorite", projection.AppleMusic),
+		zap.Bool("last_fm_favorite", projection.LastFM),
+	)
+	return projection, callErr
 }
 
 // GetAllGenres 获取所有流派（分页）

@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 // OpenAIProvider 使用 OpenAI Chat Completions 接口实现 LLMProvider
@@ -22,47 +24,146 @@ type OpenAIProvider struct {
 	httpClient *http.Client
 }
 
+type openAIProviderFactory struct {
+	cfg               config.OpenAIConfig
+	apiKey            string
+	baseURL           string
+	defaultModel      string
+	runtimeHTTPClient *http.Client
+	catalogHTTPClient *http.Client
+	initErr           error
+}
+
 // newOpenAIProviderFromConfigOrEnv 优先使用 config.yaml 中的 openai 配置，必要字段缺失时回退到环境变量。
 // 支持的配置来源优先级：
 // 1. config.ai.openai.apiKey / baseUrl / model
 // 2. 环境变量：OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL
 func newOpenAIProviderFromConfigOrEnv(openAIConfig config.OpenAIConfig) (LLMProvider, error) {
-	apiKey := openAIConfig.APIKey
-	if apiKey == "" {
-		apiKey = os.Getenv("OPENAI_API_KEY")
-	}
-	if apiKey == "" {
-		return nil, errors.New("未配置 OpenAI API Key（config.ai.openai.apiKey 或环境变量 OPENAI_API_KEY）")
+	return newOpenAIProviderFactory(openAIConfig).Create("")
+}
+
+func newOpenAIProviderFactory(cfg config.OpenAIConfig) providerFactory {
+	factory := &openAIProviderFactory{cfg: cfg}
+	if !factory.hasConfig() {
+		return factory
 	}
 
-	baseURL := openAIConfig.BaseURL
-	if baseURL == "" {
-		baseURL = os.Getenv("OPENAI_BASE_URL")
-	}
-	if baseURL == "" {
-		baseURL = "https://api.openai.com"
+	apiKey, baseURL, defaultModel, err := resolveOpenAIConfig(cfg, "")
+	if err != nil {
+		factory.initErr = err
+		return factory
 	}
 
-	model := openAIConfig.Model
-	if model == "" {
-		model = os.Getenv("OPENAI_MODEL")
+	factory.apiKey = apiKey
+	factory.baseURL = baseURL
+	factory.defaultModel = defaultModel
+	factory.runtimeHTTPClient = telemetry.WrapHTTPClient(&http.Client{Timeout: 30 * time.Minute})
+	factory.catalogHTTPClient = telemetry.WrapHTTPClient(&http.Client{Timeout: 30 * time.Second})
+	return factory
+}
+
+func (f *openAIProviderFactory) Platform() common.AIModelPlatform {
+	return common.AIModelPlatformOpenAI
+}
+
+func (f *openAIProviderFactory) DisplayName() string {
+	return "OpenAI"
+}
+
+func (f *openAIProviderFactory) Configured() bool {
+	return f.hasConfig() && f.initErr == nil
+}
+
+func (f *openAIProviderFactory) DefaultModel() string {
+	return f.defaultModel
+}
+
+func (f *openAIProviderFactory) Create(model string) (LLMProvider, error) {
+	if f.initErr != nil {
+		return nil, f.initErr
 	}
-	if model == "" {
-		model = "gpt-4.1-mini"
+
+	resolvedModel := strings.TrimSpace(model)
+	if resolvedModel == "" {
+		resolvedModel = f.defaultModel
 	}
 
 	return &OpenAIProvider{
 		BaseProvider: BaseProvider{
 			ProviderName: "openai",
-			ModelName:    model,
+			ModelName:    resolvedModel,
 		},
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		model:   model,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Minute,
-		},
+		apiKey:     f.apiKey,
+		baseURL:    f.baseURL,
+		model:      resolvedModel,
+		httpClient: f.runtimeHTTPClient,
 	}, nil
+}
+
+func (f *openAIProviderFactory) ListModels(ctx context.Context) ([]ModelOption, error) {
+	if f.initErr != nil {
+		return nil, f.initErr
+	}
+	return listOpenAICompatibleModelsWithClient(ctx, f.catalogHTTPClient, f.baseURL, f.apiKey, f.defaultModel)
+}
+
+func (f *openAIProviderFactory) CacheFingerprint() string {
+	apiKey := resolveOpenAIAPIKey(f.cfg)
+	baseURL := resolveOpenAIBaseURL(f.cfg)
+	model := f.DefaultModel()
+	return strings.Join([]string{string(f.Platform()), baseURL, model, apiKey}, "|")
+}
+
+func (f *openAIProviderFactory) InitErr() error {
+	return f.initErr
+}
+
+func (f *openAIProviderFactory) hasConfig() bool {
+	return resolveOpenAIAPIKey(f.cfg) != ""
+}
+
+func resolveOpenAIConfig(openAIConfig config.OpenAIConfig, modelOverride string) (string, string, string, error) {
+	apiKey := resolveOpenAIAPIKey(openAIConfig)
+	if apiKey == "" {
+		return "", "", "", errors.New("未配置 OpenAI API Key（config.ai.openai.apiKey 或环境变量 OPENAI_API_KEY）")
+	}
+
+	baseURL := resolveOpenAIBaseURL(openAIConfig)
+	model := strings.TrimSpace(modelOverride)
+	if model == "" {
+		model = resolveOpenAIModel(openAIConfig)
+	}
+	return apiKey, baseURL, model, nil
+}
+
+func resolveOpenAIAPIKey(openAIConfig config.OpenAIConfig) string {
+	apiKey := strings.TrimSpace(openAIConfig.APIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	return apiKey
+}
+
+func resolveOpenAIBaseURL(openAIConfig config.OpenAIConfig) string {
+	baseURL := strings.TrimSpace(openAIConfig.BaseURL)
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
+	}
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	return strings.TrimRight(baseURL, "/")
+}
+
+func resolveOpenAIModel(openAIConfig config.OpenAIConfig) string {
+	model := strings.TrimSpace(openAIConfig.Model)
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+	}
+	if model == "" {
+		model = "gpt-4.1-mini"
+	}
+	return model
 }
 
 type openAIChatRequest struct {
@@ -183,6 +284,7 @@ func (p *OpenAIProvider) AnalyzeTrack(
 	if err != nil {
 		return nil, err
 	}
+	requestJSON := string(body)
 
 	httpReq, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewReader(body),
@@ -195,31 +297,31 @@ func (p *OpenAIProvider) AnalyzeTrack(
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		p.SaveCallLog(ctx, req, "", err, startTime, "sync")
+		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		err = errors.New("调用 OpenAI 接口失败，状态码: " + resp.Status)
-		p.SaveCallLog(ctx, req, "", err, startTime, "sync")
+		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
 		return nil, err
 	}
 
 	var chatResp openAIChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		p.SaveCallLog(ctx, req, "", err, startTime, "sync")
+		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
 		return nil, err
 	}
 	if len(chatResp.Choices) == 0 {
 		err = errors.New("OpenAI 返回结果为空")
-		p.SaveCallLog(ctx, req, "", err, startTime, "sync")
+		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
 		return nil, err
 	}
 
 	// 记录原始响应
 	chatRespBytes, _ := json.Marshal(chatResp)
-	p.SaveCallLog(ctx, req, string(chatRespBytes), nil, startTime, "sync")
+	p.SaveCallLog(ctx, req, requestJSON, string(chatRespBytes), nil, startTime, "sync")
 
 	raw := chatResp.Choices[0].Message.Content
 	// 有些模型会在内容外面包裹 ```json ```，这里做一下简单清理
@@ -239,9 +341,100 @@ func (p *OpenAIProvider) AnalyzeTrack(
 	return &result, nil
 }
 
+// AnalyzeAlbum 调用 OpenAI 接口，对专辑聚合上下文进行深度解析。
+func (p *OpenAIProvider) AnalyzeAlbum(
+	ctx context.Context, req AlbumAnalysisRequest,
+) (*AlbumAnalysisResult, error) {
+	startTime := time.Now()
+
+	systemPrompt := buildAlbumInsightSystemPrompt()
+	userPrompt := buildAlbumInsightUserPrompt(req)
+	schemaBytes, _ := json.Marshal(GetAlbumInsightSchema())
+
+	content := userPrompt +
+		"\n\n请根据系统提示完成专辑分析，并仅输出一个 JSON，对应如下 JSON Schema：" +
+		string(schemaBytes) +
+		"\n\n注意：\n- 只能输出 JSON，不要输出 Markdown 或自然语言解释。\n- 所有字符串请使用 UTF-8 编码。"
+
+	payload := openAIChatRequest{
+		Model: p.model,
+		Messages: []openAIChatMessage{
+			{
+				Role:    "system",
+				Content: systemPrompt,
+			},
+			{
+				Role:    "user",
+				Content: content,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	requestJSON := string(body)
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		p.SaveAlbumCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		err = errors.New("调用 OpenAI 接口失败，状态码: " + resp.Status)
+		p.SaveAlbumCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
+		return nil, err
+	}
+
+	var chatResp openAIChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		p.SaveAlbumCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
+		return nil, err
+	}
+	if len(chatResp.Choices) == 0 {
+		err = errors.New("OpenAI 返回结果为空")
+		p.SaveAlbumCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
+		return nil, err
+	}
+
+	chatRespBytes, _ := json.Marshal(chatResp)
+	p.SaveAlbumCallLog(ctx, req, requestJSON, string(chatRespBytes), nil, startTime, "sync")
+
+	raw := TrimCodeFence(chatResp.Choices[0].Message.Content)
+
+	var result AlbumAnalysisResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		if extracted := extractJSON(raw); extracted != "" {
+			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
+				goto SUCCESS
+			}
+		}
+		return nil, err
+	}
+
+SUCCESS:
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]interface{})
+	}
+	result.LLMProvider = "openai:" + p.model
+	return &result, nil
+}
+
 func (p *OpenAIProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalysisRequest) (<-chan string, error) {
 	// 暂不实现 OpenAI 的流式输出，可抛出错误或是直接聚合后返回
 	err := errors.New("OpenAI Provider 暂未实现流式接口")
-	p.SaveCallLog(ctx, req, "", err, time.Now(), "stream")
+	p.SaveCallLog(ctx, req, "", "", err, time.Now(), "stream")
 	return nil, err
 }

@@ -1317,6 +1317,17 @@
         }
     }
 
+    function resolveCoverArtURL(rawURL) {
+        if (!rawURL) return "";
+        const trimmed = String(rawURL).trim();
+        if (!trimmed) return "";
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+        const normalizedPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+        const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+        return `${protocol}//${window.location.hostname}:9000${normalizedPath}`;
+    }
+
     function updateTrackDisplay(data) {
         if (!data) return;
         const trackTitle = document.getElementById("trackTitle");
@@ -1329,8 +1340,9 @@
         if (trackTitle) trackTitle.textContent = data.title || data.track || "未知曲目";
         if (trackMeta) trackMeta.textContent = (data.artist || "未知艺术家") + (data.album ? " · " + data.album : "");
         if (coverArt) {
-            if (data.cover_art_url) {
-                coverArt.src = data.cover_art_url;
+            const resolvedCoverArtURL = resolveCoverArtURL(data.cover_art_url);
+            if (resolvedCoverArtURL) {
+                coverArt.src = resolvedCoverArtURL;
                 coverArt.style.display = "block";
             } else {
                 coverArt.removeAttribute("src");

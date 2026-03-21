@@ -18,15 +18,43 @@ struct ErrorBanner: View {
 }
 
 struct LoadingOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ZStack {
-            Color.black.opacity(0.08)
+            backdropColor
                 .ignoresSafeArea()
-            ProgressView("加载中...")
-                .padding(16)
-                .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
+
+            VStack(spacing: 12) {
+                Capsule()
+                    .fill(SonicTheme.accentGradient)
+                    .frame(width: 42, height: 4)
+
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(SonicTheme.primary)
+
+                Text("加载中...")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SonicTheme.textPrimary)
+
+                Text("正在获取内容")
+                    .font(.caption)
+                    .foregroundStyle(SonicTheme.textSecondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+            .frame(minWidth: 180)
+            .glassCard(cornerRadius: 18, isSimplified: true)
+        }
+    }
+
+    private var backdropColor: Color {
+        switch colorScheme {
+        case .dark:
+            return Color.black.opacity(0.26)
+        default:
+            return Color(red: 0.93, green: 0.95, blue: 0.98).opacity(0.78)
         }
     }
 }

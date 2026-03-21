@@ -79,14 +79,14 @@ struct RecentPlayRecord: Codable, Identifiable {
     }
 }
 
-struct TrendPoint: Codable, Identifiable {
+struct TrendPoint: Codable, Identifiable, Equatable {
     let date: String
     let count: Int
 
     var id: String { date }
 }
 
-struct HourlyData: Codable, Identifiable {
+struct HourlyData: Codable, Identifiable, Equatable {
     let date: String
     let hourly: [Int: Int]
 

@@ -44,12 +44,28 @@ enum SidebarDestination: String, CaseIterable, Hashable {
             return "exclamationmark.triangle"
         }
     }
+
+    var subtitle: String? {
+        switch self {
+        case .home:
+            return "仪表盘与播放中入口"
+        case .futureFeatures:
+            return "规划中的能力"
+        case .albums:
+            return "本地分页浏览"
+        case .tracks:
+            return "搜索、筛选与收藏"
+        case .sonicLens:
+            return "洞察与解析"
+        case .unreported:
+            return "待上报记录"
+        }
+    }
 }
 
 struct AppLayoutView: View {
     @EnvironmentObject private var store: AppStore
     @State private var selection: SidebarDestination = .home
-    @State private var searchText: String = ""
     @State private var showNowPlaying = false
     @State private var albumSort: LibrarySort = .recent
     @State private var trackSort: LibrarySort = .recent
@@ -63,17 +79,19 @@ struct AppLayoutView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             NavigationSplitView {
-                SidebarView(selection: $selection, searchText: $searchText)
+                SidebarView(selection: $selection)
             } detail: {
                 NavigationStack {
                     contentView
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(AppWindowBackground())
+                        .background(AppWindowBackground(useMaterial: false))
                         .toolbar {
                             ToolbarItemGroup(placement: .principal) {
-                                Text(selection.title)
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
+                                ToolbarTitleSubtitleView(
+                                    title: selection.title,
+                                    subtitle: toolbarSubtitle
+                                )
+                                .equatable()
                             }
                             ToolbarItemGroup(placement: .automatic) {
                                 Toggle("性能模式", isOn: $performanceModeEnabled)
@@ -85,7 +103,7 @@ struct AppLayoutView: View {
                 }
             }
             .navigationSplitViewStyle(.balanced)
-            .padding(.bottom, PlaybackBarView.regularHeight)
+            // .padding(.bottom, PlaybackBarView.regularHeight)
 
             PlaybackBarView(isExpanded: $showNowPlaying)
         }
@@ -170,7 +188,12 @@ struct AppLayoutView: View {
         case .futureFeatures:
             FutureFeaturesView()
         case .albums:
-            AlbumGridView(viewModel: libraryViewModel, sort: albumSort, query: albumQuery)
+            AlbumGridView(
+                viewModel: libraryViewModel,
+                sort: albumSort,
+                query: albumQuery,
+                artworkBaseURL: store.currentServer?.artworkBaseURL
+            )
         case .tracks:
             TrackListView(
                 viewModel: libraryViewModel,
@@ -183,6 +206,17 @@ struct AppLayoutView: View {
             SonicLensInsightsView(viewModel: libraryViewModel)
         case .unreported:
             UnreportedListView(viewModel: libraryViewModel)
+        }
+    }
+
+    private var toolbarSubtitle: String? {
+        switch selection {
+        case .albums:
+            return LibraryStatusSummary.album(sort: albumSort)
+        case .tracks:
+            return LibraryStatusSummary.track(sort: trackSort, filter: trackFilter)
+        default:
+            return selection.subtitle
         }
     }
 
@@ -229,62 +263,45 @@ private struct WindowAccessor: NSViewRepresentable {
 
 struct SidebarView: View {
     @Binding var selection: SidebarDestination
-    @Binding var searchText: String
 
-    private let focusItems: [SidebarDestination] = [.home, .futureFeatures]
-    private let libraryItems: [SidebarDestination] = [.albums, .tracks, .sonicLens, .unreported]
+    private let browseItems: [SidebarDestination] = [.home, .albums, .tracks, .unreported]
+    private let deepContentItems: [SidebarDestination] = [.sonicLens]
+    private let planningItems: [SidebarDestination] = [.futureFeatures]
 
     var body: some View {
         List(selection: $selection) {
-            Section("聚焦") {
-                ForEach(focusItems, id: \.self) { item in
-                    SidebarItemView(item: item, isSelected: selection == item)
+            Section("浏览") {
+                ForEach(browseItems, id: \.self) { item in
+                    SidebarItemView(item: item)
                         .tag(item)
                         .listRowInsets(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))
-                        .listRowBackground(Color.clear)
                 }
             }
 
-            Section("我的资料库") {
-                ForEach(libraryItems, id: \.self) { item in
-                    SidebarItemView(item: item, isSelected: selection == item)
+            Section("深度内容") {
+                ForEach(deepContentItems, id: \.self) { item in
+                    SidebarItemView(item: item)
                         .tag(item)
                         .listRowInsets(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))
-                        .listRowBackground(Color.clear)
+                }
+            }
+
+            Section("规划") {
+                ForEach(planningItems, id: \.self) { item in
+                    SidebarItemView(item: item)
+                        .tag(item)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))
                 }
             }
         }
         .listStyle(.sidebar)
-        .searchable(text: $searchText, placement: .sidebar)
         .navigationTitle("音眸")
         .frame(minWidth: 220, idealWidth: 220, maxWidth: 260)
-        .background(
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(nsColor: NSColor.windowBackgroundColor).opacity(0.9),
-                        Color(nsColor: NSColor.controlBackgroundColor).opacity(0.8)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-            }
-        )
-        .overlay(
-            Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 1),
-            alignment: .trailing
-        )
     }
 }
 
 struct SidebarItemView: View {
     let item: SidebarDestination
-    let isSelected: Bool
-    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -297,25 +314,16 @@ struct SidebarItemView: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.2) : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(isSelected ? 0.35 : 0.1), lineWidth: 1)
-        )
         .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
     }
 }
 
 struct AppWindowBackground: View {
+    var useMaterial: Bool = true
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
+
     var body: some View {
+        let simplified = performanceModeEnabled || !useMaterial
         ZStack {
             LinearGradient(
                 colors: [
@@ -328,22 +336,31 @@ struct AppWindowBackground: View {
             )
             .opacity(0.95)
 
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.28)
+            if !simplified {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.28)
+            }
         }
         .ignoresSafeArea()
     }
 }
 
 struct AppBackground: View {
+    var useMaterial: Bool = true
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
+
     var body: some View {
-        AppWindowBackground()
+        AppWindowBackground(useMaterial: useMaterial && !performanceModeEnabled)
     }
 }
 #else
 struct AppBackground: View {
+    var useMaterial: Bool = true
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
+
     var body: some View {
+        let simplified = performanceModeEnabled || !useMaterial
         ZStack {
             LinearGradient(
                 colors: [
@@ -356,10 +373,12 @@ struct AppBackground: View {
             )
             .ignoresSafeArea()
 
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.2)
-                .ignoresSafeArea()
+            if !simplified {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.2)
+                    .ignoresSafeArea()
+            }
         }
     }
 }
@@ -427,6 +446,7 @@ struct SonicLensPlaceholderView: View {
 }
 
 struct UnreportedListView: View {
+    @EnvironmentObject private var store: AppStore
     @ObservedObject var viewModel: LibraryViewModel
 
     var body: some View {
@@ -449,14 +469,23 @@ struct UnreportedListView: View {
             }
             .padding(32)
         }
+        .task(id: store.currentServer?.baseURL) {
+            guard let server = store.currentServer else { return }
+            guard viewModel.unscrobbled.isEmpty, viewModel.unscrobbledCount != 0 else { return }
+            await viewModel.reloadUnscrobbled(using: server)
+        }
     }
 }
 
 struct UnreportedRow: View {
     let record: UnscrobbledRecord
     @State private var isHovered = false
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
+        let hoverEnabled = !performanceModeEnabled
+        let hoverFill = isHovered && hoverEnabled ? Color.primary.opacity(0.05) : Color.clear
+
         HStack(spacing: 16) {
             Image(systemName: "waveform")
                 .font(.system(size: 18, weight: .semibold))
@@ -476,10 +505,21 @@ struct UnreportedRow: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isHovered ? Color.primary.opacity(0.05) : .clear)
+                .fill(hoverFill)
         )
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(
+            Group {
+                if performanceModeEnabled {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(SonicTheme.card)
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                }
+            }
+        )
         .onHover { hovering in
+            guard hoverEnabled else { return }
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
             }
@@ -530,8 +570,10 @@ struct LibrarySortMenu: View {
     var body: some View {
         Menu {
             ForEach(options, id: \.self) { sort in
-                Button(sort.rawValue) {
+                Button {
                     selection = sort
+                } label: {
+                    MenuSelectionRow(title: sort.rawValue, isSelected: selection == sort)
                 }
             }
         } label: {
@@ -547,12 +589,17 @@ struct TrackFilterMenu: View {
     var body: some View {
         Menu {
             ForEach(TrackFilter.allCases, id: \.self) { filter in
-                Button(filter.rawValue) {
+                Button {
                     selection = filter
+                } label: {
+                    MenuSelectionRow(title: filter.rawValue, isSelected: selection == filter)
                 }
             }
         } label: {
-            ToolbarPillLabel(title: "筛选", systemImage: "line.3.horizontal.decrease.circle")
+            ToolbarPillLabel(
+                title: selection.isDefault ? "筛选" : selection.rawValue,
+                systemImage: "line.3.horizontal.decrease.circle"
+            )
         }
         .menuStyle(.borderlessButton)
     }
@@ -601,5 +648,98 @@ struct ToolbarPillLabel: View {
                 Capsule()
                     .stroke(Color.white.opacity(0.25), lineWidth: 1)
             )
+    }
+}
+
+struct ToolbarTitleSubtitleView: View, Equatable {
+    let title: String
+    let subtitle: String?
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+struct MenuSelectionRow: View {
+    let title: String
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+            Spacer(minLength: 12)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+            }
+        }
+    }
+}
+
+enum LibraryStatusSummary {
+    static func album(sort: LibrarySort) -> String? {
+        guard !sort.isDefault else { return nil }
+        return sort.rawValue
+    }
+
+    static func track(sort: LibrarySort, filter: TrackFilter) -> String? {
+        var parts: [String] = []
+        if !sort.isDefault {
+            parts.append(sort.rawValue)
+        }
+        if !filter.isDefault {
+            parts.append(filter.rawValue)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+struct LibraryStatusSummaryChip: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.12))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+extension LibrarySort {
+    var isDefault: Bool {
+        self == .recent
+    }
+}
+
+extension TrackFilter {
+    var isDefault: Bool {
+        self == .all
     }
 }

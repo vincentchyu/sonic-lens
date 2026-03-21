@@ -4,7 +4,7 @@ import SQLite3
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor LibraryIndexStore {
-    static let syncSchemaVersion = 4
+    static let syncSchemaVersion = 5
 
     enum StoreError: Error {
         case openDatabase
@@ -41,6 +41,9 @@ actor LibraryIndexStore {
                 name TEXT NOT NULL,
                 artist TEXT NOT NULL,
                 release_date TEXT,
+                cover_art_url TEXT,
+                cover_art_mime TEXT,
+                cover_art_object_key TEXT,
                 play_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT,
                 updated_at TEXT
@@ -312,12 +315,17 @@ actor LibraryIndexStore {
 
     private func upsertAlbums(_ albums: [Album]) throws {
         let sql = """
-        INSERT INTO album_index(id, name, artist, release_date, play_count, created_at, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO album_index(
+            id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, play_count, created_at, updated_at
+        )
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             artist = excluded.artist,
             release_date = excluded.release_date,
+            cover_art_url = excluded.cover_art_url,
+            cover_art_mime = excluded.cover_art_mime,
+            cover_art_object_key = excluded.cover_art_object_key,
             play_count = excluded.play_count,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at;
@@ -334,9 +342,12 @@ actor LibraryIndexStore {
             bindText(album.name, to: 2, in: statement)
             bindText(album.artist, to: 3, in: statement)
             bindOptionalText(album.releaseDate, to: 4, in: statement)
-            sqlite3_bind_int64(statement, 5, Int64(album.playCount ?? 0))
-            bindOptionalText(album.createdAt, to: 6, in: statement)
-            bindOptionalText(album.updatedAt, to: 7, in: statement)
+            bindOptionalText(album.coverArtURL, to: 5, in: statement)
+            bindOptionalText(album.coverArtMime, to: 6, in: statement)
+            bindOptionalText(album.coverArtObjectKey, to: 7, in: statement)
+            sqlite3_bind_int64(statement, 8, Int64(album.playCount ?? 0))
+            bindOptionalText(album.createdAt, to: 9, in: statement)
+            bindOptionalText(album.updatedAt, to: 10, in: statement)
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.executeStatement(sql)
             }
@@ -539,7 +550,7 @@ actor LibraryIndexStore {
 
     private func queryAlbumsUsingFTS(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let sql = """
-        SELECT id, name, artist, release_date, play_count, created_at, updated_at
+        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, play_count, created_at, updated_at
         FROM album_index
         WHERE id IN (
             SELECT rowid FROM album_index_fts WHERE album_index_fts MATCH ?
@@ -553,7 +564,7 @@ actor LibraryIndexStore {
     private func queryAlbumsUsingLIKE(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let hasKeyword = !keyword.isEmpty
         let sql = """
-        SELECT id, name, artist, release_date, play_count, created_at, updated_at
+        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, play_count, created_at, updated_at
         FROM album_index
         \(hasKeyword ? "WHERE name LIKE ? OR artist LIKE ?" : "")
         ORDER BY \(albumOrder(sort))
@@ -638,11 +649,14 @@ actor LibraryIndexStore {
                     name: string(at: 1, in: statement),
                     artist: string(at: 2, in: statement),
                     releaseDate: optionalString(at: 3, in: statement),
+                    coverArtURL: optionalString(at: 4, in: statement),
+                    coverArtMime: optionalString(at: 5, in: statement),
+                    coverArtObjectKey: optionalString(at: 6, in: statement),
                     genre: nil,
                     totalDiscs: nil,
-                    playCount: Int(sqlite3_column_int(statement, 4)),
-                    createdAt: optionalString(at: 5, in: statement),
-                    updatedAt: optionalString(at: 6, in: statement)
+                    playCount: Int(sqlite3_column_int(statement, 7)),
+                    createdAt: optionalString(at: 8, in: statement),
+                    updatedAt: optionalString(at: 9, in: statement)
                 )
             )
         }

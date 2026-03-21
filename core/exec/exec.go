@@ -13,9 +13,13 @@ import (
 
 	"github.com/go-audio/wav"
 	"github.com/spf13/cast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	alog "github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 const (
@@ -47,6 +51,10 @@ const (
 	MediaControlNowFlag  = "--now"
 	MediaControlHelpFlag = "-h"
 )
+
+const tracerName = "sonic-lens/core/exec"
+
+var execCommand = exec.Command
 
 type (
 	MataDataHandle interface {
@@ -696,12 +704,27 @@ func castToInt64(val any) int64 {
 }
 
 func runCommand(ctx context.Context, command string, args ...string) (string, error) {
-	cmd := exec.Command(command, args...)
+	spanCtx, span := telemetry.StartSpanForTracerName(
+		ctx,
+		tracerName,
+		"exec.run_command",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	span.SetAttributes(
+		attribute.String("command.name", command),
+		attribute.Int("command.arg_count", len(args)),
+	)
+	defer span.End()
+
+	cmd := execCommand(command, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		alog.Warn(ctx, "error executing command", zap.Error(err))
+		alog.Warn(spanCtx, "error executing command", zap.Error(err))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return "", errors.New(string(output))
 	}
+	span.SetAttributes(attribute.Int("command.output_bytes", len(output)))
 	return string(output), nil
 }
 
@@ -750,6 +773,18 @@ func GetFilePathExt(path string) string {
 
 // ExtractEmbeddedArtwork 从媒体文件中提取主封面二进制。
 func ExtractEmbeddedArtwork(ctx context.Context, path string) ([]byte, error) {
+	ctx, span := telemetry.StartSpanForTracerName(
+		ctx,
+		tracerName,
+		"exec.run_command",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	span.SetAttributes(
+		attribute.String("command.name", "extract_embedded_artwork"),
+		attribute.String("command.value", "exiftool"),
+		attribute.String("command.path", "path"),
+	)
+	defer span.End()
 	ok, resolvedPath, err := IsValidPath(ctx, path)
 	if err != nil {
 		return nil, err

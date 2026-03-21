@@ -9,6 +9,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -35,7 +36,11 @@ func StartDashboardStatScheduler(ctx context.Context) {
 				zap.Int("hourly_trend_days", runtimeCfg.HourlyTrendDays),
 			)
 
-			go runDashboardStatLoop(ctx, lightInterval, heavyInterval, runtimeCfg.HeavyOnlyOnNewPlay)
+			telemetry.GoOnlySafe(
+				ctx, func(asyncCtx context.Context) {
+					runDashboardStatLoop(asyncCtx, lightInterval, heavyInterval, runtimeCfg.HeavyOnlyOnNewPlay)
+				},
+			)
 		},
 	)
 }

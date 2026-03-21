@@ -37,7 +37,7 @@ struct NowPlayingView: View {
                     lyricsFollowMode: $lyricsFollowMode,
                     selectedTab: $selectedTab,
                     onFavorite: {
-                        guard favoriteStatus != .full else { return }
+                        guard favoriteStatus.allowsFavoriteAction else { return }
                         Task {
                             await store.setFavorite(
                                 artist: displayNowPlaying.artist,
@@ -93,6 +93,9 @@ struct NowPlayingView: View {
         .onChange(of: trackIdentity) { _, _ in
             Task { await refreshNowPlaying(forcePaletteRefresh: true) }
         }
+        .onChange(of: store.nowPlaying?.artwork) { _, artwork in
+            Task { await updatePalette(for: artwork) }
+        }
         .onChange(of: store.nowPlaying?.position) { _, position in
             viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
         }
@@ -128,15 +131,7 @@ struct NowPlayingView: View {
     }
 
     private var favoriteStatus: NowPlayingFavoriteStatus {
-        let apple = currentNowPlaying.isAppleMusicFav ?? false
-        let lastfm = currentNowPlaying.isLastFmFav ?? false
-        if apple && lastfm {
-            return .full
-        }
-        if apple || lastfm {
-            return .partial
-        }
-        return .none
+        .init(projection: currentNowPlaying.favoriteProjection)
     }
 
     private func refreshNowPlaying(forcePaletteRefresh: Bool) async {
@@ -293,7 +288,7 @@ struct NowPlayingLeftPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            NowPlayingArtwork(artworkURL: nowPlaying.artwork)
+            NowPlayingArtwork(artworkURL: nowPlaying.artwork, fallbackTitle: nowPlaying.album ?? nowPlaying.track)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(nowPlaying.track)
@@ -307,6 +302,10 @@ struct NowPlayingLeftPanel: View {
                     .lineLimit(2)
 
                 DiscTrackBadgeRow(discNumber: nowPlaying.discNumber, trackNumber: nowPlaying.trackNumber)
+
+                if let badgeTitle = NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection).badgeTitle {
+                    NowPlayingFavoriteStatusBadge(status: NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection), title: badgeTitle)
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -414,7 +413,7 @@ struct NowPlayingFavoriteButton: View {
         Button(action: action) {
             Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(status == .none ? Color.white.opacity(0.95) : Color.yellow.opacity(0.95))
+                .foregroundStyle(iconColor)
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
@@ -423,7 +422,7 @@ struct NowPlayingFavoriteButton: View {
         }
         .buttonStyle(.plain)
         .buttonStyle(PressableButtonStyle())
-        .disabled(status == .full)
+        .disabled(!status.allowsFavoriteAction)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
@@ -436,7 +435,22 @@ struct NowPlayingFavoriteButton: View {
         switch status {
         case .full: return "star.fill"
         case .partial: return "star.leadinghalf.filled"
+        case .pending: return "clock.fill"
+        case .unfavoritePending: return "clock.fill"
         case .none: return "star"
+        }
+    }
+
+    private var iconColor: Color {
+        switch status {
+        case .none:
+            return Color.white.opacity(0.95)
+        case .pending:
+            return Color.orange.opacity(0.96)
+        case .unfavoritePending:
+            return Color.white.opacity(0.94)
+        case .partial, .full:
+            return Color.yellow.opacity(0.95)
         }
     }
 
@@ -446,6 +460,10 @@ struct NowPlayingFavoriteButton: View {
             return Color.yellow.opacity(isHovered ? 0.34 : 0.26)
         case .partial:
             return Color.yellow.opacity(isHovered ? 0.24 : 0.16)
+        case .pending:
+            return Color.orange.opacity(isHovered ? 0.28 : 0.18)
+        case .unfavoritePending:
+            return Color.white.opacity(isHovered ? 0.24 : 0.16)
         case .none:
             return Color.white.opacity(isHovered ? 0.20 : 0.12)
         }
@@ -455,6 +473,8 @@ struct NowPlayingFavoriteButton: View {
         switch status {
         case .full: return "已同步到 Apple Music + Last.fm"
         case .partial: return "已在单平台收藏，点击补全双平台收藏"
+        case .pending: return "收藏已记录，等待后端归因同步"
+        case .unfavoritePending: return "取消收藏已记录，等待后端归因同步"
         case .none: return "收藏到 Apple Music / Last.fm"
         }
     }
@@ -464,50 +484,148 @@ enum NowPlayingFavoriteStatus {
     case none
     case partial
     case full
+    case pending
+    case unfavoritePending
+
+    init(projection: TrackFavoriteProjection) {
+        switch projection.favoriteState {
+        case .favoritePending:
+            self = .pending
+        case .unfavoritePending:
+            self = .unfavoritePending
+        case .favorited, .notFavorited:
+            if projection.appleMusic && projection.lastfm {
+                self = .full
+            } else if projection.appleMusic || projection.lastfm {
+                self = .partial
+            } else {
+                self = .none
+            }
+        }
+    }
+
+    var allowsFavoriteAction: Bool {
+        switch self {
+        case .none, .partial:
+            return true
+        case .full, .pending, .unfavoritePending:
+            return false
+        }
+    }
+
+    var badgeTitle: String? {
+        switch self {
+        case .none:
+            return nil
+        case .partial:
+            return "已在单平台收藏"
+        case .full:
+            return "已双端收藏"
+        case .pending:
+            return "收藏已记录，等待归因"
+        case .unfavoritePending:
+            return "取消收藏处理中"
+        }
+    }
+}
+
+struct NowPlayingFavoriteStatusBadge: View {
+    let status: NowPlayingFavoriteStatus
+    let title: String
+
+    var body: some View {
+        Label(title, systemImage: iconName)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(foregroundColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(backgroundColor)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+    }
+
+    private var iconName: String {
+        switch status {
+        case .none:
+            return "star"
+        case .partial:
+            return "star.leadinghalf.filled"
+        case .full:
+            return "star.fill"
+        case .pending, .unfavoritePending:
+            return "clock.fill"
+        }
+    }
+
+    private var foregroundColor: Color {
+        switch status {
+        case .pending:
+            return Color.orange.opacity(0.96)
+        case .unfavoritePending:
+            return Color.white.opacity(0.92)
+        case .none:
+            return Color.white.opacity(0.92)
+        case .partial, .full:
+            return Color.yellow.opacity(0.96)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch status {
+        case .pending:
+            return Color.orange.opacity(0.16)
+        case .unfavoritePending:
+            return Color.white.opacity(0.12)
+        case .none:
+            return Color.white.opacity(0.12)
+        case .partial, .full:
+            return Color.yellow.opacity(0.16)
+        }
+    }
+
+    private var borderColor: Color {
+        switch status {
+        case .pending:
+            return Color.orange.opacity(0.28)
+        case .unfavoritePending:
+            return Color.white.opacity(0.16)
+        case .none:
+            return Color.white.opacity(0.16)
+        case .partial, .full:
+            return Color.yellow.opacity(0.24)
+        }
+    }
 }
 
 struct NowPlayingArtwork: View {
     let artworkURL: String?
+    var fallbackTitle: String? = nil
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
-        Group {
-            if let artworkURL, let url = URL(string: artworkURL) {
-                LazyImage(url: url) { state in
-                    if let image = state.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        placeholder
-                    }
-                }
-            } else {
-                placeholder
-            }
-        }
+        ArtworkSquareView(
+            artworkURL: artworkURL,
+            fallbackTitle: fallbackTitle,
+            size: 340,
+            cornerRadius: 18,
+            style: .vivid
+        )
         .frame(width: 340, height: 340)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.white.opacity(0.16), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.28), radius: 32, x: 0, y: 24)
-    }
-
-    private var placeholder: some View {
-        RoundedRectangle(cornerRadius: 18)
-            .fill(
-                LinearGradient(
-                    colors: [Color.accentColor.opacity(0.58), Color.accentColor.opacity(0.22)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                Image(systemName: "music.note")
-                    .font(.system(size: 46, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.6))
-            )
+        .shadow(
+            color: .black.opacity(performanceModeEnabled ? 0.18 : 0.28),
+            radius: performanceModeEnabled ? 20 : 32,
+            x: 0,
+            y: performanceModeEnabled ? 14 : 24
+        )
     }
 }
 

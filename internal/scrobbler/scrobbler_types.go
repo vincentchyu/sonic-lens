@@ -26,15 +26,18 @@ type BasePlayerChecker struct {
 	percentScrobble float64
 
 	// 状态变量
-	scrobbledTracks map[string]bool
-	isLongCheck     bool
-	timer           *time.Ticker
-	previousTrack   string
-	currentTrack    string
-	tmpCount        int
-	now             time.Time
-	currentArtURL   string
-	currentArtMime  string
+	scrobbledTracks     map[string]bool
+	isLongCheck         bool
+	timer               *time.Ticker
+	previousTrack       string
+	currentTrack        string
+	tmpCount            int
+	now                 time.Time
+	currentArtURL       string
+	currentArtMime      string
+	currentArtObjectKey string
+	currentArtTrackKey  string
+	currentArtResolved  bool
 
 	// 共享状态
 	pushCount           *atomic.Uint32

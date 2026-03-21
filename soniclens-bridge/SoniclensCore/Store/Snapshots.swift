@@ -16,6 +16,6 @@ struct HomeSnapshot: Codable {
 struct LibrarySnapshot: Codable {
     let albums: [Album]
     let tracks: [Track]
-    let insights: [Insight]
+    let insights: [InsightSummary]
     let unscrobbled: [UnscrobbledRecord]
 }

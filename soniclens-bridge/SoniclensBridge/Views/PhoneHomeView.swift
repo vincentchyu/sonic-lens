@@ -46,6 +46,7 @@ struct PhoneHomeView: View {
                         actionTitle: "查看 90 天",
                         onAction: { isShowingTrendDetail = true }
                     )
+                    .equatable()
                     .frame(maxWidth: .infinity)
 
                     TopGenresCard(topGenres: viewModel.topGenres)
@@ -184,6 +185,7 @@ private struct PhoneTrendDetailView: View {
                     heatmapHeight: 320,
                     heatmapLayout: .scrollable(minCellWidth: 8)
                 )
+                .equatable()
 
                 GlassPanel(cornerRadius: 18, padding: 16) {
                     VStack(alignment: .leading, spacing: 8) {

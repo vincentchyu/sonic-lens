@@ -13,11 +13,14 @@ import (
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/artwork"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/objectstorage"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
+
+var resolveArtworkFn = (*BasePlayerChecker).resolveArtwork
 
 // NewBasePlayerChecker 创建基础播放器检查器
 func NewBasePlayerChecker(
@@ -110,6 +113,9 @@ func (b *BasePlayerChecker) CheckPlayingTrack(ctx context.Context, stop <-chan s
 	b.currentTrack = ""
 	b.currentArtURL = ""
 	b.currentArtMime = ""
+	b.currentArtObjectKey = ""
+	b.currentArtTrackKey = ""
+	b.currentArtResolved = false
 
 	for {
 		select {
@@ -210,6 +216,7 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 	snapshot := b.buildPlayingTrackSnapshot(ctx, playerInfo)
 	b.currentArtURL = snapshot.coverArtURL
 	b.currentArtMime = snapshot.coverArtMime
+	b.currentArtObjectKey = snapshot.coverArtObjectKey
 
 	// 统一探测并同步当前曲目的收藏状态
 	favoriteState := b.trackService.ProbeAndSyncTrackFavorite(
@@ -224,8 +231,11 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 			Title:             playerInfo.GetTitle(),
 			Album:             playerInfo.GetAlbum(),
 			Artist:            playerInfo.GetArtist(),
-			AppleMusic:        favoriteState.AppleMusicFavorite,
-			LastFM:            favoriteState.LastFmFavorite,
+			AppleMusic:        favoriteState.AppleMusic,
+			LastFM:            favoriteState.LastFM,
+			AppleMusicState:   favoriteState.AppleMusicState,
+			LastFMState:       favoriteState.LastFMState,
+			FavoriteState:     favoriteState.FavoriteState,
 			Duration:          snapshot.duration,
 			Position:          int64(snapshot.position),
 			PositionMs:        int64(math.Round(snapshot.position * 1000)),
@@ -252,28 +262,57 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 	b.previousTrack = snapshot.trackKey
 }
 
-func (b *BasePlayerChecker) resolveArtwork(ctx context.Context, playerInfo common.PlayerInfoHandler) (string, string) {
+func (b *BasePlayerChecker) resolveArtwork(
+	ctx context.Context,
+	playerInfo common.PlayerInfoHandler,
+) (coverURL, coverMime, objectKey string) {
 	provider, ok := playerInfo.(common.ArtworkProvider)
 	if !ok {
-		return "", ""
+		return "", "", ""
 	}
-	seed := artwork.DefaultStore.GetKeyForSeed(provider.GetArtworkKey(ctx))
-	if e, ok := artwork.DefaultStore.Get(seed); ok {
-		return artwork.URLForKey(seed), e.MimeType
+	albumSeed := artwork.BuildAlbumArtworkSeed(
+		playerInfo.GetAlbumArtist(), playerInfo.GetArtist(), playerInfo.GetAlbum(),
+	)
+
+	obj := objectstorage.Get()
+	if obj != nil {
+		objectKey = obj.BuildOriginalObjectKey(albumSeed)
+		exists, contentType, existsErr := obj.CheckObjectExists(ctx, objectKey)
+		if existsErr != nil {
+			log.Warn(ctx, string(b.source)+"resolveArtwork check object err", zap.Error(existsErr))
+		} else if exists {
+			return obj.GetObjectCDNURL(objectKey), contentType, objectKey
+		}
 	}
 
 	art, err := provider.GetArtwork(ctx)
 	if err != nil {
 		log.Warn(ctx, string(b.source)+"resolveArtwork get artwork err", zap.Error(err))
-		return "", ""
+		return "", "", ""
 	}
 	if art == nil || len(art.Data) == 0 {
 		log.Warn(ctx, string(b.source)+"resolveArtwork art == nil")
-		return "", ""
+		return "", "", ""
+	}
+
+	if obj != nil {
+		if objectKey == "" {
+			objectKey = obj.BuildOriginalObjectKey(albumSeed)
+		}
+		if uploadErr := obj.UploadBytesToObject(ctx, objectKey, art.Data, art.MimeType); uploadErr != nil {
+			log.Warn(ctx, string(b.source)+"resolveArtwork upload object err", zap.Error(uploadErr))
+		} else {
+			return obj.GetObjectCDNURL(objectKey), art.MimeType, objectKey
+		}
+	}
+	// 缓存兜底
+	seed := artwork.DefaultStore.GetKeyForSeed(provider.GetArtworkKey(ctx))
+	if e, ok := artwork.DefaultStore.Get(seed); ok {
+		return artwork.URLForKey(seed), e.MimeType, ""
 	}
 
 	key := artwork.DefaultStore.Put(art.CacheKey, art.Data, art.MimeType)
-	return artwork.URLForKey(key), art.MimeType
+	return artwork.URLForKey(key), art.MimeType, ""
 }
 
 // handleTrackScrobble 处理曲目标记
@@ -296,4 +335,84 @@ func (b *BasePlayerChecker) handleNewTrack(ctx context.Context, snapshot playing
 		ctx, string(b.source)+"NowPlayingTrackInfo", zap.Any("playerInfo", snapshot.playerInfo),
 	)
 	b.trackService.HandleNowPlayingStarted(ctx, snapshot.toPlaybackEventInput(b.source, b.now))
+}
+
+func (b *BasePlayerChecker) buildPlayingTrackSnapshot(
+	ctx context.Context,
+	playerInfo common.PlayerInfoHandler,
+) playingTrackSnapshot {
+	if audirvanaInfo, ok := playerInfo.(*AudirvanaTrackInfoWrapper); ok {
+		audirvanaInfo.LogResolvedPosition(ctx)
+	}
+
+	trackKey := b.buildCurrentTrackKey(playerInfo)
+	b.currentTrack = trackKey
+
+	position := playerInfo.GetPosition()
+	duration := playerInfo.GetDuration()
+	trackChanged := b.currentTrack != b.previousTrack
+	coverArtURL, coverArtMime, coverArtObjectKey := b.resolveArtworkForSnapshot(
+		ctx, playerInfo, trackKey, trackChanged,
+	)
+	metadata := b.buildTrackMetadata(playerInfo)
+	metadata.CoverArtURL = coverArtURL
+	metadata.CoverArtMime = coverArtMime
+	metadata.CoverArtObjectKey = coverArtObjectKey
+
+	snapshot := playingTrackSnapshot{
+		playerInfo:              playerInfo,
+		metadata:                metadata,
+		trackKey:                trackKey,
+		position:                position,
+		duration:                duration,
+		trackChanged:            trackChanged,
+		coverArtURL:             coverArtURL,
+		coverArtMime:            coverArtMime,
+		coverArtObjectKey:       coverArtObjectKey,
+		controllerFavoriteKnown: b.source == common.PlayerAppleMusic,
+	}
+	if snapshot.controllerFavoriteKnown {
+		snapshot.controllerFavorite = b.controller.IsFavorite(ctx)
+	}
+	if duration > 0 {
+		snapshot.reachedScrobbleThreshold = position/float64(duration) > b.percentScrobble &&
+			!b.scrobbledTracks[trackKey]
+	}
+
+	return snapshot
+}
+
+func (b *BasePlayerChecker) resolveArtworkForSnapshot(
+	ctx context.Context,
+	playerInfo common.PlayerInfoHandler,
+	trackKey string,
+	trackChanged bool,
+) (string, string, string) {
+	if !trackChanged && b.currentArtTrackKey == trackKey && b.currentArtResolved {
+		return b.currentArtURL, b.currentArtMime, b.currentArtObjectKey
+	}
+
+	coverArtURL, coverArtMime, coverArtObjectKey := resolveArtworkFn(b, ctx, playerInfo)
+	b.currentArtTrackKey = trackKey
+	b.currentArtResolved = coverArtURL != ""
+	if b.currentArtResolved {
+		b.currentArtURL = coverArtURL
+		b.currentArtMime = coverArtMime
+		b.currentArtObjectKey = coverArtObjectKey
+	} else {
+		b.currentArtURL = ""
+		b.currentArtMime = ""
+		b.currentArtObjectKey = ""
+	}
+	return coverArtURL, coverArtMime, coverArtObjectKey
+}
+
+func (b *BasePlayerChecker) buildCurrentTrackKey(playerInfo common.PlayerInfoHandler) string {
+	trackKey := playerInfo.GetTitle()
+	if b.source == common.PlayerAudirvana {
+		if url := playerInfo.GetUrl(); url != "" {
+			trackKey = url + playerInfo.GetTitle()
+		}
+	}
+	return trackKey
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 struct ConnectionView: View {
     @EnvironmentObject private var store: AppStore
@@ -6,6 +7,7 @@ struct ConnectionView: View {
 
     @State private var manualHost: String = ""
     @State private var manualPort: String = "8082"
+    private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "ConnectionView")
 
     var body: some View {
         ZStack {
@@ -13,7 +15,7 @@ struct ConnectionView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    ContentHeader(title: "连接 音眸")
+                    ContentHeader(title: "连接 音眸轨迹")
 
                     ConnectionStatusView(status: store.connectionStatus)
 
@@ -22,6 +24,7 @@ struct ConnectionView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 ForEach(store.recentServers) { server in
                                     Button(action: {
+                                        logger.info("点击最近连接服务端 \(server.displayName, privacy: .public)")
                                         Task { await store.connect(server) }
                                     }) {
                                         HStack {
@@ -64,6 +67,7 @@ struct ConnectionView: View {
                             } else {
                                 ForEach(discovery.candidates) { candidate in
                                     Button(action: {
+                                        logger.info("点击自动发现服务端 \(candidate.name, privacy: .public)")
                                         Task { await store.connect(candidate.toConfig()) }
                                     }) {
                                         VStack(alignment: .leading, spacing: 2) {
@@ -107,6 +111,7 @@ struct ConnectionView: View {
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                             Button("连接") {
                                 guard let port = Int(manualPort), !manualHost.isEmpty else { return }
+                                logger.info("点击手动连接，主机 \(manualHost, privacy: .public)，端口 \(port, privacy: .public)")
                                 let server = ServerConfig(name: "手动输入", host: manualHost, port: port)
                                 Task { await store.connect(server) }
                             }
@@ -119,13 +124,18 @@ struct ConnectionView: View {
             }
         }
         .onAppear {
+            logger.info("连接页出现，准备刷新扫描与最近连接")
             refreshDiscovery()
             store.loadRecentServers()
         }
-        .onDisappear { discovery.stop() }
+        .onDisappear {
+            logger.info("连接页消失，停止局域网扫描")
+            discovery.stop()
+        }
     }
 
     private func refreshDiscovery() {
+        logger.debug("手动触发局域网扫描刷新")
         discovery.start()
     }
 }

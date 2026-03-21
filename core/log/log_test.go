@@ -31,14 +31,17 @@ func TestTraceLogging(t *testing.T) {
 	TInit()
 	if err := telemetry2.Init(
 		config.TelemetryConfig{
-			Name:           "test",
-			Endpoint:       "",
-			Sampler:        0,
-			Batcher:        "",
-			OtlpHeaders:    nil,
-			OtlpHttpPath:   "",
-			OtlpHttpSecure: false,
-			Disabled:       false,
+			Name:                  "test",
+			Endpoint:              "",
+			Sampler:               0,
+			Batcher:               "stdout",
+			OtlpHeaders:           nil,
+			OtlpHttpPath:          "",
+			OtlpHttpSecure:        false,
+			MetricIntervalSeconds: 1,
+			RuntimeMetricsEnabled: false,
+			DBStatsMetricsEnabled: false,
+			Disabled:              false,
 		},
 	); err != nil {
 		t.Fatalf("failed to initialize telemetry: %v", err)

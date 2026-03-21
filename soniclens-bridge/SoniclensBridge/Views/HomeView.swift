@@ -51,8 +51,12 @@ struct HomeContentView: View {
 
                     DashboardTrendSection(
                         points: viewModel.trendPoints,
-                        hourlyData: viewModel.hourlyData
+                        hourlyData: viewModel.hourlyData,
+                        subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                        heatmapLayout: .fixedWidthScrollable(cellWidth: 8),
+                        axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
                     )
+                    .equatable()
                     .frame(maxWidth: .infinity)
 
                     HStack(alignment: .top, spacing: 16) {
@@ -193,7 +197,7 @@ struct HomeStatCard: View {
     }
 }
 
-struct DashboardTrendSection: View {
+struct DashboardTrendSection: View, Equatable {
     let points: [TrendPoint]
     let hourlyData: [HourlyData]
     var title: String = "最近 90 天播放热力图"
@@ -204,6 +208,18 @@ struct DashboardTrendSection: View {
     var actionPlacement: TrendActionPlacement = .header
     var actionTitle: String? = nil
     var onAction: (() -> Void)? = nil
+
+    static func == (lhs: DashboardTrendSection, rhs: DashboardTrendSection) -> Bool {
+        lhs.points == rhs.points &&
+        lhs.hourlyData == rhs.hourlyData &&
+        lhs.title == rhs.title &&
+        lhs.subtitle == rhs.subtitle &&
+        lhs.heatmapHeight == rhs.heatmapHeight &&
+        lhs.heatmapLayout == rhs.heatmapLayout &&
+        lhs.axisLabelStyle == rhs.axisLabelStyle &&
+        lhs.actionPlacement == rhs.actionPlacement &&
+        lhs.actionTitle == rhs.actionTitle
+    }
 
     private var totalPlays: Int {
         points.map(\.count).reduce(0, +)
@@ -247,7 +263,7 @@ struct DashboardTrendSection: View {
                         .frame(height: heatmapHeight)
                         .padding(.horizontal, 18)
                         .padding(.bottom, 18)
-                }
+                }.padding(.bottom, 6)   // 👈 就加这一行
             }
         }
     }
@@ -337,17 +353,18 @@ struct DashboardTrendSection: View {
     }
 }
 
-enum TrendHeatmapLayout {
+enum TrendHeatmapLayout: Equatable {
     case fitted(minCellWidth: CGFloat)
+    case fixedWidthScrollable(cellWidth: CGFloat)
     case scrollable(minCellWidth: CGFloat)
 }
 
-enum TrendActionPlacement {
+enum TrendActionPlacement: Equatable {
     case header
     case metricsTrailing
 }
 
-enum TrendAxisLabelStyle {
+enum TrendAxisLabelStyle: Equatable {
     case monthBoundaries
     case dayStride(step: Int, rotationDegrees: Double)
 
@@ -424,30 +441,40 @@ enum TrendAxisLabelStyle {
     }
 }
 
-struct TrendHeatmapView: View {
-    let hourlyData: [HourlyData]
+struct TrendHeatmapView: View, Equatable {
     var layout: TrendHeatmapLayout = .fitted(minCellWidth: 2)
     var axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries
+    @State private var fixedScrollOffsetX: CGFloat = 0
 
-    private let hours = Array(stride(from: 23, through: 0, by: -1))
+    private let model: RenderModel
     private let cellSpacing: CGFloat = 2
     private let gridInset: CGFloat = 10
 
-    private var sortedData: [HourlyData] {
-        hourlyData.sorted { $0.date < $1.date }
+    init(
+        hourlyData: [HourlyData],
+        layout: TrendHeatmapLayout = .fitted(minCellWidth: 2),
+        axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries
+    ) {
+        self.layout = layout
+        self.axisLabelStyle = axisLabelStyle
+        self.model = RenderModel(hourlyData: hourlyData, axisLabelStyle: axisLabelStyle)
     }
 
     private var xAxisHeight: CGFloat {
         axisLabelStyle.axisHeight
     }
 
-    private var maxCount: Int {
-        max(sortedData.flatMap { $0.hourly.values }.max() ?? 1, 1)
+    private static let hours = Array(stride(from: 23, through: 0, by: -1))
+
+    static func == (lhs: TrendHeatmapView, rhs: TrendHeatmapView) -> Bool {
+        lhs.layout == rhs.layout &&
+        lhs.axisLabelStyle == rhs.axisLabelStyle &&
+        lhs.model == rhs.model
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let rowCount = CGFloat(hours.count)
+            let rowCount = CGFloat(Self.hours.count)
             let availableHeight = max(geometry.size.height - xAxisHeight, 0)
             let gridHeight = max(availableHeight - axisLabelStyle.axisToGridSpacing - gridInset * 2, 0)
             let cellHeight = max(
@@ -460,7 +487,7 @@ struct TrendHeatmapView: View {
                 switch layout {
                 case let .fitted(minCellWidth):
                     let availableWidth = max(geometry.size.width - axisLabelStyle.yAxisColumnWidth, 0)
-                    let dayCount = max(sortedData.count, 1)
+                    let dayCount = max(model.dayColumns.count, 1)
                     let gridWidth = max(availableWidth - gridInset * 2, 0)
                     let cellWidth = max(
                         minCellWidth,
@@ -473,8 +500,63 @@ struct TrendHeatmapView: View {
                         cellHeight: cellHeight,
                         contentWidth: contentWidth
                     )
+                case let .fixedWidthScrollable(cellWidth):
+                    let availableWidth = max(geometry.size.width - axisLabelStyle.yAxisColumnWidth, 0)
+                    let dayCount = max(model.dayColumns.count, 1)
+                    let resolvedCellWidth = max(cellWidth, 2)
+                    let resolvedCellHeight = resolvedCellWidth
+                    let contentWidth = CGFloat(dayCount) * resolvedCellWidth + CGFloat(dayCount - 1) * cellSpacing
+                    let fixedDayColumns = Array(model.dayColumns.reversed())
+                    let fixedAxisLabels = Self.makeAxisLabels(
+                        for: fixedDayColumns.map(\.date),
+                        axisLabelStyle: axisLabelStyle
+                    )
+                    let maxScrollDistance = max(contentWidth + gridInset * 2 - availableWidth, 0)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        heatmapColumns(
+                            cellWidth: resolvedCellWidth,
+                            cellHeight: resolvedCellHeight,
+                            contentWidth: contentWidth,
+                            dayColumns: fixedDayColumns,
+                            axisLabels: fixedAxisLabels
+                        )
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: TrendFixedScrollOffsetPreferenceKey.self,
+                                    value: proxy.frame(in: .named("trend-fixed-scroll")).minX
+                                )
+                            }
+                        )
+                    }
+                    .coordinateSpace(name: "trend-fixed-scroll")
+                    .onPreferenceChange(TrendFixedScrollOffsetPreferenceKey.self) { value in
+                        fixedScrollOffsetX = value
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if let hint = fixedScrollHint(maxScrollDistance: maxScrollDistance) {
+                            Text(hint)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(SonicTheme.textSecondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule()
+                                        .fill(SonicTheme.dynamicColor(
+                                            light: .sonicWhite(1, alpha: 0.86),
+                                            dark: .sonicWhite(0.14, alpha: 0.9)
+                                        ))
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(SonicTheme.glassBorder.opacity(0.75), lineWidth: 1)
+                                )
+                                .padding(.trailing, 8)
+                        }
+                    }
                 case let .scrollable(minCellWidth):
-                    let dayCount = max(sortedData.count, 1)
+                    let dayCount = max(model.dayColumns.count, 1)
                     let cellWidth = max(minCellWidth, 2)
                     let contentWidth = CGFloat(dayCount) * cellWidth + CGFloat(dayCount - 1) * cellSpacing
 
@@ -492,7 +574,7 @@ struct TrendHeatmapView: View {
 
     private func hourLabelsColumn(cellHeight: CGFloat) -> some View {
         VStack(alignment: .trailing, spacing: cellSpacing) {
-            ForEach(hours, id: \.self) { hour in
+            ForEach(Self.hours, id: \.self) { hour in
                 if hour == 23 || hour == 18 || hour == 12 || hour == 6 || hour == 0 {
                     Text(String(format: "%02d", hour))
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -512,14 +594,28 @@ struct TrendHeatmapView: View {
         .frame(width: axisLabelStyle.yAxisColumnWidth, alignment: .leading)
     }
 
-    private func heatmapColumns(cellWidth: CGFloat, cellHeight: CGFloat, contentWidth: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: axisLabelStyle.axisToGridSpacing) {
-            xAxisLabels(contentWidth: contentWidth, cellWidth: cellWidth)
-            dayColumns(cellWidth: cellWidth, cellHeight: cellHeight, contentWidth: contentWidth)
+    private func heatmapColumns(
+        cellWidth: CGFloat,
+        cellHeight: CGFloat,
+        contentWidth: CGFloat,
+        dayColumns: [DayColumn]? = nil,
+        axisLabels: [AxisLabel]? = nil
+    ) -> some View {
+        let resolvedDayColumns = dayColumns ?? model.dayColumns
+        let resolvedAxisLabels = axisLabels ?? model.axisLabels
+
+        return VStack(alignment: .leading, spacing: axisLabelStyle.axisToGridSpacing) {
+            xAxisLabels(contentWidth: contentWidth, cellWidth: cellWidth, axisLabels: resolvedAxisLabels)
+            dayColumnsView(
+                cellWidth: cellWidth,
+                cellHeight: cellHeight,
+                contentWidth: contentWidth,
+                dayColumns: resolvedDayColumns
+            )
         }
     }
 
-    private func xAxisLabels(contentWidth: CGFloat, cellWidth: CGFloat) -> some View {
+    private func xAxisLabels(contentWidth: CGFloat, cellWidth: CGFloat, axisLabels: [AxisLabel]) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(axisLabels) { item in
                 Text(item.text)
@@ -540,29 +636,24 @@ struct TrendHeatmapView: View {
         .padding(.horizontal, gridInset)
     }
 
-    private func dayColumns(cellWidth: CGFloat, cellHeight: CGFloat, contentWidth: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: cellSpacing) {
-            ForEach(sortedData) { day in
-                VStack(spacing: cellSpacing) {
-                    let dayTotal = day.hourly.values.reduce(0, +)
-                    ForEach(hours, id: \.self) { hour in
-                        let count = day.countForHour(hour)
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(color(for: count))
-                            .frame(width: cellWidth, height: cellHeight)
-                            .help(
-                                """
-                                日期：\(day.date)
-                                当日总播放：\(dayTotal)
-                                时段：\(String(format: "%02d:00-%02d:59", hour, hour))
-                                当前时段播放：\(count)
-                                """
-                            )
-                    }
-                }
-            }
-        }
-        .frame(width: contentWidth, alignment: .leading)
+    private func dayColumnsView(
+        cellWidth: CGFloat,
+        cellHeight: CGFloat,
+        contentWidth: CGFloat,
+        dayColumns: [DayColumn]
+    ) -> some View {
+        TrendHeatmapCanvas(
+            dayColumns: dayColumns,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            cellSpacing: cellSpacing,
+            maxCount: model.maxCount
+        )
+        .frame(
+            width: contentWidth,
+            height: CGFloat(Self.hours.count) * cellHeight + CGFloat(Self.hours.count - 1) * cellSpacing,
+            alignment: .leading
+        )
         .padding(gridInset)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -574,6 +665,18 @@ struct TrendHeatmapView: View {
         )
     }
 
+    private func fixedScrollHint(maxScrollDistance: CGFloat) -> String? {
+        guard maxScrollDistance > 24 else { return nil }
+        let offset = max(0, -fixedScrollOffsetX)
+        if offset <= 12 {
+            return "可向右查看更早日期"
+        }
+        if offset >= maxScrollDistance - 12 {
+            return "可向左返回最近日期"
+        }
+        return nil
+    }
+
     private func labelX(at index: Int, cellWidth: CGFloat) -> CGFloat {
         CGFloat(index) * (cellWidth + cellSpacing) + cellWidth / 2
     }
@@ -583,40 +686,46 @@ struct TrendHeatmapView: View {
         return shortDayFormatter.string(from: date)
     }
 
-    private var axisLabels: [AxisLabel] {
+    private static func makeAxisLabels(for dates: [String], axisLabelStyle: TrendAxisLabelStyle) -> [AxisLabel] {
         switch axisLabelStyle {
         case .monthBoundaries:
-            return monthAxisLabels
+            return monthAxisLabels(for: dates)
         case let .dayStride(step, _):
-            return strideAxisLabels(step: step)
+            return strideAxisLabels(for: dates, step: step)
         }
     }
 
-    private var monthAxisLabels: [AxisLabel] {
-        guard !sortedData.isEmpty else { return [] }
+    private static func monthAxisLabels(for dates: [String]) -> [AxisLabel] {
+        guard !dates.isEmpty else { return [] }
 
         var labels: [AxisLabel] = []
-        for (index, day) in sortedData.enumerated() {
-            guard let date = Self.dayFormatter.date(from: day.date) else { continue }
-            let dayNumber = Calendar.current.component(.day, from: date)
-            if index == 0 || dayNumber == 1 || index == sortedData.count - 1 {
-                labels.append(AxisLabel(index: index, text: Self.yearMonthFormatter.string(from: date)))
+        var lastYearMonth: String?
+        for (index, day) in dates.enumerated() {
+            guard let date = dayFormatter.date(from: day) else { continue }
+            let yearMonth = yearMonthFormatter.string(from: date)
+            if index == 0 || yearMonth != lastYearMonth {
+                labels.append(AxisLabel(index: index, text: yearMonth))
+                lastYearMonth = yearMonth
             }
+        }
+        if labels.last?.index != dates.count - 1,
+           let lastDate = dayFormatter.date(from: dates[dates.count - 1]) {
+            labels.append(AxisLabel(index: dates.count - 1, text: yearMonthFormatter.string(from: lastDate)))
         }
         return dedupAxisLabels(labels)
     }
 
-    private func strideAxisLabels(step: Int) -> [AxisLabel] {
-        guard !sortedData.isEmpty else { return [] }
+    private static func strideAxisLabels(for dates: [String], step: Int) -> [AxisLabel] {
+        guard !dates.isEmpty else { return [] }
 
         let effectiveStep = max(step, 1)
-        let lastIndex = sortedData.count - 1
+        let lastIndex = dates.count - 1
         var labels = stride(from: 0, through: lastIndex, by: effectiveStep).map { index in
-            AxisLabel(index: index, text: Self.compactDateLabel(for: sortedData[index].date))
+            AxisLabel(index: index, text: compactDateLabel(for: dates[index]))
         }
 
         if labels.last?.index != lastIndex {
-            let lastLabel = AxisLabel(index: lastIndex, text: Self.compactDateLabel(for: sortedData[lastIndex].date))
+            let lastLabel = AxisLabel(index: lastIndex, text: compactDateLabel(for: dates[lastIndex]))
             if let previousIndex = labels.indices.last, lastIndex - labels[previousIndex].index < effectiveStep {
                 labels[previousIndex] = lastLabel
             } else {
@@ -627,7 +736,7 @@ struct TrendHeatmapView: View {
         return dedupAxisLabels(labels)
     }
 
-    private func dedupAxisLabels(_ labels: [AxisLabel]) -> [AxisLabel] {
+    private static func dedupAxisLabels(_ labels: [AxisLabel]) -> [AxisLabel] {
         var unique: [AxisLabel] = []
         var seen = Set<String>()
         for label in labels where !seen.contains(label.text) {
@@ -637,14 +746,14 @@ struct TrendHeatmapView: View {
         return unique.sorted { $0.index < $1.index }
     }
 
-    private func color(for count: Int) -> Color {
-        if count == 0 { return Self.emptyCell }
-        let ratio = Double(count) / Double(maxCount)
+    fileprivate static func color(for count: Int, maxCount: Int) -> Color {
+        if count == 0 { return emptyCell }
+        let ratio = Double(count) / Double(max(maxCount, 1))
         switch ratio {
-        case 0..<0.25: return Self.levelOne
-        case 0.25..<0.5: return Self.levelTwo
-        case 0.5..<0.75: return Self.levelThree
-        default: return Self.levelFour
+        case 0..<0.25: return levelOne
+        case 0.25..<0.5: return levelTwo
+        case 0.5..<0.75: return levelThree
+        default: return levelFour
         }
     }
 
@@ -694,9 +803,82 @@ struct TrendHeatmapView: View {
         formatter.dateFormat = "yyyy/MM"
         return formatter
     }()
+
+    fileprivate struct RenderModel: Equatable {
+        let dayColumns: [DayColumn]
+        let maxCount: Int
+        let axisLabels: [AxisLabel]
+
+        init(hourlyData: [HourlyData], axisLabelStyle: TrendAxisLabelStyle) {
+            let sortedData = hourlyData.sorted { $0.date < $1.date }
+            var maxCount = 1
+            let dayColumns = sortedData.map { day in
+                let counts = TrendHeatmapView.hours.map { hour -> Int in
+                    let count = day.hourly[hour] ?? 0
+                    maxCount = max(maxCount, count)
+                    return count
+                }
+                return DayColumn(date: day.date, counts: counts)
+            }
+
+            self.dayColumns = dayColumns
+            self.maxCount = maxCount
+            self.axisLabels = TrendHeatmapView.makeAxisLabels(
+                for: dayColumns.map(\.date),
+                axisLabelStyle: axisLabelStyle
+            )
+        }
+    }
+
+    fileprivate struct DayColumn: Equatable {
+        let date: String
+        let counts: [Int]
+    }
 }
 
-private struct AxisLabel: Identifiable {
+private struct TrendFixedScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct TrendHeatmapCanvas: View, Equatable {
+    let dayColumns: [TrendHeatmapView.DayColumn]
+    let cellWidth: CGFloat
+    let cellHeight: CGFloat
+    let cellSpacing: CGFloat
+    let maxCount: Int
+
+    var body: some View {
+        Canvas(opaque: false, rendersAsynchronously: true) { context, _ in
+            let cornerRadius = min(2, min(cellWidth, cellHeight) * 0.45)
+
+            for (dayIndex, day) in dayColumns.enumerated() {
+                let originX = CGFloat(dayIndex) * (cellWidth + cellSpacing)
+                for (hourIndex, count) in day.counts.enumerated() {
+                    let originY = CGFloat(hourIndex) * (cellHeight + cellSpacing)
+                    let rect = CGRect(x: originX, y: originY, width: cellWidth, height: cellHeight)
+                    if cornerRadius <= 0.5 {
+                        context.fill(
+                            Path(rect),
+                            with: .color(TrendHeatmapView.color(for: count, maxCount: maxCount))
+                        )
+                    } else {
+                        context.fill(
+                            Path(roundedRect: rect, cornerRadius: cornerRadius),
+                            with: .color(TrendHeatmapView.color(for: count, maxCount: maxCount))
+                        )
+                    }
+                }
+            }
+        }
+        .accessibilityLabel("播放热力图")
+    }
+}
+
+private struct AxisLabel: Identifiable, Equatable {
     let index: Int
     let text: String
     var id: Int { index }

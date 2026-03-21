@@ -49,6 +49,9 @@ struct PhoneNowPlayingView: View {
                 lyricsFollowMode = true
             }
         }
+        .onChange(of: store.nowPlaying?.artwork) { _, artwork in
+            Task { await updatePalette(for: artwork) }
+        }
         .onChange(of: store.nowPlaying?.position) { _, position in
             viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
         }
@@ -70,15 +73,7 @@ struct PhoneNowPlayingView: View {
     }
 
     private var favoriteStatus: NowPlayingFavoriteStatus {
-        let apple = currentNowPlaying.isAppleMusicFav ?? false
-        let lastfm = currentNowPlaying.isLastFmFav ?? false
-        if apple && lastfm {
-            return .full
-        }
-        if apple || lastfm {
-            return .partial
-        }
-        return .none
+        .init(projection: currentNowPlaying.favoriteProjection)
     }
 
     private var liquidBackground: some View {
@@ -137,7 +132,7 @@ struct PhoneNowPlayingView: View {
 
     @ViewBuilder
     private func artworkSection(current: NowPlaying) -> some View {
-        NowPlayingArtwork(artworkURL: current.artwork)
+        NowPlayingArtwork(artworkURL: current.artwork, fallbackTitle: current.album ?? current.track)
             .frame(maxWidth: 286)
             .contentShape(Rectangle())
             .highPriorityGesture(dismissGesture)
@@ -156,7 +151,10 @@ struct PhoneNowPlayingView: View {
             }
         } label: {
             HStack(spacing: 12) {
-                compactArtworkThumbnail(urlString: current.artwork)
+                compactArtworkThumbnail(
+                    urlString: current.artwork,
+                    fallbackTitle: current.album ?? current.track
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(current.track)
@@ -174,7 +172,15 @@ struct PhoneNowPlayingView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background {
+                if performanceModeEnabled {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(SonicTheme.card.opacity(0.92))
+                } else {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(.white.opacity(0.14), lineWidth: 1)
@@ -184,38 +190,19 @@ struct PhoneNowPlayingView: View {
     }
 
     @ViewBuilder
-    private func compactArtworkThumbnail(urlString: String?) -> some View {
-        Group {
-            if let urlString, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        compactArtworkPlaceholder
-                    }
-                }
-            } else {
-                compactArtworkPlaceholder
-            }
-        }
+    private func compactArtworkThumbnail(urlString: String?, fallbackTitle: String?) -> some View {
+        ArtworkSquareView(
+            artworkURL: urlString,
+            fallbackTitle: fallbackTitle,
+            size: 56,
+            cornerRadius: 12,
+            style: .vivid
+        )
         .frame(width: 56, height: 56)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(.white.opacity(0.16), lineWidth: 1)
         )
-    }
-
-    private var compactArtworkPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(Color.white.opacity(0.14))
-            .overlay(
-                Image(systemName: "music.note")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.72))
-            )
     }
 
     @ViewBuilder
@@ -241,6 +228,10 @@ struct PhoneNowPlayingView: View {
                 .multilineTextAlignment(.center)
 
             DiscTrackBadgeRow(discNumber: current.discNumber, trackNumber: current.trackNumber)
+
+            if let badgeTitle = favoriteStatus.badgeTitle {
+                NowPlayingFavoriteStatusBadge(status: favoriteStatus, title: badgeTitle)
+            }
 
             if let insightTeaser = viewModel.insights.primaryInsight?.teaserText, !insightTeaser.isEmpty {
                 Text(insightTeaser)
@@ -298,7 +289,15 @@ struct PhoneNowPlayingView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
-                                .background(.ultraThinMaterial, in: Capsule())
+                                .background {
+                                    if performanceModeEnabled {
+                                        Capsule()
+                                            .fill(SonicTheme.card.opacity(0.92))
+                                    } else {
+                                        Capsule()
+                                            .fill(.ultraThinMaterial)
+                                    }
+                                }
                                 .overlay(
                                     Capsule().stroke(.white.opacity(0.18), lineWidth: 1)
                                 )
@@ -344,7 +343,7 @@ struct PhoneNowPlayingView: View {
     }
 
     private func toggleFavorite() {
-        guard favoriteStatus != .full else { return }
+        guard favoriteStatus.allowsFavoriteAction else { return }
         let active = currentNowPlaying
         Task {
             await store.setFavorite(

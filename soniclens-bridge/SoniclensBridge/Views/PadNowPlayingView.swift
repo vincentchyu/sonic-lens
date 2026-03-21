@@ -109,6 +109,9 @@ struct PadNowPlayingView: View {
         .onChange(of: trackIdentity) { _, _ in
             Task { await refreshNowPlaying(forcePaletteRefresh: true) }
         }
+        .onChange(of: store.nowPlaying?.artwork) { _, artwork in
+            Task { await updatePalette(for: artwork) }
+        }
         .onChange(of: store.nowPlaying?.position) { _, position in
             viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
         }
@@ -130,15 +133,7 @@ struct PadNowPlayingView: View {
     }
 
     private var favoriteStatus: NowPlayingFavoriteStatus {
-        let apple = currentNowPlaying.isAppleMusicFav ?? false
-        let lastfm = currentNowPlaying.isLastFmFav ?? false
-        if apple && lastfm {
-            return .full
-        }
-        if apple || lastfm {
-            return .partial
-        }
-        return .none
+        .init(projection: currentNowPlaying.favoriteProjection)
     }
 
     private var progress: Double {
@@ -148,7 +143,7 @@ struct PadNowPlayingView: View {
     }
 
     private func toggleFavorite() {
-        guard favoriteStatus != .full else { return }
+        guard favoriteStatus.allowsFavoriteAction else { return }
         let active = currentNowPlaying
         Task {
             await store.setFavorite(
@@ -204,6 +199,7 @@ private struct PadNowPlayingTopBar: View {
     @Binding var selectedTab: PadNowPlayingTab
     let onFavorite: () -> Void
     let onClose: () -> Void
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
         HStack(spacing: 14) {
@@ -242,7 +238,15 @@ private struct PadNowPlayingTopBar: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .background {
+                        if performanceModeEnabled {
+                            Circle()
+                                .fill(SonicTheme.card.opacity(0.92))
+                        } else {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                        }
+                    }
             }
             .buttonStyle(.plain)
         }
@@ -255,7 +259,7 @@ private struct PadNowPlayingArtworkColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NowPlayingArtwork(artworkURL: nowPlaying.artwork)
+            NowPlayingArtwork(artworkURL: nowPlaying.artwork, fallbackTitle: nowPlaying.album ?? nowPlaying.track)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -270,6 +274,10 @@ private struct PadNowPlayingArtworkColumn: View {
                     .lineLimit(2)
 
                 DiscTrackBadgeRow(discNumber: nowPlaying.discNumber, trackNumber: nowPlaying.trackNumber)
+
+                if let badgeTitle = NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection).badgeTitle {
+                    NowPlayingFavoriteStatusBadge(status: NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection), title: badgeTitle)
+                }
             }
             .padding(.top, 0)
 

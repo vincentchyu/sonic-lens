@@ -52,39 +52,60 @@ func createLumberJackLogger(filename string) zapcore.WriteSyncer {
 
 // Debug logs a debug message with context
 func Debug(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	Logger.Debug(msg, fields...)
 }
 
 // Info logs an info message with context
 func Info(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	Logger.Info(msg, fields...)
 }
 
 // Warn logs a warning message with context
 func Warn(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	Logger.Warn(msg, fields...)
 }
 
 func ErrorForLog(ctx context.Context, logger *zap.Logger, msg string, fields ...zap.Field) {
+	if logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	logger.Error(msg, fields...)
 }
 
 func InfoForLog(ctx context.Context, logger *zap.Logger, msg string, fields ...zap.Field) {
+	if logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	logger.Info(msg, fields...)
 }
 
 func WarnForLog(ctx context.Context, logger *zap.Logger, msg string, fields ...zap.Field) {
+	if logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	logger.Warn(msg, fields...)
 }
 
 // Error logs an error message with context
 func Error(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
 	fields = append(fields, traceFields(ctx)...)
 	Logger.Error(msg, fields...)
 }
@@ -96,7 +117,7 @@ func traceFields(ctx context.Context) []zap.Field {
 	}
 
 	span := trace.SpanFromContext(ctx)
-	if !span.IsRecording() {
+	if !span.SpanContext().IsValid() {
 		return nil
 	}
 

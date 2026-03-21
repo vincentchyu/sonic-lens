@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormtracing "gorm.io/plugin/opentelemetry/tracing"
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
@@ -40,6 +42,9 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err != nil {
 			return err
 		}
+		if err = enableGORMTelemetry(GlobalDBForSqlLite, l, "sqlite"); err != nil {
+			return err
+		}
 
 		// Auto migrate the schema for core tables
 		if err = GlobalDBForSqlLite.AutoMigrate(&TrackPlayRecord{}); err != nil {
@@ -63,7 +68,7 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			return err
 		}
 		// Auto migrate the schema for AI insight related tables
-		if err = GlobalDBForSqlLite.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}); err != nil {
+		if err = GlobalDBForSqlLite.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}); err != nil {
 			return err
 		}
 		// Auto migrate the schema for LLM call log table
@@ -86,7 +91,16 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err != nil {
 			return err
 		}
+		if err = enableGORMTelemetry(GlobalDBForMysql, l, "mysql"); err != nil {
+			return err
+		}
 		if err = ensureTrackIdentitySchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureAlbumCoverSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureLLMCallLogSchema(context.Background()); err != nil {
 			return err
 		}
 		if config.ConfigObj.IsDev {
@@ -112,7 +126,7 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 				return err
 			}
 			// Auto migrate the schema for AI insight related tables
-			if err = GlobalDBForMysql.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}); err != nil {
+			if err = GlobalDBForMysql.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}); err != nil {
 				return err
 			}
 			// Auto migrate the schema for LLM call log table
@@ -130,5 +144,35 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		return errors.New("unsupported database type" + config.ConfigObj.Database.Type)
 	}
 
+	return nil
+}
+
+func enableGORMTelemetry(gormDB *gorm.DB, logger *zap.Logger, dbSystem string) error {
+	if gormDB == nil {
+		return nil
+	}
+
+	if err := gormDB.Use(
+		gormtracing.NewPlugin(
+			gormtracing.WithTracerProvider(otel.GetTracerProvider()),
+			gormtracing.WithDBSystem(dbSystem),
+			gormtracing.WithoutMetrics(),
+			gormtracing.WithoutQueryVariables(),
+		),
+	); err != nil {
+		return err
+	}
+
+	if !config.ConfigObj.Telemetry.DBStatsMetricsEnabled {
+		return nil
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		return err
+	}
+	if err := db.RegisterDBStatsMetrics(sqlDB, dbSystem); err != nil && logger != nil {
+		logger.Warn("注册数据库连接池指标失败", zap.String("db_system", dbSystem), zap.Error(err))
+	}
 	return nil
 }

@@ -2,27 +2,30 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/vincentchyu/sonic-lens/common"
 )
 
 var ConfigObj = &Config{}
 
 type Config struct {
-	Lastfm     ScrobblerConfig  `yaml:"lastfm"`
-	Musixmatch MusixmatchConfig `yaml:"musixmatch"`
-	Log        LogConfig        `yaml:"log"`
-	Database   DatabaseConfig   `yaml:"database"`
-	Dashboard  DashboardConfig  `yaml:"dashboard"`
-	PlayReplay PlayReplayConfig `yaml:"playReplay"`
-	HTTP       HTTPConfig       `yaml:"http"`
-	Bonjour    BonjourConfig    `yaml:"bonjour"`
-	Telemetry  TelemetryConfig  `yaml:"telemetry"`
-	Redis      RedisConfig      `yaml:"redis"`
-	Cloudflare CloudflareConfig `yaml:"cloudflare"`
-	AI         AIConfig         `yaml:"ai"`
-	Scrobblers []string         `yaml:"scrobblers"`
-	IsDev      bool             `yaml:"isDev"`
+	Lastfm        ScrobblerConfig     `yaml:"lastfm"`
+	Musixmatch    MusixmatchConfig    `yaml:"musixmatch"`
+	Log           LogConfig           `yaml:"log"`
+	Database      DatabaseConfig      `yaml:"database"`
+	Dashboard     DashboardConfig     `yaml:"dashboard"`
+	PlayReplay    PlayReplayConfig    `yaml:"playReplay"`
+	HTTP          HTTPConfig          `yaml:"http"`
+	Bonjour       BonjourConfig       `yaml:"bonjour"`
+	Telemetry     TelemetryConfig     `yaml:"telemetry"`
+	Redis         RedisConfig         `yaml:"redis"`
+	Cloudflare    CloudflareConfig    `yaml:"cloudflare"`
+	ObjectStorage ObjectStorageConfig `yaml:"objectStorage"`
+	AI            AIConfig            `yaml:"ai"`
+	Scrobblers    []string            `yaml:"scrobblers"`
+	IsDev         bool                `yaml:"isDev"`
 }
 
 type ScrobblerConfig struct {
@@ -95,22 +98,19 @@ func (m MysqlConfig) GetMysqlDSN() string {
 }
 
 type TelemetryConfig struct {
-	Name     string  `yaml:"name,optional"`
-	Endpoint string  `yaml:",optional"`
-	Sampler  float64 `yaml:",default=1.0"`
-	Batcher  string  `yaml:",default=jaeger,options=jaeger|zipkin|otlpgrpc|otlphttp|file"`
-	// OtlpHeaders represents the headers for OTLP gRPC or HTTP transport.
-	// For example:
-	//  uptrace-dsn: 'http://project2_secret_token@localhost:14317/2'
-	OtlpHeaders map[string]string `yaml:",optional"`
-	// OtlpHttpPath represents the path for OTLP HTTP transport.
-	// For example
-	// /v1/traces
-	OtlpHttpPath string `yaml:",optional"`
-	// OtlpHttpSecure represents the scheme to use for OTLP HTTP transport.
-	OtlpHttpSecure bool `yaml:",optional"`
-	// Disabled indicates whether StartAgent starts the agent.
-	Disabled bool `yaml:",optional"`
+	Name                  string            `yaml:"name"`
+	Endpoint              string            `yaml:"endpoint"`
+	Sampler               float64           `yaml:"sampler"`
+	Insecure              bool              `yaml:"insecure"`
+	MetricIntervalSeconds int               `yaml:"metricIntervalSeconds"`
+	RuntimeMetricsEnabled bool              `yaml:"runtimeMetricsEnabled"`
+	DBStatsMetricsEnabled bool              `yaml:"dbStatsMetricsEnabled"`
+	Environment           string            `yaml:"environment"`
+	Batcher               string            `yaml:"batcher"` // 兼容旧配置；仅保留 stdout 调试语义
+	OtlpHeaders           map[string]string `yaml:"otlpHeaders"`
+	OtlpHttpPath          string            `yaml:"otlpHttpPath"`   // 兼容旧配置，当前 gRPC exporter 不使用
+	OtlpHttpSecure        bool              `yaml:"otlpHttpSecure"` // 兼容旧配置，当前 gRPC exporter 不使用
+	Disabled              bool              `yaml:"disabled"`
 }
 
 type RedisConfig struct {
@@ -127,6 +127,23 @@ type CloudflareConfig struct {
 	D1DatabaseID string `yaml:"d1DatabaseId"`
 	SyncEnabled  bool   `yaml:"syncEnabled"`  // 是否启用 D1 同步
 	SyncInterval int    `yaml:"syncInterval"` // 同步间隔(小时)
+}
+
+// ObjectStorageConfig 对象存储配置（MinIO/S3/R2 兼容）。
+type ObjectStorageConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	Provider        string `yaml:"provider"`
+	Endpoint        string `yaml:"endpoint"`
+	Bucket          string `yaml:"bucket"`
+	Region          string `yaml:"region"`
+	AccessKeyID     string `yaml:"accessKeyId"`
+	SecretAccessKey string `yaml:"secretAccessKey"`
+	CDNURL          string `yaml:"cdnUrl"`
+	BasePrefix      string `yaml:"basePrefix"`
+	OriginalPrefix  string `yaml:"originalPrefix"`
+	ThumbnailPrefix string `yaml:"thumbnailPrefix"`
+	ForcePathStyle  bool   `yaml:"forcePathStyle"`
+	UseSSL          bool   `yaml:"useSSL"`
 }
 
 // AIConfig 大模型相关配置
@@ -161,6 +178,18 @@ func (c AIConfig) GetAvailableProviders() []string {
 	return providers
 }
 
+// GetAvailablePlatforms 返回当前配置中可用的 AI 平台。
+func (c AIConfig) GetAvailablePlatforms() []common.AIModelPlatform {
+	var platforms []common.AIModelPlatform
+	for _, provider := range c.GetAvailableProviders() {
+		platform := common.ParseAIModelPlatform(provider)
+		if platform.IsValid() {
+			platforms = append(platforms, platform)
+		}
+	}
+	return platforms
+}
+
 // OpenAIConfig OpenAI 配置
 type OpenAIConfig struct {
 	APIKey  string `yaml:"apiKey"`
@@ -190,14 +219,32 @@ type OllamaConfig struct {
 
 // DoubaoConfig 豆包/字节系模型配置
 type DoubaoConfig struct {
-	APIKey  string `yaml:"apiKey"`
-	BaseURL string `yaml:"baseUrl"`
-	Model   string `yaml:"model"`
+	APIKey              string `yaml:"apiKey"`
+	BaseURL             string `yaml:"baseUrl"`
+	Model               string `yaml:"model"`
+	ManagementAccessKey string `yaml:"managementAccessKey"`
+	ManagementSecretKey string `yaml:"managementSecretKey"`
+	ManagementRegion    string `yaml:"managementRegion"`
+	ProjectName         string `yaml:"projectName"`
 }
 
 func InitConfig(filePath string) {
 	viper.SetConfigFile(filePath)
 	viper.SetConfigType("yaml")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+	_ = viper.BindEnv("objectStorage.enabled", "OBJECT_STORAGE_ENABLED")
+	_ = viper.BindEnv("objectStorage.provider", "OBJECT_STORAGE_PROVIDER")
+	_ = viper.BindEnv("objectStorage.endpoint", "ENDPOINT", "OBJECT_STORAGE_ENDPOINT")
+	_ = viper.BindEnv("objectStorage.bucket", "BUCKET", "OBJECT_STORAGE_BUCKET")
+	_ = viper.BindEnv("objectStorage.region", "REGION", "OBJECT_STORAGE_REGION")
+	_ = viper.BindEnv("objectStorage.accessKeyId", "ACCESS_KEY_ID", "OBJECT_STORAGE_ACCESS_KEY_ID")
+	_ = viper.BindEnv("objectStorage.secretAccessKey", "SECRET_ACCESS_KEY", "OBJECT_STORAGE_SECRET_ACCESS_KEY")
+	_ = viper.BindEnv("objectStorage.cdnUrl", "CDN_URL", "OBJECT_STORAGE_CDN_URL")
+	_ = viper.BindEnv("objectStorage.basePrefix", "BASE_PREFIX", "OBJECT_STORAGE_BASE_PREFIX")
+	_ = viper.BindEnv("objectStorage.originalPrefix", "ORIGINAL_PREFIX", "OBJECT_STORAGE_ORIGINAL_PREFIX")
+	_ = viper.BindEnv("objectStorage.thumbnailPrefix", "THUMBNAIL_PREFIX", "OBJECT_STORAGE_THUMBNAIL_PREFIX")
+
 	if err := viper.ReadInConfig(); err != nil {
 		panic(err)
 	}

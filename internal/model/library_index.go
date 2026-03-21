@@ -7,13 +7,16 @@ import (
 
 // AlbumIndexRow 表示专辑列表页使用的轻量索引行
 type AlbumIndexRow struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Artist      string    `json:"artist"`
-	ReleaseDate string    `json:"release_date"`
-	PlayCount   int       `json:"play_count"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	Artist            string    `json:"artist"`
+	ReleaseDate       string    `json:"release_date"`
+	CoverArtURL       string    `json:"cover_art_url"`
+	CoverArtMime      string    `json:"cover_art_mime"`
+	CoverArtObjectKey string    `json:"cover_art_object_key"`
+	PlayCount         int       `json:"play_count"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // TrackIndexRow 表示曲目列表页使用的轻量索引行
@@ -49,11 +52,12 @@ func GetAlbumIndexRows(ctx context.Context, since time.Time) ([]*AlbumIndexRow, 
 		Table("album AS a").
 		Select(
 			`a.id, a.name, a.artist, a.release_date,
+a.cover_art_url, a.cover_art_mime, a.cover_art_object_key,
 COALESCE(SUM(t.play_count), 0) AS play_count,
 a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at`,
 		).
 		Joins("LEFT JOIN track AS t ON t.album = a.name AND t.artist = a.artist").
-		Group("a.id, a.name, a.artist, a.release_date, a.created_at")
+		Group("a.id, a.name, a.artist, a.release_date, a.cover_art_url, a.cover_art_mime, a.cover_art_object_key, a.created_at")
 
 	if !since.IsZero() {
 		query = query.Where("a.updated_at >= ? OR t.updated_at >= ?", since, since)
@@ -77,12 +81,13 @@ func GetAlbumIndexRowsByIDs(ctx context.Context, ids []int64) ([]*AlbumIndexRow,
 		Table("album AS a").
 		Select(
 			`a.id, a.name, a.artist, a.release_date,
+a.cover_art_url, a.cover_art_mime, a.cover_art_object_key,
 COALESCE(SUM(t.play_count), 0) AS play_count,
 a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at`,
 		).
 		Joins("LEFT JOIN track AS t ON t.album = a.name AND t.artist = a.artist").
 		Where("a.id IN ?", ids).
-		Group("a.id, a.name, a.artist, a.release_date, a.created_at").
+		Group("a.id, a.name, a.artist, a.release_date, a.cover_art_url, a.cover_art_mime, a.cover_art_object_key, a.created_at").
 		Order("a.id ASC").
 		Scan(&rows).Error
 	if err != nil {

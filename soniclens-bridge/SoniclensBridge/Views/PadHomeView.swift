@@ -35,8 +35,12 @@ struct PadHomeView: View {
 
                     DashboardTrendSection(
                         points: viewModel.trendPoints,
-                        hourlyData: viewModel.hourlyData
+                        hourlyData: viewModel.hourlyData,
+                        subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                        heatmapLayout: .fixedWidthScrollable(cellWidth: 7),
+                        axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
                     )
+                    .equatable()
                     .frame(maxWidth: .infinity)
 
                     ViewThatFits(in: .horizontal) {

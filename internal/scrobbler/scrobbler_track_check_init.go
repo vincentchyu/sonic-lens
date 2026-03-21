@@ -7,6 +7,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 	"github.com/vincentchyu/sonic-lens/internal/model"
@@ -103,7 +104,11 @@ func _CheckPlayingTrack(ctx context.Context, playerTypes []common.PlayerType, st
 			if checker == nil {
 				panic("player checker is nil")
 			}
-			go checker.CheckPlayingTrack(ctx, stop)
+			telemetry.GoOnlySafe(
+				ctx, func(asyncCtx context.Context) {
+					checker.CheckPlayingTrack(asyncCtx, stop)
+				},
+			)
 		}
 	}
 }

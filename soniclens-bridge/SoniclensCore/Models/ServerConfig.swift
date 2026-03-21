@@ -24,19 +24,27 @@ struct ServerConfig: Codable, Hashable, Identifiable {
         return URL(string: "\(wsScheme)://\(host):\(port)/ws")!
     }
 
+    var artworkBaseURL: URL {
+        URL(string: "\(scheme)://\(host):9000")!
+    }
+
     var displayName: String {
         "\(name) (\(host):\(port))"
     }
 }
 
 struct ServerCandidate: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { normalizedIdentity }
     let name: String
     let host: String
     let port: Int
 
     func toConfig() -> ServerConfig {
         ServerConfig(name: name, host: normalizeHost(host), port: port)
+    }
+
+    private var normalizedIdentity: String {
+        "\(name)|\(normalizeHost(host))|\(port)"
     }
 
     private func normalizeHost(_ value: String) -> String {

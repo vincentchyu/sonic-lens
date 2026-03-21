@@ -102,6 +102,7 @@ targets:
       properties:
         CFBundleName: "Soniclens Bridge Pad"
         NSLocalNetworkUsageDescription: "用于发现并连接 SonicLens 服务端"
+        NSPhotoLibraryAddUsageDescription: "用于将分享图片保存到系统照片"
         NSBonjourServices: ["_soniclens._tcp"]
         UILaunchStoryboardName: LaunchScreen
 
@@ -133,5 +134,7 @@ targets:
       properties:
         CFBundleName: "Soniclens Bridge Phone"
         NSLocalNetworkUsageDescription: "用于发现并连接 SonicLens 服务端"
+        NSPhotoLibraryAddUsageDescription: "用于将分享图片保存到系统照片"
         NSBonjourServices: ["_soniclens._tcp"]
         UILaunchStoryboardName: LaunchScreen
+

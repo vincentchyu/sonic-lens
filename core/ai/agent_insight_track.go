@@ -265,18 +265,3 @@ func buildTrackInsightUserPrompt(req TrackAnalysisRequest) string {
 func buildTrackInsightMergedPrompt(req TrackAnalysisRequest) string {
 	return buildTrackInsightSystemPromptAll() + buildTrackInsightUserPrompt(req)
 }
-
-/*
-	AlbumInsight
-	TODO：
-		根据专辑中歌曲的顺序，
-		搜索当前专辑下全部的音眸分析，每首歌只保留最高分或者最新的分析数据，
-		汇总大模型上下文数据，专辑分析
-		聚焦（时代意义、文学解读、作者动机、哲学反思）
-		缺少专辑表、专辑歌曲关联表（可以在track中得到，使用trackId进行关联）、专辑分析表（专辑id关联）
-*/
-
-/*
-	xxInsight
-	规划：
-*/

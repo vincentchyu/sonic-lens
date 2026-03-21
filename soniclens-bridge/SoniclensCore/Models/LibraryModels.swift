@@ -5,6 +5,9 @@ struct Album: Codable, Identifiable, Hashable {
     let name: String
     let artist: String
     let releaseDate: String?
+    let coverArtURL: String?
+    let coverArtMime: String?
+    let coverArtObjectKey: String?
     let genre: String?
     let totalDiscs: Int?
     let playCount: Int?
@@ -16,6 +19,9 @@ struct Album: Codable, Identifiable, Hashable {
         case name
         case artist
         case releaseDate = "release_date"
+        case coverArtURL = "cover_art_url"
+        case coverArtMime = "cover_art_mime"
+        case coverArtObjectKey = "cover_art_object_key"
         case genre
         case totalDiscs = "total_discs"
         case playCount = "play_count"
@@ -28,6 +34,9 @@ struct Album: Codable, Identifiable, Hashable {
         name: String,
         artist: String,
         releaseDate: String?,
+        coverArtURL: String? = nil,
+        coverArtMime: String? = nil,
+        coverArtObjectKey: String? = nil,
         genre: String?,
         totalDiscs: Int?,
         playCount: Int? = nil,
@@ -38,6 +47,9 @@ struct Album: Codable, Identifiable, Hashable {
         self.name = name
         self.artist = artist
         self.releaseDate = releaseDate
+        self.coverArtURL = coverArtURL
+        self.coverArtMime = coverArtMime
+        self.coverArtObjectKey = coverArtObjectKey
         self.genre = genre
         self.totalDiscs = totalDiscs
         self.playCount = playCount
@@ -120,6 +132,23 @@ struct PaginatedTracks: Codable {
     let total: Int64
     let limit: Int
     let offset: Int
+}
+
+enum InsightTargetType: String, Codable, Hashable {
+    case track
+    case album
+}
+
+struct ResolveArtworkResponse: Codable {
+    let exists: Bool
+    let coverArtURL: String?
+    let coverArtObjectKey: String?
+
+    enum CodingKeys: String, CodingKey {
+        case exists
+        case coverArtURL = "cover_art_url"
+        case coverArtObjectKey = "cover_art_object_key"
+    }
 }
 
 struct LibrarySyncResponse: Codable {
@@ -236,10 +265,73 @@ struct Insight: Codable, Identifiable, Hashable {
 }
 
 struct PaginatedInsights: Codable {
-    let insights: [Insight]
+    let insights: [InsightSummary]
     let total: Int64
     let limit: Int
     let offset: Int
+}
+
+struct InsightSummary: Codable, Identifiable, Hashable {
+    let id: Int64
+    let analysisTargetType: InsightTargetType
+    let trackID: Int64?
+    let albumID: Int64?
+    let artist: String
+    let album: String
+    let track: String
+    let analysisSummary: String?
+    let llmProvider: String?
+    let createdAt: String?
+    let isDisabled: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case analysisTargetType = "analysis_target_type"
+        case trackID = "track_id"
+        case albumID = "album_id"
+        case artist
+        case album
+        case track
+        case analysisSummary = "analysis_summary"
+        case llmProvider = "llm_provider"
+        case createdAt = "created_at"
+        case isDisabled = "is_disabled"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int64.self, forKey: .id)
+        analysisTargetType = try container.decodeIfPresent(InsightTargetType.self, forKey: .analysisTargetType) ?? .track
+        trackID = try container.decodeIfPresent(Int64.self, forKey: .trackID)
+        albumID = try container.decodeIfPresent(Int64.self, forKey: .albumID)
+        artist = try container.decode(String.self, forKey: .artist)
+        album = try container.decode(String.self, forKey: .album)
+        track = try container.decode(String.self, forKey: .track)
+        analysisSummary = try container.decodeIfPresent(String.self, forKey: .analysisSummary)
+        llmProvider = try container.decodeIfPresent(String.self, forKey: .llmProvider)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        isDisabled = try container.decodeIfPresent(Bool.self, forKey: .isDisabled)
+    }
+
+    var isAlbum: Bool {
+        analysisTargetType == .album
+    }
+
+    var isTrack: Bool {
+        analysisTargetType == .track
+    }
+
+    var displayTitle: String {
+        isAlbum ? album : track
+    }
+
+    var displaySubtitle: String {
+        isAlbum ? artist : "\(artist) · \(album)"
+    }
+
+    var badgeText: String {
+        isAlbum ? "专辑" : "曲目"
+    }
 }
 
 struct UnscrobbledRecord: Codable, Identifiable {
@@ -260,8 +352,12 @@ struct UnscrobbledRecord: Codable, Identifiable {
     }
 }
 
+struct UnscrobbledCountResponse: Codable {
+    let count: Int
+}
+
 struct InsightAnalysisSections: Codable, Hashable {
-    fileprivate static let empty = InsightAnalysisSections(values: [:])
+    static let empty = InsightAnalysisSections(values: [:])
 
     let values: [String: String]
 
@@ -335,6 +431,60 @@ struct InsightAnalysisSections: Codable, Hashable {
 
         return blocks
     }
+
+    var albumOrderedBlocks: [InsightSectionBlock] {
+        orderedBlocks(
+            orderedKeys: AlbumInsightSectionCatalog.orderedKeys,
+            titleMap: AlbumInsightSectionCatalog.titleMap
+        )
+    }
+
+    private func orderedBlocks(
+        orderedKeys: [String],
+        titleMap: [String: String]
+    ) -> [InsightSectionBlock] {
+        var blocks: [InsightSectionBlock] = orderedKeys.compactMap { key in
+            guard let value = values[key]?.trimmedOrNil else { return nil }
+            return InsightSectionBlock(id: key, title: titleMap[key] ?? key, content: value)
+        }
+
+        let unknownKeys = values.keys
+            .filter { !orderedKeys.contains($0) }
+            .sorted()
+
+        blocks.append(
+            contentsOf: unknownKeys.compactMap { key in
+                guard let value = values[key]?.trimmedOrNil else { return nil }
+                return InsightSectionBlock(id: key, title: titleMap[key] ?? key, content: value)
+            }
+        )
+
+        return blocks
+    }
+}
+
+enum AlbumInsightSectionCatalog {
+    static let orderedKeys = [
+        "album_positioning",
+        "theme_and_narrative",
+        "literary_analysis",
+        "musical_analysis",
+        "author_motivation",
+        "philosophical_reflection",
+        "key_tracks",
+        "listening_guide"
+    ]
+
+    static let titleMap: [String: String] = [
+        "album_positioning": "专辑定位",
+        "theme_and_narrative": "主题与叙事",
+        "literary_analysis": "文学解读",
+        "musical_analysis": "音乐分析",
+        "author_motivation": "创作动机",
+        "philosophical_reflection": "哲学反思",
+        "key_tracks": "关键曲目",
+        "listening_guide": "聆听指南"
+    ]
 }
 
 struct InsightSectionBlock: Hashable, Identifiable {

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 type LrcAPIProvider struct {
@@ -45,7 +47,7 @@ func (p *LrcAPIProvider) GetLyrics(ctx context.Context, artist, album, track str
 		return "", err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := telemetry.WrapHTTPClient(http.DefaultClient).Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -261,7 +261,7 @@ func mergeAlbumFieldsAndRelationsTx(
 
 	fields := buildAlbumMergeUpdates(&canonical.Album, &source.Album)
 	if len(fields) > 0 {
-		if err := tx.Model(&Album{}).Where("id = ?", canonical.ID).Updates(fields).Error; err != nil {
+		if err := UpdateAlbumFieldsTx(tx, canonical.ID, fields); err != nil {
 			return err
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 	"gorm.io/gorm/logger"
 
@@ -63,19 +62,6 @@ func (l *customLogger) Trace(
 	elapsed := time.Since(begin)
 	sql, rows := fc()
 
-	// Add tracing for SQL queries
-	ctx, span := startSpan(ctx, "sql.run")
-	defer func() {
-		endSpan(span, err)
-	}()
-
-	// Add SQL query and execution time as span attributes
-	span.SetAttributes(
-		attribute.String("sql.query", sql),
-		attribute.Int64("rows.affected", rows),
-		attribute.String("elapsed", elapsed.String()),
-	)
-
 	// Define a slow query threshold (e.g., 200ms)
 	slowThreshold := 200 * time.Millisecond
 
@@ -88,9 +74,6 @@ func (l *customLogger) Trace(
 			zap.Int64("rows", rows),
 			zap.Duration("elapsed", elapsed),
 			zap.Error(err),
-		)
-		span.SetAttributes(
-			attribute.String("error", err.Error()),
 		)
 	case elapsed > slowThreshold:
 		l.Warn(

@@ -100,9 +100,14 @@ func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 	cache := &sync.Map{}
 	service := &stubTrackService{
 		probeResult: tracklogic.TrackFavoriteProbeResult{
-			AppleMusicFavorite: true,
-			LastFmFavorite:     true,
-			Confidence:         common.TrackMetadataConfidenceHigh,
+			TrackFavoriteProjection: tracklogic.TrackFavoriteProjection{
+				AppleMusic:      true,
+				LastFM:          true,
+				AppleMusicState: common.TrackFavoriteStateFavorited,
+				LastFMState:     common.TrackFavoriteStateFavorited,
+				FavoriteState:   common.TrackFavoriteStateFavorited,
+			},
+			Confidence: common.TrackMetadataConfidenceHigh,
 		},
 		thresholdResult: tracklogic.PlaybackThresholdResult{Scrobbled: true},
 	}
@@ -138,6 +143,108 @@ func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 	require.Equal(t, "Track", wsInfo.Data.Title)
 	require.True(t, wsInfo.Data.AppleMusic)
 	require.True(t, wsInfo.Data.LastFM)
+	require.Equal(t, common.TrackFavoriteStateFavorited, wsInfo.Data.FavoriteState)
+}
+
+func TestProcessPlayingTrackReusesArtworkForSameTrack(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	originalResolveArtworkFn := resolveArtworkFn
+	defer func() {
+		resolveArtworkFn = originalResolveArtworkFn
+	}()
+
+	resolveCalls := 0
+	resolveArtworkFn = func(
+		_ *BasePlayerChecker,
+		_ context.Context,
+		_ common.PlayerInfoHandler,
+	) (string, string, string) {
+		resolveCalls++
+		return "https://cdn.example.com/cover.jpg", "image/jpeg", "object-key-1"
+	}
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		probeResult: tracklogic.TrackFavoriteProbeResult{
+			Confidence: common.TrackMetadataConfidenceHigh,
+		},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	info := &stubPlayerInfo{
+		title:       "Track",
+		album:       "Album",
+		artist:      "Artist",
+		position:    10,
+		duration:    100,
+		trackNumber: 3,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+	checker.processPlayingTrack(context.Background(), info)
+
+	require.Equal(t, 1, resolveCalls)
+	require.Equal(t, "https://cdn.example.com/cover.jpg", checker.currentArtURL)
+	require.Equal(t, "image/jpeg", checker.currentArtMime)
+	require.Equal(t, "object-key-1", checker.currentArtObjectKey)
+	require.Equal(t, "Track", checker.currentArtTrackKey)
+}
+
+func TestProcessPlayingTrackRetriesArtworkAfterFailure(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	originalResolveArtworkFn := resolveArtworkFn
+	defer func() {
+		resolveArtworkFn = originalResolveArtworkFn
+	}()
+
+	resolveCalls := 0
+	resolveArtworkFn = func(
+		_ *BasePlayerChecker,
+		_ context.Context,
+		_ common.PlayerInfoHandler,
+	) (string, string, string) {
+		resolveCalls++
+		if resolveCalls == 1 {
+			return "", "", ""
+		}
+		return "https://cdn.example.com/cover.jpg", "image/jpeg", "object-key-1"
+	}
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		probeResult: tracklogic.TrackFavoriteProbeResult{
+			Confidence: common.TrackMetadataConfidenceHigh,
+		},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	info := &stubPlayerInfo{
+		title:       "Track",
+		album:       "Album",
+		artist:      "Artist",
+		position:    10,
+		duration:    100,
+		trackNumber: 3,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+	checker.processPlayingTrack(context.Background(), info)
+
+	require.Equal(t, 2, resolveCalls)
+	require.Equal(t, "https://cdn.example.com/cover.jpg", checker.currentArtURL)
+	require.Equal(t, "image/jpeg", checker.currentArtMime)
+	require.Equal(t, "object-key-1", checker.currentArtObjectKey)
+	require.True(t, checker.currentArtResolved)
 }
 
 func TestHandleStopEventClearsAtomicPlayingWhenNoOtherPlayer(t *testing.T) {

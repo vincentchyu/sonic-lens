@@ -62,6 +62,9 @@ Rules:
   - `LibraryView`
   - `AlbumDetailView`
   - `TrackDetailView`
+- Shared share infrastructure:
+  - `SoniclensBridge/ShareKit/Domain`, `Builder`, `Render`, `Action`, `Analytics`
+  - shared share payload assembly, tagged insight parsing reuse, poster rendering, temp file export, photo save/share sheet coordination
 - Shared visual system:
   - `Theme.swift`
   - `GlassStyles.swift`
@@ -82,6 +85,7 @@ Rules:
   - compact tab shell
   - compact home and now-playing composition
   - iPhone-specific dashboard presentation strategy when a shared data model needs a different layout density
+  - iPhone-specific share poster templates and preview flow under `ShareKit/Template/iPhone`
 
 ## Home Dashboard Data Flow
 - Home dashboard data is loaded by shared `HomeViewModel`.
@@ -117,12 +121,38 @@ This is an experience-layer divergence, not a separate data architecture.
 Rules:
 - Do not regress to remote pagination plus large in-memory filtering/sorting for library pages.
 - Sync, indexing, and cache invalidation logic should stay in shared core/store layers.
+- Library sort/filter/query state stays page-local; dense lists should receive only derived inputs and static container data, not broad high-frequency store updates.
 
 ## Networking
 - REST: JSON over `URLSession`
 - WebSocket: `URLSessionWebSocketTask`
 - Base URL comes from discovery or manual server selection
 - WebSocket reconnect uses retry/backoff logic in the networking layer
+
+## Share Architecture
+- Share capability uses a layered split:
+  - `ShareKit/Builder`: transforms `Track` / `AlbumDetail` / lyrics / insight / favorite state into scene payloads
+  - `ShareKit/Template/iPhone`: iPhone-only poster layout and preview UI
+  - `ShareKit/Render`: poster measurement, single-image rendering, long-poster pagination, temp PNG export
+  - `ShareKit/Action`: Photos save and `UIActivityViewController` share handoff
+  - `ShareKit/Analytics`: local event logging abstraction
+- Current phase wires iPhone `TrackDetailView` and `AlbumDetailView` into ShareKit.
+- Do not move share data assembly into page-local SwiftUI bodies; keep it in builder/render/action layers.
+- Bridge requests attach `X-SonicLens-Terminal` so the server can omit internal debug fields from app responses.
+
+## Detail Page Responsibilities
+- `TrackDetailViewModel` owns:
+  - 歌词加载
+  - 曲目音眸读取与生成
+  - 模型选择状态
+- `AlbumDetailViewModel` owns:
+  - 专辑详情与曲目列表加载
+  - MusicBrainz 候选整理
+  - 专辑音眸读取与生成
+  - 模型选择状态
+- `AlbumDetailView` now keeps a dual-tab structure:
+  - `信息`: 保留原专辑 hero、曲目列表、候选版本整理
+  - `音眸`: 展示专辑总评、按 `GetAlbumInsightSchema()` 固定顺序渲染的 section、背景信息、时代语境与补充元数据
 
 ## Documentation Boundary
 - Update this file when:

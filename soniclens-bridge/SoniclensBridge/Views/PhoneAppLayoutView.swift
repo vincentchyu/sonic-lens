@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 #if os(iOS)
 enum PhoneTabDestination: String, CaseIterable, Hashable {
@@ -44,14 +45,10 @@ struct PhoneAppLayoutView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: PhoneTabDestination = .home
     @State private var showNowPlaying = false
-    @State private var albumSort: LibrarySort = .recent
-    @State private var trackSort: LibrarySort = .recent
-    @State private var trackFilter: TrackFilter = .all
-    @State private var albumQuery = ""
-    @State private var trackQuery = ""
     @StateObject private var libraryViewModel = LibraryViewModel()
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled = false
     private let tabBarHeight: CGFloat = 49
+    private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "PhoneAppLayout")
 
     var body: some View {
         GeometryReader { geo in
@@ -62,28 +59,11 @@ struct PhoneAppLayoutView: View {
                     }
 
                     phoneNavigationTab(for: .albums) {
-                        AlbumGridView(
-                            viewModel: libraryViewModel,
-                            sort: albumSort,
-                            query: albumQuery,
-                            prefersCompactLayout: true
-                        )
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                LibrarySortMenu(title: "排序", selection: $albumSort, options: LibrarySort.albumOptions)
-                            }
-                        }
-                        .searchable(text: $albumQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索专辑")
+                        PhoneAlbumLibraryTab(viewModel: libraryViewModel)
                     }
 
                     phoneNavigationTab(for: .tracks) {
-                        TrackListView(
-                            viewModel: libraryViewModel,
-                            sort: trackSort,
-                            filter: trackFilter,
-                            query: trackQuery,
-                            showsInlineControls: true
-                        )
+                        PhoneTrackLibraryTab(viewModel: libraryViewModel)
                     }
 
                     phoneNavigationTab(for: .sonicLens) {
@@ -144,6 +124,9 @@ struct PhoneAppLayoutView: View {
             guard let server = store.currentServer else { return }
             Task { await libraryViewModel.refresh(using: server) }
         }
+        .onChange(of: selection) { _, newValue in
+            logger.info("切换手机底部标签 \(newValue.title, privacy: .public)")
+        }
     }
 
     @ViewBuilder
@@ -185,6 +168,156 @@ struct PhoneAppLayoutView: View {
     private func openNowPlaying() {
         guard store.nowPlaying != nil else { return }
         showNowPlaying = true
+    }
+}
+
+private struct PhoneAlbumLibraryTab: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var sort: LibrarySort = .recent
+    @State private var searchText = ""
+    @State private var committedQuery = ""
+    @State private var searchCommitTask: Task<Void, Never>?
+
+    @ObservedObject var viewModel: LibraryViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PhoneInlineSearchBar(text: $searchText, prompt: "搜索专辑")
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+
+            AlbumGridView(
+                viewModel: viewModel,
+                sort: sort,
+                query: committedQuery,
+                artworkBaseURL: store.currentServer?.artworkBaseURL,
+                statusSummary: LibraryStatusSummary.album(sort: sort),
+                prefersCompactLayout: true
+            )
+            .scrollDismissesKeyboard(.immediately)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                LibrarySortMenu(title: "排序", selection: $sort, options: LibrarySort.albumOptions)
+            }
+        }
+        .onChange(of: searchText) { _, value in
+            scheduleSearchCommit(value)
+        }
+        .onDisappear {
+            searchCommitTask?.cancel()
+        }
+    }
+
+    private func scheduleSearchCommit(_ text: String) {
+        searchCommitTask?.cancel()
+        let pendingText = text
+        searchCommitTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard committedQuery != pendingText else { return }
+            committedQuery = pendingText
+        }
+    }
+}
+
+private struct PhoneTrackLibraryTab: View {
+    @State private var sort: LibrarySort = .recent
+    @State private var filter: TrackFilter = .all
+    @State private var searchText = ""
+    @State private var committedQuery = ""
+    @State private var searchCommitTask: Task<Void, Never>?
+
+    @ObservedObject var viewModel: LibraryViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PhoneInlineSearchBar(text: $searchText, prompt: "搜索曲目")
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+
+            TrackListView(
+                viewModel: viewModel,
+                sort: sort,
+                filter: filter,
+                query: committedQuery,
+                showsInlineControls: false
+            )
+            .scrollDismissesKeyboard(.immediately)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                LibrarySortMenu(title: "排序", selection: $sort, options: LibrarySort.trackOptions)
+                TrackFilterMenu(selection: $filter)
+            }
+        }
+        .onChange(of: searchText) { _, value in
+            scheduleSearchCommit(value)
+        }
+        .onDisappear {
+            searchCommitTask?.cancel()
+        }
+    }
+
+    private func scheduleSearchCommit(_ text: String) {
+        searchCommitTask?.cancel()
+        let pendingText = text
+        searchCommitTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard committedQuery != pendingText else { return }
+            committedQuery = pendingText
+        }
+    }
+}
+
+private struct PhoneInlineSearchBar: View {
+    @Binding var text: String
+    let prompt: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(SonicTheme.textSecondary)
+
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled(true)
+
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(SonicTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(SonicTheme.card.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(SonicTheme.glassBorder, lineWidth: 1)
+        )
     }
 }
 #endif

@@ -86,6 +86,8 @@ type PendingAlbumWorkItemDetail struct {
 	PlayRecords    []*TrackPlayRecord          `json:"play_records"`
 	FavoriteEvents []*TrackFavoriteEvent       `json:"favorite_events"`
 	ContextTracks  []*PendingAlbumContextTrack `json:"context_tracks"`
+	LiveGroup      *PendingAlbumGroup          `json:"live_group,omitempty"`
+	ContextStale   bool                        `json:"context_stale"`
 }
 
 func normalizePendingAlbumIdentity(artist, albumArtist, album string) string {
@@ -118,6 +120,17 @@ func decodeInt64Slice(raw string) ([]int64, error) {
 	return values, nil
 }
 
+func sameInt64SliceSet(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	left := append([]int64(nil), a...)
+	right := append([]int64(nil), b...)
+	slices.Sort(left)
+	slices.Sort(right)
+	return slices.Equal(left, right)
+}
+
 func listPendingAlbumPlayRecords(ctx context.Context) ([]*TrackPlayRecord, error) {
 	var records []*TrackPlayRecord
 	err := GetDB().WithContext(ctx).
@@ -137,10 +150,23 @@ func listPendingAlbumFavoriteEvents(ctx context.Context) ([]*TrackFavoriteEvent,
 				TrackFavoriteEventResolutionUnresolved,
 				TrackFavoriteEventResolutionAmbiguous,
 			},
-	).
+		).
 		Order("created_at DESC, id DESC").
 		Find(&events).Error
 	return events, err
+}
+
+func getPendingAlbumGroupByIdentity(ctx context.Context, identityKey string) (*PendingAlbumGroup, error) {
+	groups, err := GetPendingAlbumGroups(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range groups {
+		if group.IdentityKey == identityKey {
+			return group, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
 }
 
 func getOpenPendingAlbumWorkItemsByKeys(ctx context.Context, keys []string) (map[string]*PendingAlbumWorkItem, error) {
@@ -384,7 +410,7 @@ func UpdatePendingAlbumWorkItemSelection(ctx context.Context, workItemID, releas
 				"status":                 status,
 				"last_error":             "",
 			},
-	).Error
+		).Error
 }
 
 // UpdatePendingAlbumWorkItemProgress 更新工作项过程状态。
@@ -459,6 +485,20 @@ func GetPendingAlbumWorkItemDetail(ctx context.Context, workItemID int64) (*Pend
 		return nil, err
 	}
 
+	liveGroup := (*PendingAlbumGroup)(nil)
+	contextStale := false
+	if item.Status != PendingAlbumWorkItemStatusCompleted {
+		liveGroup, err = getPendingAlbumGroupByIdentity(ctx, item.NormalizedIdentityKey)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+			contextStale = len(playRecordIDs) > 0 || len(favoriteEventIDs) > 0
+		} else {
+			contextStale = !sameInt64SliceSet(playRecordIDs, liveGroup.PlayRecordIDs) || !sameInt64SliceSet(favoriteEventIDs, liveGroup.FavoriteEventIDs)
+		}
+	}
+
 	trackMap := make(map[string]*PendingAlbumContextTrack)
 	for _, record := range playRecords {
 		key := strings.TrimSpace(record.Track)
@@ -509,7 +549,42 @@ func GetPendingAlbumWorkItemDetail(ctx context.Context, workItemID int64) (*Pend
 		PlayRecords:    playRecords,
 		FavoriteEvents: favoriteEvents,
 		ContextTracks:  contextTracks,
+		LiveGroup:      liveGroup,
+		ContextStale:   contextStale,
 	}, nil
+}
+
+// RefreshPendingAlbumWorkItemContext 用当前实时列表重置工作项的冻结上下文。
+func RefreshPendingAlbumWorkItemContext(ctx context.Context, workItemID int64) (*PendingAlbumWorkItem, error) {
+	item, err := GetPendingAlbumWorkItemByID(ctx, workItemID)
+	if err != nil {
+		return nil, err
+	}
+	if item.Status == PendingAlbumWorkItemStatusCompleted {
+		return nil, errors.New("completed work item cannot refresh context")
+	}
+	if item.Status == PendingAlbumWorkItemStatusDeepMaintaning || item.Status == PendingAlbumWorkItemStatusApplying {
+		return nil, errors.New("work item is busy and cannot refresh context")
+	}
+
+	liveGroup, err := getPendingAlbumGroupByIdentity(ctx, item.NormalizedIdentityKey)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := map[string]interface{}{
+		"artist":                  liveGroup.Artist,
+		"album":                   liveGroup.Album,
+		"album_artist":            liveGroup.AlbumArtist,
+		"normalized_identity_key": liveGroup.IdentityKey,
+		"play_record_ids_json":    encodeInt64Slice(liveGroup.PlayRecordIDs),
+		"favorite_event_ids_json": encodeInt64Slice(liveGroup.FavoriteEventIDs),
+		"last_error":              "",
+	}
+	if err := GetDB().WithContext(ctx).Model(&PendingAlbumWorkItem{}).Where("id = ?", workItemID).Updates(fields).Error; err != nil {
+		return nil, err
+	}
+	return GetPendingAlbumWorkItemByID(ctx, workItemID)
 }
 
 // ResolveCanonicalAlbumForPendingContextTx 在事务内为待归因专辑选择唯一目标专辑。

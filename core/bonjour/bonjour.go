@@ -16,6 +16,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 // Start 在局域网内广播 SonicLens 服务，并自动巡检 IP 变动。
@@ -113,18 +114,20 @@ func Start(ctx context.Context, cfg config.BonjourConfig, portStr string) func()
 	updateRegistration()
 
 	// 启动定时巡检协程（每分钟检查一次 IP）
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				updateRegistration()
+	telemetry.GoOnlySafe(
+		ctx, func(asyncCtx context.Context) {
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-asyncCtx.Done():
+					return
+				case <-ticker.C:
+					updateRegistration()
+				}
 			}
-		}
-	}()
+		},
+	)
 
 	return func() {
 		mu.Lock()

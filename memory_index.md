@@ -1,5 +1,73 @@
 # 记忆索引
 
+## 2026-03-28
+
+- **日期**: 2026-03-28
+    - **特性摘要**: Bridge 三端正在播放接入 favorite projection，统一识别 `favorite_pending` / `unfavorite_pending` 并补齐收藏状态提示闭环
+    - **链接**: [Bridge 正在播放收藏投影接入闭环](memory/2026-03-28/bridge_now_playing_favorite_projection_manifest.md)
+
+- **日期**: 2026-03-28
+    - **特性摘要**: 收藏链路新增 favorite projection，统一输出稳定收藏态与待归因收藏态，修复当前播放页无法感知 pending 收藏的问题
+    - **链接**: [收藏投影视图与待归因收藏态闭环](memory/2026-03-28/favorite_projection_pending_state_manifest.md)
+
+- **日期**: 2026-03-28
+    - **特性摘要**: 新增 SigNoz `filelog` 日志采集模板，明确应用日志本地轮转与 SigNoz 1 天 retention 解耦，形成 trace/metrics/logs 分层闭环
+    - **链接**: [SigNoz filelog 日志采集闭环](memory/2026-03-28/signoz_filelog_log_collection_closure_manifest.md)
+
+- **日期**: 2026-03-28
+    - **特性摘要**: 接入 SigNoz OTLP exporter，补齐 HTTP/Redis/DB tracing 与 metrics 闭环，并统一移除重复手写 span
+    - **链接**: [SigNoz OTLP 可观测性闭环](memory/2026-03-28/signoz_otlp_observability_closure_manifest.md)
+
+## 2026-03-27
+
+- **日期**: 2026-03-27
+    - **特性摘要**: 异步协程统一走 `telemetry.GoSafe` / `GoSafeDetached` / `GoOnlySafe`，为异步任务补齐 span 与 panic 保护，并避免长循环 trace 失真
+    - **链接**: [异步协程 trace 与 panic 保护闭环](memory/2026-03-27/goroutine_trace_panic_guard_manifest.md)
+
+- **日期**: 2026-03-27
+    - **特性摘要**: AI 模型选择完成平台/模型拆分，新增平台目录与模型目录接口、Redis 目录缓存，以及 Web/Bridge 双级选择闭环
+    - **链接**: [AI 模型平台与模型目录闭环特性清单](memory/2026-03-27/ai_model_platform_catalog_closure_manifest.md)
+
+## 2026-03-26
+
+- **日期**: 2026-03-26
+    - **特性摘要**: 新增专辑级音眸后端闭环，支持按曲序聚合高质量 `track_insight`、生成 `album_insight` 并暴露专辑分析 API
+    - **链接**: [专辑音眸后端闭环特性清单](memory/2026-03-26/album_insight_backend_closure_manifest.md)
+
+## 2026-03-24
+
+- **日期**: 2026-03-24
+    - **特性摘要**: Bridge iPhone ShareKit 公共壳层收口完成，分享预览统一使用背景/头图/正文/底部的公共闭环，三类场景只保留各自内容
+    - **链接**: [iPhone ShareKit 公共壳层收口特性清单](memory/2026-03-24/iphone_sharekit_public_shell_closure_manifest.md)
+
+- **日期**: 2026-03-24
+    - **特性摘要**: Bridge 新增 iPhone ShareKit，一期完成曲目信息/歌词/音眸分享预览、长图 PNG 导出、Photos 保存、系统分享与本地测试 target
+    - **链接**: [iPhone ShareKit 一期闭环特性清单](memory/2026-03-24/iphone_sharekit_phase1_manifest.md)
+
+## 2026-03-23
+
+- **日期**: 2026-03-23
+    - **特性摘要**: API 层新增 Redis 响应缓存 middleware，支持路由级 TTL、空结果 3 秒负缓存、`ETag` 回写与 304 语义，Redis 不可用时自动降级
+    - **链接**: [HTTP Redis 缓存中间件特性清单](memory/2026-03-23/http_redis_cache_middleware_manifest.md)
+
+## 2026-03-23
+
+- **日期**: 2026-03-23
+    - **特性摘要**: D1 同步恢复闭环，增加单飞保护与启动串行化，避免首轮全量与定时器重入滚动耗尽额度
+    - **链接**: [D1 增量同步单飞闭环](memory/2026-03-23/d1_incremental_singleflight_sync_closure_manifest.md)
+
+## 2026-03-22
+
+- **日期**: 2026-03-22
+    - **特性摘要**: 待归因专辑工作项详情新增实时对比与显式刷新，避免冻结上下文被误当作实时数据
+    - **链接**: [待归因专辑工作项上下文刷新特性清单](memory/2026-03-22/pending_album_work_item_context_refresh_manifest.md)
+
+## 2026-03-21
+
+- **日期**: 2026-03-21
+    - **特性摘要**: 封面链路接入 S3 兼容对象存储（MinIO/R2），scrobbler 优先对象命中并回退内存缓存，播放落库后回填 album 封面字段
+    - **链接**: [专辑封面对象存储闭环](memory/2026-03-21/album_artwork_object_storage_closure_manifest.md)
+
 ## 2026-03-15 ~ 2026-03-20
 
 - **日期范围**: 2026-03-15 ~ 2026-03-20

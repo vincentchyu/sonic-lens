@@ -18,10 +18,16 @@
 
 ## Player
 - Now Playing (WS): ws://<host>/ws
+- Artwork Resolve: GET /api/artwork/resolve?albumArtist=...&artist=...&album=...&artworkKey=...
 - Lyrics: GET /api/track-lyrics?artist=...&track=...&album=...
 - Insight: GET /api/track-insight?artist=...&track=...&album=...
+- Album Insight: GET /api/album-insight?albumID=...
+- Album Insight Generate: POST /api/album-insight { album_id, provider, model }
 - Insight Stream: GET /api/track-insight-stream?artist=...&track=...&album=...
+- AI Platforms: GET /api/ai-models
+- AI Platform Models: GET /api/ai-models/:platform/models
 - Favorite: POST /api/favorite
+- Terminal Header: `X-SonicLens-Terminal: web|mac|ipad|iphone`
 
 ## Health
 - GET /health

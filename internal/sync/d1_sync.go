@@ -6,24 +6,34 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	_ "github.com/peterheb/cfd1"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/config"
+	coredb "github.com/vincentchyu/sonic-lens/core/db"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
 // D1Client D1 客户端封装
 type D1Client struct {
-	db  *sql.DB
-	cfg *config.CloudflareConfig
+	db          *sql.DB
+	cfg         *config.CloudflareConfig
+	syncRunning int32
 }
 
 const d1MaxParamsPerStatement = 31
 const d1ExecMaxRetries = 5
+const d1TrackUpsertFields = 14
+const d1PlayRecordUpsertFields = 18
+const d1TopAlbumUpsertFields = 7
+const d1DriverName = "cfd1"
 
 func batchSizeByParams(paramsPerRow int) int {
 	if paramsPerRow <= 0 {
@@ -60,6 +70,18 @@ func isRetryableD1Error(err error) bool {
 		}
 	}
 	return false
+}
+
+func d1OpenOptions() []otelsql.Option {
+	return []otelsql.Option{
+		otelsql.WithTracerProvider(telemetry.GetTracerProvider()),
+		otelsql.WithMeterProvider(telemetry.GetMeterProvider()),
+		otelsql.WithAttributes(
+			attribute.String("db.system", "sqlite"),
+			attribute.String("db.name", "cloudflare_d1"),
+			attribute.String("db.operation.mode", "rest_api"),
+		),
+	}
 }
 
 func (c *D1Client) execWithRetry(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
@@ -102,6 +124,9 @@ func (c *D1Client) ensureSchema(ctx context.Context) error {
 	if err := c.ensureTrackPlayRecordsSchema(ctx); err != nil {
 		return err
 	}
+	if err := c.ensureTopAlbumStatSchema(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -122,6 +147,32 @@ func (c *D1Client) ensureSyncMetadataSchema(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to ensure sync_metadata schema: %w", err)
 	}
+	if err := c.seedSyncMetadataBootstrap(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *D1Client) seedSyncMetadataBootstrap(ctx context.Context) error {
+	bootstrapAt := time.Now().Add(-72 * time.Hour).Format(time.RFC3339)
+	now := time.Now().Format(time.RFC3339)
+	tableNames := []string{"tracks", "track_play_records", "genres", "dashboard_stats"}
+
+	for _, tableName := range tableNames {
+		_, err := c.execWithRetry(
+			ctx,
+			`
+			INSERT OR IGNORE INTO sync_metadata (
+				table_name, last_sync_time, sync_count, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?)
+		`,
+			tableName, bootstrapAt, 0, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to seed sync_metadata for %s: %w", tableName, err)
+		}
+	}
+
 	return nil
 }
 
@@ -297,7 +348,16 @@ func (c *D1Client) ensureTrackPlayRecordsSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if hasTrackNumber && hasDiscNumber && hasResolvedTrackID && hasResolutionStatus && hasResolutionConfidence {
+	hasAlbumID, err := c.tableHasColumn(ctx, "track_play_records", "album_id")
+	if err != nil {
+		return err
+	}
+	hasMusicBrainzID, err := c.tableHasColumn(ctx, "track_play_records", "music_brainz_id")
+	if err != nil {
+		return err
+	}
+	if hasTrackNumber && hasDiscNumber && hasResolvedTrackID && hasResolutionStatus &&
+		hasResolutionConfidence && hasLibraryApplied && hasAlbumID && hasMusicBrainzID {
 		return c.ensureTrackPlayRecordsIndexes(ctx)
 	}
 
@@ -309,6 +369,8 @@ func (c *D1Client) ensureTrackPlayRecordsSchema(ctx context.Context) error {
 		hasResolutionStatus,
 		hasResolutionConfidence,
 		hasLibraryApplied,
+		hasAlbumID,
+		hasMusicBrainzID,
 	)
 }
 
@@ -321,11 +383,13 @@ func (c *D1Client) createTrackPlayRecordsTable(ctx context.Context) error {
 			album_artist TEXT,
 			album TEXT NOT NULL,
 			track TEXT NOT NULL,
+			album_id INTEGER DEFAULT 0,
 			duration INTEGER,
 			play_time TEXT NOT NULL,
 				scrobbled INTEGER DEFAULT 0,
 				track_number INTEGER DEFAULT 0,
 				disc_number INTEGER DEFAULT 1,
+				music_brainz_id TEXT,
 				source TEXT,
 				resolved_track_id INTEGER DEFAULT 0,
 				resolution_status TEXT NOT NULL DEFAULT 'pending',
@@ -346,6 +410,8 @@ func (c *D1Client) ensureTrackPlayRecordsIndexes(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_play_records_play_time ON track_play_records(play_time DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_play_records_artist ON track_play_records(artist)",
 		"CREATE INDEX IF NOT EXISTS idx_play_records_source ON track_play_records(source)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_album_id ON track_play_records(album_id)",
+		"CREATE INDEX IF NOT EXISTS idx_play_records_music_brainz_id ON track_play_records(music_brainz_id)",
 		"CREATE INDEX IF NOT EXISTS idx_play_records_resolved_track_id ON track_play_records(resolved_track_id)",
 		"CREATE INDEX IF NOT EXISTS idx_play_records_resolution_status ON track_play_records(resolution_status)",
 		"CREATE INDEX IF NOT EXISTS idx_play_records_library_applied ON track_play_records(library_applied)",
@@ -360,7 +426,8 @@ func (c *D1Client) ensureTrackPlayRecordsIndexes(ctx context.Context) error {
 
 func (c *D1Client) migrateTrackPlayRecordsTable(
 	ctx context.Context,
-	hasTrackNumber, hasDiscNumber, hasResolvedTrackID, hasResolutionStatus, hasResolutionConfidence, hasLibraryApplied bool,
+	hasTrackNumber, hasDiscNumber, hasResolvedTrackID, hasResolutionStatus,
+	hasResolutionConfidence, hasLibraryApplied, hasAlbumID, hasMusicBrainzID bool,
 ) error {
 	log.Info(
 		ctx, "Migrating D1 track_play_records schema",
@@ -370,6 +437,8 @@ func (c *D1Client) migrateTrackPlayRecordsTable(
 		zap.Bool("has_resolution_status", hasResolutionStatus),
 		zap.Bool("has_resolution_confidence", hasResolutionConfidence),
 		zap.Bool("has_library_applied", hasLibraryApplied),
+		zap.Bool("has_album_id", hasAlbumID),
+		zap.Bool("has_music_brainz_id", hasMusicBrainzID),
 	)
 
 	if _, err := c.execWithRetry(ctx, "DROP TABLE IF EXISTS track_play_records_legacy_backup"); err != nil {
@@ -406,18 +475,28 @@ func (c *D1Client) migrateTrackPlayRecordsTable(
 	if hasLibraryApplied {
 		libraryAppliedExpr = "COALESCE(library_applied, 0)"
 	}
+	albumIDExpr := "0"
+	if hasAlbumID {
+		albumIDExpr = "COALESCE(album_id, 0)"
+	}
+	musicBrainzIDExpr := "''"
+	if hasMusicBrainzID {
+		musicBrainzIDExpr = "COALESCE(music_brainz_id, '')"
+	}
 
 	copySQL := fmt.Sprintf(
 		`INSERT INTO track_play_records (
-			artist, album_artist, album, track, duration, play_time, scrobbled,
-			track_number, disc_number, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
+			artist, album_artist, album, track, album_id, duration, play_time, scrobbled,
+			track_number, disc_number, music_brainz_id, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
 		)
 		SELECT
-			artist, album_artist, album, track, duration, play_time, COALESCE(scrobbled, 0),
-			%s, %s, source, %s, %s, %s, %s, created_at, updated_at
+			artist, album_artist, album, track, %s, duration, play_time, COALESCE(scrobbled, 0),
+			%s, %s, %s, source, %s, %s, %s, %s, created_at, updated_at
 		FROM track_play_records_legacy_backup`,
+		albumIDExpr,
 		trackNumberExpr,
 		discNumberExpr,
+		musicBrainzIDExpr,
 		resolvedTrackIDExpr,
 		resolutionStatusExpr,
 		resolutionConfidenceExpr,
@@ -428,6 +507,47 @@ func (c *D1Client) migrateTrackPlayRecordsTable(
 	}
 	if _, err := c.execWithRetry(ctx, "DROP TABLE track_play_records_legacy_backup"); err != nil {
 		return fmt.Errorf("failed to drop track_play_records legacy table: %w", err)
+	}
+	return nil
+}
+
+func (c *D1Client) ensureTopAlbumStatSchema(ctx context.Context) error {
+	exists, err := c.tableExists(ctx, "top_album_stat")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := c.execWithRetry(
+			ctx, `
+		CREATE TABLE IF NOT EXISTS top_album_stat (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			period_days INTEGER NOT NULL,
+			album_id INTEGER DEFAULT 0,
+			album TEXT NOT NULL,
+			artist TEXT DEFAULT '',
+			play_count INTEGER DEFAULT 0,
+			rank INTEGER NOT NULL,
+			updated_at TEXT NOT NULL,
+			UNIQUE (period_days, album, artist)
+		)
+	`,
+		); err != nil {
+			return fmt.Errorf("failed to create top_album_stat table: %w", err)
+		}
+	}
+
+	hasAlbumID, err := c.tableHasColumn(ctx, "top_album_stat", "album_id")
+	if err != nil {
+		return err
+	}
+	if !hasAlbumID {
+		if _, err := c.execWithRetry(ctx, "ALTER TABLE top_album_stat ADD COLUMN album_id INTEGER DEFAULT 0"); err != nil {
+			return fmt.Errorf("failed to add album_id column to top_album_stat: %w", err)
+		}
+	}
+
+	if _, err := c.execWithRetry(ctx, "CREATE INDEX IF NOT EXISTS idx_top_album_period_rank ON top_album_stat(period_days, rank)"); err != nil {
+		return fmt.Errorf("failed to ensure top_album_stat index: %w", err)
 	}
 	return nil
 }
@@ -444,9 +564,15 @@ func NewD1Client(cfg *config.CloudflareConfig) (*D1Client, error) {
 		cfg.AccountID, cfg.APIToken, cfg.D1DatabaseID,
 	)
 
-	db, err := sql.Open("cfd1", dsn)
+	db, err := otelsql.Open(d1DriverName, dsn, d1OpenOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open D1 connection: %w", err)
+	}
+	if config.ConfigObj.Telemetry.DBStatsMetricsEnabled {
+		if err := coredb.RegisterDBStatsMetrics(db, "sqlite"); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to register D1 db stats metrics: %w", err)
+		}
 	}
 
 	// 测试连接
@@ -539,8 +665,8 @@ func (c *D1Client) getTracksFromLocal(ctx context.Context, incremental bool, las
 // batchUpsertTracks 批量插入或更新曲目数据
 func (c *D1Client) batchUpsertTracks(ctx context.Context, tracks []*model.Track) error {
 	// D1 单次事务限制,使用批量处理
-	// 12 params per row -> floor(31/12)=2
-	batchSize := batchSizeByParams(12)
+	// 14 params per row -> floor(31/14)=2
+	batchSize := batchSizeByParams(d1TrackUpsertFields)
 	totalBatches := (len(tracks) + batchSize - 1) / batchSize
 
 	for i := 0; i < len(tracks); i += batchSize {
@@ -574,7 +700,7 @@ func (c *D1Client) upsertTracksBatch(ctx context.Context, tracks []*model.Track)
 	}
 
 	// 字段数量
-	const numFields = 14
+	const numFields = d1TrackUpsertFields
 	placeholders := make([]string, len(tracks))
 	args := make([]interface{}, 0, len(tracks)*numFields)
 
@@ -668,8 +794,8 @@ func (c *D1Client) getPlayRecordsFromLocal(ctx context.Context, incremental bool
 }
 
 func (c *D1Client) batchUpsertPlayRecords(ctx context.Context, records []*model.TrackPlayRecord) error {
-	// 10 params per row -> floor(31/10)=3
-	batchSize := batchSizeByParams(10)
+	// 18 params per row -> floor(31/18)=1
+	batchSize := batchSizeByParams(d1PlayRecordUpsertFields)
 	totalBatches := (len(records) + batchSize - 1) / batchSize
 
 	for i := 0; i < len(records); i += batchSize {
@@ -699,23 +825,25 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 		return nil
 	}
 
-	const numFields = 16
+	const numFields = d1PlayRecordUpsertFields
 	placeholders := make([]string, len(records))
 	args := make([]interface{}, 0, len(records)*numFields)
 
 	for i, record := range records {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 		args = append(
 			args,
 			record.Artist,
 			record.AlbumArtist,
 			record.Album,
 			record.Track,
+			record.AlbumID,
 			record.Duration,
 			record.PlayTime.Format(time.RFC3339),
 			boolToInt(record.Scrobbled),
 			record.TrackNumber,
 			record.DiscNumber,
+			record.MusicBrainzID,
 			record.Source,
 			record.ResolvedTrackID,
 			record.ResolutionStatus,
@@ -729,7 +857,7 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 	query := fmt.Sprintf(
 		`
 		INSERT OR REPLACE INTO track_play_records (
-			artist, album_artist, album, track, duration, play_time, scrobbled, track_number, disc_number, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
+			artist, album_artist, album, track, album_id, duration, play_time, scrobbled, track_number, disc_number, music_brainz_id, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
 		) VALUES %s
 	`, strings.Join(placeholders, ", "),
 	)
@@ -1023,8 +1151,8 @@ func (c *D1Client) batchUpsertTopAlbumStats(ctx context.Context, rows []*model.T
 	if len(rows) == 0 {
 		return nil
 	}
-	// 6 params per row -> floor(31/6)=5
-	batchSize := batchSizeByParams(6)
+	// 7 params per row -> floor(31/7)=4
+	batchSize := batchSizeByParams(d1TopAlbumUpsertFields)
 	for i := 0; i < len(rows); i += batchSize {
 		end := i + batchSize
 		if end > len(rows) {
@@ -1039,13 +1167,13 @@ func (c *D1Client) batchUpsertTopAlbumStats(ctx context.Context, rows []*model.T
 
 func (c *D1Client) upsertTopAlbumStatsBatch(ctx context.Context, rows []*model.TopAlbumStat) error {
 	placeholders := make([]string, len(rows))
-	args := make([]interface{}, 0, len(rows)*6)
+	args := make([]interface{}, 0, len(rows)*d1TopAlbumUpsertFields)
 	for i, row := range rows {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?)"
-		args = append(args, row.PeriodDays, row.Album, row.Artist, row.PlayCount, row.Rank, row.UpdatedAt.Format(time.RFC3339))
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?)"
+		args = append(args, row.PeriodDays, row.AlbumID, row.Album, row.Artist, row.PlayCount, row.Rank, row.UpdatedAt.Format(time.RFC3339))
 	}
 	query := fmt.Sprintf(
-		"INSERT OR REPLACE INTO top_album_stat (period_days, album, artist, play_count, rank, updated_at) VALUES %s",
+		"INSERT OR REPLACE INTO top_album_stat (period_days, album_id, album, artist, play_count, rank, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
 	_, err := c.execWithRetry(ctx, query, args...)
@@ -1267,8 +1395,21 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+func (c *D1Client) tryBeginSync() bool {
+	return atomic.CompareAndSwapInt32(&c.syncRunning, 0, 1)
+}
+
+func (c *D1Client) endSync() {
+	atomic.StoreInt32(&c.syncRunning, 0)
+}
+
 // SyncAll 同步所有数据
 func (c *D1Client) SyncAll(ctx context.Context, incremental bool) error {
+	if !c.tryBeginSync() {
+		return ErrD1SyncAlreadyRunning
+	}
+	defer c.endSync()
+
 	log.Info(ctx, "Starting D1 sync", zap.Bool("incremental", incremental))
 
 	// 同步曲目数据
@@ -1297,3 +1438,5 @@ func (c *D1Client) SyncAll(ctx context.Context, incremental bool) error {
 	log.Info(ctx, "D1 sync completed successfully", zap.Bool("incremental", incremental))
 	return nil
 }
+
+var ErrD1SyncAlreadyRunning = fmt.Errorf("D1 sync already running")

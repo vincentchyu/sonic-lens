@@ -16,6 +16,9 @@ struct NowPlaying: Decodable {
     let artwork: String?
     let isAppleMusicFav: Bool?
     let isLastFmFav: Bool?
+    let appleMusicState: TrackFavoriteState?
+    let lastfmState: TrackFavoriteState?
+    let favoriteState: TrackFavoriteState?
     let trackNumber: Int?
     let discNumber: Int?
 
@@ -29,7 +32,20 @@ struct NowPlaying: Decodable {
         case artwork = "cover_art_url"
         case isAppleMusicFav = "apple_music"
         case isLastFmFav = "lastfm"
+        case appleMusicState = "apple_music_state"
+        case lastfmState = "lastfm_state"
+        case favoriteState = "favorite_state"
         case trackNumber = "track_number"
         case discNumber = "disc_number"
+    }
+
+    var favoriteProjection: TrackFavoriteProjection {
+        TrackFavoriteProjection(
+            appleMusic: isAppleMusicFav ?? false,
+            lastfm: isLastFmFav ?? false,
+            appleMusicState: appleMusicState,
+            lastfmState: lastfmState,
+            favoriteState: favoriteState
+        )
     }
 }

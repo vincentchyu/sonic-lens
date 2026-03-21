@@ -15,12 +15,18 @@ enum APIPath {
     static let tracks = "/api/tracks"
     static let librarySync = "/api/library/sync"
     static let insights = "/api/insights/all"
+    static func insightDetail(id: Int64) -> String { "/api/insights/\(id)" }
     static let unscrobbled = "/api/unscrobbled-records"
+    static let unscrobbledCount = "/api/unscrobbled-records/count"
 
     static let trackLyrics = "/api/track-lyrics"
+    static let aiModels = "/api/ai-models"
+    static func aiPlatformModels(platformID: String) -> String { "/api/ai-models/\(platformID)/models" }
     static let trackInsight = "/api/track-insight"
+    static let albumInsight = "/api/album-insight"
     static let trackInsightStream = "/api/track-insight-stream"
     static let favorite = "/api/favorite"
+    static let artworkResolve = "/api/artwork/resolve"
 
     static let musicBrainzSearchReleases = "/api/musicbrainz/search-releases"
     static let musicBrainzCandidates = "/api/musicbrainz/candidates"

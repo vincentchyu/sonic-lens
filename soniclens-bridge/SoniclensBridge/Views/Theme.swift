@@ -8,8 +8,11 @@ enum SonicTheme {
     )
 
     static let card = dynamicColor(
-        light: .sonicWhite(1.0, alpha: 0.45),
-        dark: .sonicWhite(0.1, alpha: 0.3)
+        // light: .sonicWhite(1.0, alpha: 0.45),
+        light: .sonicWhite(1.0, alpha: 0.8),
+        // dark: .sonicWhite(0.1, alpha: 0.3)
+        dark: .sonicWhite(0.1, alpha: 0.7)
+
     )
 
     static let glassBorder = dynamicColor(
@@ -56,6 +59,7 @@ struct GlassPanel<Content: View>: View {
     let cornerRadius: CGFloat
     let padding: CGFloat
     let content: Content
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     init(cornerRadius: CGFloat = 16, padding: CGFloat = 16, @ViewBuilder content: () -> Content) {
         self.cornerRadius = cornerRadius
@@ -64,15 +68,28 @@ struct GlassPanel<Content: View>: View {
     }
 
     var body: some View {
+        let simplified = performanceModeEnabled
         content
             .padding(padding)
-            .background(SonicTheme.card)
+            .background {
+                if simplified {
+                    SonicTheme.card
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                } else {
+                    SonicTheme.card
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .stroke(SonicTheme.glassBorder, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 12)
+            .shadow(
+                color: Color.black.opacity(simplified ? 0.04 : 0.08),
+                radius: simplified ? 10 : 18,
+                x: 0,
+                y: simplified ? 6 : 12
+            )
     }
 }
 
@@ -86,17 +103,19 @@ struct AmbientBackgroundView: View {
     var body: some View {
         ZStack {
             gradient
-            ForEach(orbs) { orb in
-                Circle()
-                    .fill(orb.color)
-                    .frame(width: orb.size, height: orb.size)
-                    .blur(radius: orb.blur)
-                    .opacity(orb.opacity)
-                    .offset(performanceModeEnabled ? orb.offsetFrom : (animate ? orb.offsetTo : orb.offsetFrom))
-                    .animation(
-                        performanceModeEnabled ? .none : .easeInOut(duration: orb.duration).repeatForever(autoreverses: true),
-                        value: animate
-                    )
+            if !performanceModeEnabled {
+                ForEach(orbs) { orb in
+                    Circle()
+                        .fill(orb.color)
+                        .frame(width: orb.size, height: orb.size)
+                        .blur(radius: orb.blur)
+                        .opacity(orb.opacity)
+                        .offset(animate ? orb.offsetTo : orb.offsetFrom)
+                        .animation(
+                            .easeInOut(duration: orb.duration).repeatForever(autoreverses: true),
+                            value: animate
+                        )
+                }
             }
         }
         .ignoresSafeArea()

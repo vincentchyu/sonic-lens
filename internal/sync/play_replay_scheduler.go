@@ -9,6 +9,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -45,10 +46,18 @@ func StartTrackPlayReplayScheduler(ctx context.Context) {
 			)
 
 			if cfg.RunOnStartup {
-				go replayTrackPlayRecordsBatch(ctx, batchSize, cfg.OnlyUnapplied, cfg.OnlyUnresolved)
+				telemetry.GoSafe(
+					ctx, "play_replay.run_startup_batch", func(asyncCtx context.Context) {
+						replayTrackPlayRecordsBatch(asyncCtx, batchSize, cfg.OnlyUnapplied, cfg.OnlyUnresolved)
+					},
+				)
 			}
 
-			go runTrackPlayReplayLoop(ctx, interval, batchSize, cfg.OnlyUnapplied, cfg.OnlyUnresolved)
+			telemetry.GoOnlySafe(
+				ctx, func(asyncCtx context.Context) {
+					runTrackPlayReplayLoop(asyncCtx, interval, batchSize, cfg.OnlyUnapplied, cfg.OnlyUnresolved)
+				},
+			)
 		},
 	)
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NowPlayingBarView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @Binding var isExpanded: Bool
 
     // 封面尺寸
@@ -56,14 +57,27 @@ struct NowPlayingBarView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: Self.height)
-            .background(.ultraThinMaterial)
+            .background {
+                if performanceModeEnabled {
+                    Rectangle()
+                        .fill(SonicTheme.card)
+                } else {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                }
+            }
             .overlay(
                 Rectangle()
                     .fill(Color.black.opacity(0.08))
                     .frame(height: 1),
                 alignment: .top
             )
-            .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: -6)
+            .shadow(
+                color: Color.black.opacity(performanceModeEnabled ? 0.10 : 0.18),
+                radius: performanceModeEnabled ? 10 : 16,
+                x: 0,
+                y: performanceModeEnabled ? -4 : -6
+            )
         }
         .buttonStyle(.plain)
     }

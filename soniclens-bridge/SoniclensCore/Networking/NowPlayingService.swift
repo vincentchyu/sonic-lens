@@ -68,6 +68,9 @@ final class NowPlayingService {
     private func normalizedNowPlaying(from nowPlaying: NowPlaying?) -> NowPlaying? {
         guard let nowPlaying else { return nil }
         let artwork = resolveArtworkURL(nowPlaying.artwork)
+        if let artwork {
+            logger.info("normalized now_playing artwork url=\(artwork, privacy: .public)")
+        }
         return NowPlaying(
             artist: nowPlaying.artist,
             album: nowPlaying.album,
@@ -78,6 +81,9 @@ final class NowPlayingService {
             artwork: artwork,
             isAppleMusicFav: nowPlaying.isAppleMusicFav,
             isLastFmFav: nowPlaying.isLastFmFav,
+            appleMusicState: nowPlaying.appleMusicState,
+            lastfmState: nowPlaying.lastfmState,
+            favoriteState: nowPlaying.favoriteState,
             trackNumber: nowPlaying.trackNumber,
             discNumber: nowPlaying.discNumber
         )
@@ -89,6 +95,6 @@ final class NowPlayingService {
         if url.scheme != nil {
             return raw
         }
-        return server.baseURL.appending(path: raw.hasPrefix("/") ? String(raw.dropFirst()) : raw).absoluteString
+        return server.artworkBaseURL.appending(path: raw.hasPrefix("/") ? String(raw.dropFirst()) : raw).absoluteString
     }
 }

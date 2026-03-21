@@ -44,11 +44,14 @@
 - 通用播放条/组件：`PlaybackBarView.swift`、`PlayerView.swift`（如被复用）
 - 资料库与详情：`LibraryView.swift`、`AlbumDetailView.swift`、`TrackDetailView.swift`
 - 音眸共享渲染：`InsightDetailView.swift`（包含共享 `InsightPrimaryContentView` / `InsightRichContentView` 富渲染树）
+- 分享基础设施：`ShareKit/Domain/*`、`ShareKit/Builder/*`、`ShareKit/Render/*`、`ShareKit/Action/*`、`ShareKit/Analytics/*`
 - 共用业务页组件：`AlbumGridView`、`TrackListView`、`SonicLensInsightsView`、`UnreportedListView`（定义在 `Views` 共用文件中）
 
 影响面：
 - 样式 token、通用控件、列表行为修改通常会波及多端（至少两个端）。
 - 音眸区块顺序、标签文本样式、`explain` 视觉优先级等若在共享渲染树中调整，需按 Mac / iPad / iPhone 联动回归。
+- ShareKit 的 payload 结构、音眸 segment 解析、分页导出和保存/分享动作属于共享基础设施；改动时至少按 iPhone 首期入口和后续跨端复用性一起评估。
+- 资料库页的排序/筛选摘要属于页面级反馈，放在标题或控制区附近即可；专辑网格和曲目长列表只接收容器传入的派生值，不要直接订阅高频全局状态。
 
 ## 3. 平台私有模块（改动主要局部生效）
 
@@ -76,6 +79,8 @@
 - 入口链：`SoniclensBridgePhoneApp.swift`、`PhoneRootView.swift`
 - 容器：`PhoneAppLayoutView.swift`（Tab 容器 + 紧凑播放条）
 - 页面：`PhoneHomeView.swift`、`PhoneNowPlayingView.swift`
+- 分享模板与预览：`ShareKit/Template/iPhone/*`
+- 首期入口：`TrackDetailView` 的 iPhone 分享菜单与 `SharePreviewView` 全屏预览
 
 主要影响：
 - 仅影响 iPhone 产品线（除非改动到共享层）。
@@ -89,6 +94,7 @@
 5. 改 `Phone*` 文件：优先判定为 iPhone 私有变更。
 6. 涉及 `#if os(macOS)` 或 `#if os(iOS)` 条件块时，需检查对应 target 是否都可编译。
 7. 改 `InsightDetailView.swift` 或 `LibraryModels.swift` 中的音眸解析/渲染逻辑：必须按三端共享变更处理，默认不允许在端内再复制一套字符串解析。
+8. 改 `TrackDetailView` 的 iPhone 分享入口、`SharePreviewView` 或 `ShareKit/Template/iPhone/*`：优先按 iPhone 私有体验改动处理，但必须确认没有破坏共享 payload / render / action 层接口。
 
 ## 5. 本清单维护要求
 

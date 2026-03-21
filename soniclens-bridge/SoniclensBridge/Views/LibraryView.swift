@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct LibraryView: View {
     @EnvironmentObject private var store: AppStore
@@ -230,26 +231,32 @@ private struct LibraryEntryCard: View {
 }
 
 struct AlbumListView: View {
+    @EnvironmentObject private var store: AppStore
     @ObservedObject var viewModel: LibraryViewModel
     @State private var selectedSort: LibrarySort = .recent
-    @State private var query = ""
+    @State private var searchText = ""
+    @State private var committedQuery = ""
+    @State private var searchCommitTask: Task<Void, Never>?
 
     private let columns = [
         GridItem(.adaptive(minimum: 208), spacing: 18)
     ]
 
     var body: some View {
+        let artworkBaseURL = store.currentServer?.artworkBaseURL
+
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 LibraryCollectionHeader(
                     title: "专辑",
                     subtitle: "本地分页索引，适合快速滚动浏览。",
-                            trailing: {
-                                HStack(spacing: 10) {
-                                    ToolbarSearchField(text: $query)
-                                    LibrarySortMenu(title: selectedSort.rawValue, selection: $selectedSort, options: LibrarySort.albumOptions)
-                                }
-                            }
+                    statusSummary: LibraryStatusSummary.album(sort: selectedSort),
+                    trailing: {
+                        HStack(spacing: 10) {
+                            ToolbarSearchField(text: $searchText)
+                            LibrarySortMenu(title: "排序", selection: $selectedSort, options: LibrarySort.albumOptions)
+                        }
+                    }
                 )
 
                 if viewModel.albums.isEmpty {
@@ -261,13 +268,13 @@ struct AlbumListView: View {
                     LazyVGrid(columns: columns, spacing: 18) {
                         ForEach(Array(viewModel.albums.enumerated()), id: \.element.id) { index, album in
                             NavigationLink(destination: albumDetailDestination(albumID: album.id)) {
-                                AlbumGridCard(album: album)
+                                AlbumGridCard(album: album, artworkBaseURL: artworkBaseURL)
                             }
                             .buttonStyle(.plain)
                             .onAppear {
                                 if viewModel.shouldLoadMoreAlbums(at: index) {
                                     Task {
-                                        await viewModel.loadMoreAlbums(sort: selectedSort, query: query)
+                                        await viewModel.loadMoreAlbums(sort: selectedSort, query: committedQuery)
                                     }
                                 }
                             }
@@ -277,47 +284,84 @@ struct AlbumListView: View {
             }
             .padding(28)
         }
-        .task(id: "\(selectedSort.rawValue)|\(query)") {
-            await viewModel.reloadAlbums(sort: selectedSort, query: query)
+        .task(id: "\(selectedSort.rawValue)|\(committedQuery)") {
+            await viewModel.reloadAlbums(sort: selectedSort, query: committedQuery)
+        }
+        .onChange(of: searchText) { _, value in
+            scheduleSearchCommit(value)
         }
         .navigationTitle("专辑")
+    }
+
+    private func scheduleSearchCommit(_ text: String) {
+        searchCommitTask?.cancel()
+        let committedText = text
+        searchCommitTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard committedQuery != committedText else { return }
+            committedQuery = committedText
+        }
     }
 }
 
 struct AlbumGridCard: View {
     let album: Album
+    let artworkBaseURL: URL?
     @State private var isHovered = false
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
+        let artworkURL = ArtworkURLResolver.resolveArtworkPath(album.coverArtURL, artworkBaseURL: artworkBaseURL)
+        let hoverEnabled = !performanceModeEnabled
+        let hoverFill = isHovered && hoverEnabled ? Color.primary.opacity(0.04) : Color.clear
+
         VStack(alignment: .leading, spacing: 12) {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.accentColor.opacity(0.48),
-                            Color.accentColor.opacity(0.16)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            Group {
+                if let artworkURL, let url = URL(string: artworkURL) {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image {
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            ArtworkSquareView(
+                                artworkURL: nil,
+                                fallbackTitle: album.name,
+                                size: 184,
+                                cornerRadius: 16,
+                                style: .vivid
+                            )
+                        }
+                    }
+                } else {
+                    ArtworkSquareView(
+                        artworkURL: nil,
+                        fallbackTitle: album.name,
+                        size: 184,
+                        cornerRadius: 16,
+                        style: .vivid
                     )
-                )
-                .frame(height: 184)
-                .overlay(alignment: .topLeading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.14))
-                        .frame(width: 72, height: 24)
-                        .overlay(
-                            Text(album.releaseDate ?? "未知年份")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.86))
-                        )
-                        .padding(14)
                 }
-                .overlay(
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.72))
-                )
+            }
+            .frame(maxWidth: .infinity, minHeight: 184, maxHeight: 184)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(alignment: .topLeading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.14))
+                    .frame(width: 72, height: 24)
+                    .overlay(
+                        Text(album.releaseDate ?? "未知年份")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.86))
+                    )
+                    .padding(14)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(album.name)
@@ -340,10 +384,11 @@ struct AlbumGridCard: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                .fill(hoverFill)
         )
         .glassCard(cornerRadius: 20, isSimplified: true)
         .onHover { hovering in
+            guard hoverEnabled else { return }
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -379,7 +424,9 @@ struct TrackListView: View {
     @State private var selectedSort: LibrarySort
     @State private var selectedFilter: TrackFilter
     @State private var query: String
+    @State private var committedQuery: String
     @State private var selectedTrack: Track?
+    @State private var searchCommitTask: Task<Void, Never>?
 
     init(
         viewModel: LibraryViewModel,
@@ -398,10 +445,12 @@ struct TrackListView: View {
         _selectedSort = State(initialValue: sort)
         _selectedFilter = State(initialValue: filter)
         _query = State(initialValue: query)
+        _committedQuery = State(initialValue: query)
     }
 
     var body: some View {
         let nowPlaying = store.nowPlaying
+        let favoriteKeys = store.favoriteKeys
 
         GeometryReader { proxy in
             let columns = TrackColumnLayout(totalWidth: proxy.size.width - 40)
@@ -413,20 +462,21 @@ struct TrackListView: View {
                         LibraryCollectionHeader(
                             title: "曲目",
                             subtitle: "长列表使用轻量表面，避免在滚动时叠加高成本材质。",
+                            statusSummary: LibraryStatusSummary.track(sort: selectedSort, filter: selectedFilter),
                             trailing: {
                                 if usesCompactRows {
                                     VStack(alignment: .trailing, spacing: 10) {
                                         ToolbarSearchField(text: $query)
                                         HStack(spacing: 10) {
                                             TrackFilterMenu(selection: $selectedFilter)
-                                            LibrarySortMenu(title: selectedSort.rawValue, selection: $selectedSort, options: LibrarySort.trackOptions)
+                                            LibrarySortMenu(title: "排序", selection: $selectedSort, options: LibrarySort.trackOptions)
                                         }
                                     }
                                 } else {
                                     HStack(spacing: 10) {
                                         ToolbarSearchField(text: $query)
                                         TrackFilterMenu(selection: $selectedFilter)
-                                        LibrarySortMenu(title: selectedSort.rawValue, selection: $selectedSort, options: LibrarySort.trackOptions)
+                                        LibrarySortMenu(title: "排序", selection: $selectedSort, options: LibrarySort.trackOptions)
                                     }
                                 }
                             }
@@ -445,6 +495,15 @@ struct TrackListView: View {
 
                         LazyVStack(spacing: 8) {
                             ForEach(Array(viewModel.tracks.enumerated()), id: \.element.id) { index, track in
+                                let isFavorite = track.isFavorited || favoriteKeys.contains(
+                                    favoriteKey(
+                                        artist: track.artist,
+                                        album: track.album,
+                                        track: track.track,
+                                        trackNumber: track.trackNumber,
+                                        discNumber: track.discNumber
+                                    )
+                                )
                                 Group {
                                     if usesCompactRows {
                                         CompactTrackRowView(
@@ -452,13 +511,18 @@ struct TrackListView: View {
                                             isNowPlaying: nowPlaying?.track == track.track &&
                                                 nowPlaying?.artist == track.artist &&
                                                 nowPlaying?.album == track.album,
-                                            isFavorite: track.isFavorited || store.isFavorite(
-                                                artist: track.artist,
-                                                album: track.album,
-                                                track: track.track,
-                                                trackNumber: track.trackNumber,
-                                                discNumber: track.discNumber
-                                            )
+                                            isFavorite: isFavorite,
+                                            onFavorite: {
+                                                Task {
+                                                    await store.toggleFavorite(
+                                                        artist: track.artist,
+                                                        album: track.album,
+                                                        track: track.track,
+                                                        trackNumber: track.trackNumber,
+                                                        discNumber: track.discNumber
+                                                    )
+                                                }
+                                            }
                                         )
                                     } else {
                                         TrackRowView(
@@ -467,13 +531,18 @@ struct TrackListView: View {
                                             isNowPlaying: nowPlaying?.track == track.track &&
                                                 nowPlaying?.artist == track.artist &&
                                                 nowPlaying?.album == track.album,
-                                            isFavorite: track.isFavorited || store.isFavorite(
-                                                artist: track.artist,
-                                                album: track.album,
-                                                track: track.track,
-                                                trackNumber: track.trackNumber,
-                                                discNumber: track.discNumber
-                                            )
+                                            isFavorite: isFavorite,
+                                            onFavorite: {
+                                                Task {
+                                                    await store.toggleFavorite(
+                                                        artist: track.artist,
+                                                        album: track.album,
+                                                        track: track.track,
+                                                        trackNumber: track.trackNumber,
+                                                        discNumber: track.discNumber
+                                                    )
+                                                }
+                                            }
                                         )
                                     }
                                 }
@@ -487,7 +556,7 @@ struct TrackListView: View {
                                             await viewModel.loadMoreTracks(
                                                 sort: selectedSort,
                                                 filter: selectedFilter,
-                                                query: query
+                                                query: committedQuery
                                             )
                                         }
                                     }
@@ -501,8 +570,8 @@ struct TrackListView: View {
                 .padding(.bottom, 24)
             }
         }
-        .task(id: "\(selectedSort.rawValue)|\(selectedFilter.rawValue)|\(query)") {
-            await viewModel.reloadTracks(sort: selectedSort, filter: selectedFilter, query: query)
+        .task(id: "\(selectedSort.rawValue)|\(selectedFilter.rawValue)|\(committedQuery)") {
+            await viewModel.reloadTracks(sort: selectedSort, filter: selectedFilter, query: committedQuery)
         }
         .onChange(of: externalSort) { _, value in
             selectedSort = value
@@ -512,10 +581,25 @@ struct TrackListView: View {
         }
         .onChange(of: externalQuery) { _, value in
             query = value
+            committedQuery = value
+        }
+        .onChange(of: query) { _, value in
+            guard showsInlineControls else { return }
+            scheduleSearchCommit(value)
         }
         .navigationDestination(item: $selectedTrack) { track in
             TrackDetailView(track: track)
         }
+    }
+
+    private func favoriteKey(
+        artist: String,
+        album: String,
+        track: String,
+        trackNumber: Int?,
+        discNumber: Int?
+    ) -> String {
+        [artist, album, track, String(trackNumber ?? 0), String(discNumber ?? 0)].joined(separator: "•")
     }
 
     private var emptyTitle: String {
@@ -539,20 +623,39 @@ struct TrackListView: View {
             return "开始播放后资料库会逐步丰富。"
         }
     }
+
+    private func scheduleSearchCommit(_ text: String) {
+        searchCommitTask?.cancel()
+        let committedText = text
+        searchCommitTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard committedQuery != committedText else { return }
+            committedQuery = committedText
+        }
+    }
 }
 
 private struct LibraryCollectionHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
+    let statusSummary: String?
     let trailing: Trailing
 
     init(
         title: String,
         subtitle: String,
+        statusSummary: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
         self.subtitle = subtitle
+        self.statusSummary = statusSummary
         self.trailing = trailing()
     }
 
@@ -566,6 +669,10 @@ private struct LibraryCollectionHeader<Trailing: View>: View {
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(SonicTheme.textSecondary)
+                    if let statusSummary, !statusSummary.isEmpty {
+                        LibraryStatusSummaryChip(text: statusSummary)
+                            .padding(.top, 2)
+                    }
                 }
                 Spacer(minLength: 12)
                 trailing
@@ -625,14 +732,19 @@ private struct TrackHeaderRow: View {
 }
 
 private struct TrackRowView: View {
-    @EnvironmentObject private var store: AppStore
     let track: Track
     let columns: TrackColumnLayout
     let isNowPlaying: Bool
     let isFavorite: Bool
+    let onFavorite: () -> Void
     @State private var isHovered = false
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
+        let hoverEnabled = !performanceModeEnabled
+        let rowFill = isNowPlaying ? Color.accentColor.opacity(0.08) :
+            (isHovered && hoverEnabled ? Color.primary.opacity(0.045) : SonicTheme.card.opacity(performanceModeEnabled ? 0.64 : 0.55))
+
         HStack(spacing: 16) {
             Text(trackNumber)
                 .font(.caption)
@@ -659,41 +771,28 @@ private struct TrackRowView: View {
 
             Spacer(minLength: 12)
 
-            TrackRowActions(
-                isVisible: isHovered,
-                isFavorite: isFavorite,
-                onFavorite: {
-                    Task {
-                        await store.toggleFavorite(
-                            artist: track.artist,
-                            album: track.album,
-                            track: track.track,
-                            trackNumber: track.trackNumber,
-                            discNumber: track.discNumber
-                        )
-                    }
-                }
-            )
-
             Text(formatDuration(track.duration))
                 .font(.caption)
                 .foregroundStyle(isNowPlaying ? Color.accentColor : Color.secondary)
                 .frame(width: columns.durationWidth, alignment: .trailing)
+
+            TrackRowActions(
+                isFavorite: isFavorite,
+                onFavorite: onFavorite
+            )
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(
-                    isNowPlaying ? Color.accentColor.opacity(0.08) :
-                    (isHovered ? Color.primary.opacity(0.045) : SonicTheme.card.opacity(0.55))
-                )
+                .fill(rowFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.white.opacity(isHovered || isNowPlaying ? 0.16 : 0.08), lineWidth: 1)
         )
         .onHover { hovering in
+            guard hoverEnabled else { return }
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -717,28 +816,29 @@ private struct TrackRowView: View {
 }
 
 struct TrackRowActions: View {
-    let isVisible: Bool
     let isFavorite: Bool
     let onFavorite: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            TrackRowActionButton(symbol: isFavorite ? "heart.fill" : "heart", label: "收藏", action: onFavorite)
+            TrackRowActionButton(isFavorite: isFavorite, label: "收藏", action: onFavorite)
         }
-        .opacity(isVisible ? 1 : 0)
-        .offset(x: isVisible ? 0 : 4)
-        .animation(.easeInOut(duration: 0.12), value: isVisible)
     }
 }
 
 struct CompactTrackRowView: View {
-    @EnvironmentObject private var store: AppStore
     let track: Track
     let isNowPlaying: Bool
     let isFavorite: Bool
+    let onFavorite: () -> Void
     @State private var isHovered = false
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
+        let hoverEnabled = !performanceModeEnabled
+        let rowFill = isNowPlaying ? Color.accentColor.opacity(0.08) :
+            (isHovered && hoverEnabled ? Color.primary.opacity(0.045) : SonicTheme.card.opacity(performanceModeEnabled ? 0.64 : 0.55))
+
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -747,11 +847,6 @@ struct CompactTrackRowView: View {
                         .foregroundStyle(isNowPlaying ? Color.accentColor : SonicTheme.textPrimary)
                         .lineLimit(1)
 
-                    if isFavorite {
-                        Image(systemName: "heart.fill")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.pink)
-                    }
                 }
 
                 Text("\(track.artist) · \(track.album)")
@@ -775,35 +870,22 @@ struct CompactTrackRowView: View {
             Spacer(minLength: 10)
 
             TrackRowActions(
-                isVisible: isHovered || isFavorite,
                 isFavorite: isFavorite,
-                onFavorite: {
-                    Task {
-                        await store.toggleFavorite(
-                            artist: track.artist,
-                            album: track.album,
-                            track: track.track,
-                            trackNumber: track.trackNumber,
-                            discNumber: track.discNumber
-                        )
-                    }
-                }
+                onFavorite: onFavorite
             )
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    isNowPlaying ? Color.accentColor.opacity(0.08) :
-                    (isHovered ? Color.primary.opacity(0.045) : SonicTheme.card.opacity(0.55))
-                )
+                .fill(rowFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(isHovered || isNowPlaying ? 0.16 : 0.08), lineWidth: 1)
         )
         .onHover { hovering in
+            guard hoverEnabled else { return }
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -820,25 +902,21 @@ struct CompactTrackRowView: View {
 }
 
 struct TrackRowActionButton: View {
-    let symbol: String
+    let isFavorite: Bool
     let label: String
     let action: () -> Void
     @State private var isHovered = false
+    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isHovered ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06))
-                )
+            TrackFavoriteBadge(isFavorite: isFavorite, isHighlighted: isHovered)
         }
         .buttonStyle(.plain)
         .buttonStyle(PressableButtonStyle())
-        .help(label)
+        .help(isFavorite ? "取消收藏" : label)
         .onHover { hovering in
+            guard !performanceModeEnabled else { return }
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -846,33 +924,27 @@ struct TrackRowActionButton: View {
     }
 }
 
+struct TrackFavoriteBadge: View {
+    let isFavorite: Bool
+    var isHighlighted: Bool = false
+
+    var body: some View {
+        Image(systemName: isFavorite ? "heart.fill" : "heart")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(SonicTheme.textPrimary)
+            .frame(width: 26, height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isHighlighted ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06))
+            )
+    }
+}
+
 struct InsightListView: View {
-    @EnvironmentObject private var store: AppStore
     @ObservedObject var viewModel: LibraryViewModel
 
     var body: some View {
-        List {
-            Section(header: Text("音眸")) {
-                ForEach(viewModel.insights) { insight in
-                    NavigationLink(destination: InsightDetailView(insight: insight)) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(insight.track)
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("\(insight.artist) · \(insight.album)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .onAppear {
-                        if insight.id == viewModel.insights.last?.id, let server = store.currentServer {
-                            Task { await viewModel.loadMoreInsights(using: server) }
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("音眸")
+        SonicLensInsightsView(viewModel: viewModel)
     }
 }
 
@@ -892,14 +964,14 @@ struct UnscrobbledListView: View {
                             .foregroundColor(.secondary)
                     }
                     .padding(.vertical, 4)
-                    .onAppear {
-                        if record.id == viewModel.unscrobbled.last?.id, let server = store.currentServer {
-                            Task { await viewModel.loadMoreUnscrobbled(using: server) }
-                        }
-                    }
                 }
             }
         }
         .navigationTitle("未上报")
+        .task(id: store.currentServer?.baseURL) {
+            guard let server = store.currentServer else { return }
+            guard viewModel.unscrobbled.isEmpty, viewModel.unscrobbledCount != 0 else { return }
+            await viewModel.reloadUnscrobbled(using: server)
+        }
     }
 }

@@ -8,6 +8,15 @@ struct TrackDetailView: View {
     let track: Track
     @State private var selectedTab: TrackDetailTab = .info
     @State private var previewTime: TimeInterval = 0
+    @State private var sharePreviewRequest: SharePreviewRequest?
+
+    private var isPhoneLayout: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
         ZStack {
@@ -17,8 +26,14 @@ struct TrackDetailView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    TrackDetailHeader(track: track, playCount: track.playCount)
+                VStack(alignment: .leading, spacing: isPhoneLayout ? 16 : 20) {
+                    TrackDetailHeader(
+                        track: track,
+                        playCount: track.playCount,
+                        artworkURL: viewModel.resolvedArtworkURL,
+                        isFavorite: isCurrentTrackFavorite,
+                        layout: isPhoneLayout ? .phone : .regular
+                    )
 
                     Picker("内容", selection: $selectedTab) {
                         Text("信息").tag(TrackDetailTab.info)
@@ -27,7 +42,7 @@ struct TrackDetailView: View {
                     }
                     .pickerStyle(.segmented)
                     .tint(SonicTheme.primary)
-                    .frame(width: 320)
+                    .frame(maxWidth: isPhoneLayout ? .infinity : 320)
 
                     if selectedTab == .info {
                         infoSection
@@ -37,7 +52,7 @@ struct TrackDetailView: View {
                         insightsSection
                     }
                 }
-                .padding(32)
+                .padding(isPhoneLayout ? 16 : 32)
             }
 
             if viewModel.isLoading {
@@ -46,6 +61,81 @@ struct TrackDetailView: View {
         }
         .navigationTitle("曲目详情")
         .toolbar {
+            if isPhoneLayout {
+                shareMenu
+            } else {
+                exportMenu
+            }
+        }
+        .task(id: store.currentServer?.id) {
+            guard let server = store.currentServer else { return }
+            await viewModel.load(
+                using: server,
+                artist: track.artist,
+                album: track.album,
+                track: track.track,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber
+            )
+        }
+        .onChange(of: viewModel.selectedAIPlatform) { _, newValue in
+            guard viewModel.isModelPickerPresented, let server = store.currentServer, !newValue.isEmpty else { return }
+            Task {
+                try? await viewModel.selectAIPlatform(newValue, using: server)
+            }
+        }
+        #if os(macOS)
+        .popover(isPresented: modelPickerPresentedBinding, arrowEdge: .top) {
+            InsightModelPickerContent(
+                subjectLabel: "曲目",
+                selectedAIPlatform: $viewModel.selectedAIPlatform,
+                selectedAIModel: $viewModel.selectedAIModel,
+                availableAIPlatforms: viewModel.availableAIPlatforms,
+                availableAIModels: viewModel.availableAIModels,
+                isConfirmDisabled: viewModel.selectedAIPlatform.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || viewModel.availableAIModels.isEmpty
+                    || viewModel.insightGenerationState == .loadingModels
+                    || viewModel.insightGenerationState == .generating
+                    || viewModel.selectedAIModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                onCancel: { viewModel.dismissModelPicker() },
+                onConfirm: { confirmInsightGeneration() }
+            )
+                .padding(18)
+                .frame(width: 360)
+        }
+        #else
+        .sheet(isPresented: modelPickerPresentedBinding) {
+            NavigationStack {
+                InsightModelPickerContent(
+                    subjectLabel: "曲目",
+                    selectedAIPlatform: $viewModel.selectedAIPlatform,
+                    selectedAIModel: $viewModel.selectedAIModel,
+                    availableAIPlatforms: viewModel.availableAIPlatforms,
+                    availableAIModels: viewModel.availableAIModels,
+                    isConfirmDisabled: viewModel.selectedAIPlatform.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || viewModel.availableAIModels.isEmpty
+                        || viewModel.insightGenerationState == .loadingModels
+                        || viewModel.insightGenerationState == .generating
+                        || viewModel.selectedAIModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    onCancel: { viewModel.dismissModelPicker() },
+                    onConfirm: { confirmInsightGeneration() }
+                )
+                .padding(20)
+                .navigationTitle("选择音眸模型")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents(isPhoneLayout ? [.medium, .large] : [.fraction(0.45), .large])
+            .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $sharePreviewRequest) { request in
+            SharePreviewView(payload: request.payload)
+        }
+        #endif
+    }
+
+    @ToolbarContentBuilder
+    private var exportMenu: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button("导出：基础信息") {
                     exportSnapshotPNG(infoSection.padding(32), suggestedFilename: "\(track.artist)-\(track.track)-信息")
@@ -60,37 +150,29 @@ struct TrackDetailView: View {
                 Label("导出快照", systemImage: "square.and.arrow.up")
             }
         }
-        .onAppear {
-            if let server = store.currentServer {
-                Task {
-                    await viewModel.load(
-                        using: server,
-                        artist: track.artist,
-                        album: track.album,
-                        track: track.track,
-                        trackNumber: track.trackNumber,
-                        discNumber: track.discNumber
-                    )
+    }
+
+    @ToolbarContentBuilder
+    private var shareMenu: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button("分享：基础信息") {
+                    openSharePreview(scene: .trackInfo)
                 }
-            }
-        }
-        .onReceive(store.$currentServer) { server in
-            guard let server else { return }
-            Task {
-                await viewModel.load(
-                    using: server,
-                    artist: track.artist,
-                    album: track.album,
-                    track: track.track,
-                    trackNumber: track.trackNumber,
-                    discNumber: track.discNumber
-                )
+                Button("分享：歌词") {
+                    openSharePreview(scene: .trackLyrics)
+                }
+                Button("分享：音眸") {
+                    openSharePreview(scene: .trackInsight)
+                }
+            } label: {
+                Label("分享", systemImage: "square.and.arrow.up")
             }
         }
     }
 
     private var lyricsSection: some View {
-        DetailSectionCard(title: "歌词") {
+        DetailSectionCard(title: "歌词", compact: isPhoneLayout) {
             HStack {
                 Spacer()
                 if viewModel.lyricLines.contains(where: { $0.time != nil }) {
@@ -123,40 +205,155 @@ struct TrackDetailView: View {
     }
 
     private var infoSection: some View {
-        DetailSectionCard(title: "基础信息") {
-            VStack(alignment: .leading, spacing: 10) {
-                InfoRow(title: "曲目", value: track.track)
-                InfoRow(title: "艺术家", value: track.artist)
-                InfoRow(title: "专辑", value: track.album)
-                InfoRow(title: "播放次数", value: "\(track.playCount)")
+        DetailSectionCard(title: "基础信息", compact: isPhoneLayout) {
+            VStack(alignment: .leading, spacing: isPhoneLayout ? 8 : 10) {
+                InfoRow(title: "曲目", value: track.track, compact: isPhoneLayout)
+                InfoRow(title: "艺术家", value: track.artist, compact: isPhoneLayout)
+                InfoRow(title: "专辑", value: track.album, compact: isPhoneLayout)
+                InfoRow(title: "播放次数", value: "\(track.playCount)", compact: isPhoneLayout)
                 if let duration = track.duration {
-                    InfoRow(title: "时长", value: formatDuration(duration))
+                    InfoRow(title: "时长", value: formatDuration(duration), compact: isPhoneLayout)
                 }
                 if let disc = track.discNumber {
-                    InfoRow(title: "碟号", value: "\(disc)")
+                    InfoRow(title: "碟号", value: "\(disc)", compact: isPhoneLayout)
                 }
                 if let no = track.trackNumber {
-                    InfoRow(title: "曲序", value: "\(no)")
+                    InfoRow(title: "曲序", value: "\(no)", compact: isPhoneLayout)
                 }
             }
-            .padding(12)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
     private var insightsSection: some View {
-        DetailSectionCard(title: "音眸") {
-            if viewModel.insights.isEmpty {
-                Text("暂无解析")
-                    .foregroundColor(.secondary)
-            } else {
+        DetailSectionCard(title: "音眸", compact: isPhoneLayout) {
+            VStack(alignment: .leading, spacing: 12) {
+                insightActionRow
+
+                if let message = viewModel.generationStatusMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(viewModel.insightGenerationState == .error ? Color.red : Color.secondary)
+                }
+
+                if let inFlightHint = insightInFlightHint {
+                    Text(inFlightHint)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                }
+
                 InsightPrimaryContentView(
                     insight: viewModel.insights.primaryInsight,
                     style: .detail,
                     emptyTitle: "暂无音眸",
-                    emptySubtitle: "当前曲目还没有可展示的音眸内容。"
+                    emptySubtitle: "当前曲目还没有可展示的音眸内容，可在此直接触发生成。"
                 )
             }
+        }
+    }
+
+    private var insightActionRow: some View {
+        HStack(spacing: 10) {
+            if viewModel.insights.isEmpty {
+                Button(action: startInsightGeneration) {
+                    Label("生成音眸解析", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isInsightActionDisabled)
+            } else {
+                Button(action: startInsightGeneration) {
+                    Label("重新生成", systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isInsightActionDisabled)
+            }
+
+            if viewModel.insightGenerationState == .loadingModels || viewModel.insightGenerationState == .generating {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private var isInsightActionDisabled: Bool {
+        store.currentServer == nil
+            || viewModel.insightGenerationState == .loadingModels
+            || viewModel.insightGenerationState == .generating
+    }
+
+    private var isCurrentTrackFavorite: Bool {
+        track.isFavorited
+            || store.isFavorite(
+                artist: track.artist,
+                album: track.album,
+                track: track.track,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber
+            )
+    }
+
+    private func openSharePreview(scene: ShareScene) {
+        let payload = SharePayloadBuilder.build(
+            scene: scene,
+            track: track,
+            resolvedArtworkURL: viewModel.resolvedArtworkURL,
+            lyrics: viewModel.lyrics,
+            insight: viewModel.insights.primaryInsight,
+            isFavorite: isCurrentTrackFavorite
+        )
+        sharePreviewRequest = SharePreviewRequest(payload: payload)
+    }
+
+    private var insightInFlightHint: String? {
+        switch viewModel.insightGenerationState {
+        case .loadingModels:
+            return "正在加载可用模型，请稍候。"
+        case .generating:
+            return "音眸解析可能持续数分钟，请保持应用前台并确保网络稳定。"
+        default:
+            return nil
+        }
+    }
+
+    private var modelPickerPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.isModelPickerPresented },
+            set: { presented in
+                if presented {
+                    viewModel.isModelPickerPresented = true
+                } else {
+                    viewModel.dismissModelPicker()
+                }
+            }
+        )
+    }
+
+    private func startInsightGeneration() {
+        guard let server = store.currentServer else { return }
+        selectedTab = .insights
+        Task {
+            await viewModel.beginInsightGeneration(
+                using: server,
+                artist: track.artist,
+                album: track.album,
+                track: track.track,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber
+            )
+        }
+    }
+
+    private func confirmInsightGeneration() {
+        guard let server = store.currentServer else { return }
+        selectedTab = .insights
+        Task {
+            await viewModel.confirmInsightGeneration(
+                using: server,
+                artist: track.artist,
+                album: track.album,
+                track: track.track,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber
+            )
         }
     }
 
@@ -236,15 +433,16 @@ struct LyricsPane: View {
 struct InfoRow: View {
     let title: String
     let value: String
+    var compact: Bool = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(title)
-                .font(.caption)
+                .font(compact ? .caption2 : .caption)
                 .foregroundStyle(.secondary)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: compact ? 56 : 64, alignment: .leading)
             Text(value)
-                .font(.body)
+                .font(compact ? .subheadline : .body)
                 .foregroundStyle(.primary)
             Spacer()
         }
@@ -264,72 +462,115 @@ struct InsightDetailCard: View {
     }
 }
 
+enum TrackDetailHeaderLayout {
+    case regular
+    case phone
+
+    var artworkSize: CGFloat {
+        switch self {
+        case .regular:
+            return 160
+        case .phone:
+            return 124
+        }
+    }
+}
+
 struct TrackDetailHeader: View {
     let track: Track
     let playCount: Int
+    let artworkURL: String?
+    let isFavorite: Bool
+    let layout: TrackDetailHeaderLayout
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        HStack(spacing: 24) {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.accentColor.opacity(0.55),
-                            Color.accentColor.opacity(0.18)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+        switch layout {
+        case .regular:
+            HStack(spacing: 24) {
+                ArtworkSquareView(
+                    artworkURL: artworkURL,
+                    fallbackTitle: track.album,
+                    size: layout.artworkSize,
+                    cornerRadius: 16,
+                    style: .vivid
                 )
-                // TODO: 后端提供 artwork 后改为 AsyncImage 显示真实封面
-                .frame(width: 160, height: 160)
-                .overlay(
-                    Image(systemName: "music.note")
-                        .font(.system(size: 34, weight: .semibold))
+                    .shadow(color: Color.black.opacity(0.16), radius: 24, x: 0, y: 16)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(track.track)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Text("\(track.artist) · \(track.album)")
+                        .font(.body)
                         .foregroundStyle(.secondary)
-                )
-                .shadow(color: Color.black.opacity(0.16), radius: 24, x: 0, y: 16)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text(track.track)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Text("\(track.artist) · \(track.album)")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                    HStack(spacing: 16) {
+                        DetailMetaChip(title: "播放次数", value: "\(playCount)")
+                        if let duration = track.duration {
+                            DetailMetaChip(title: "时长", value: formatDuration(duration))
+                        }
+                    }
+                }
+                Spacer()
+                favoriteButton
+            }
+            .padding(18)
+            .glassCard(cornerRadius: 16)
+        case .phone:
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    ArtworkSquareView(
+                        artworkURL: artworkURL,
+                        fallbackTitle: track.album,
+                        size: layout.artworkSize,
+                        cornerRadius: 14,
+                        style: .vivid
+                    )
+                        .shadow(color: Color.black.opacity(0.14), radius: 18, x: 0, y: 12)
 
-                HStack(spacing: 16) {
-                    DetailMetaChip(title: "播放次数", value: "\(playCount)")
-                    if let duration = track.duration {
-                        DetailMetaChip(title: "时长", value: formatDuration(duration))
+                    Spacer(minLength: 12)
+
+                    favoriteButton
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(track.track)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    Text("\(track.artist) · \(track.album)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 12) {
+                        DetailMetaChip(title: "播放次数", value: "\(playCount)")
+                        if let duration = track.duration {
+                            DetailMetaChip(title: "时长", value: formatDuration(duration))
+                        }
                     }
                 }
             }
-            Spacer()
-            FavoriteButton(
-                isFavorite: store.isFavorite(
-                    artist: track.artist,
-                    album: track.album,
-                    track: track.track,
-                    trackNumber: track.trackNumber,
-                    discNumber: track.discNumber
-                ),
-                action: {
-                    Task {
-                        await store.toggleFavorite(
-                            artist: track.artist,
-                            album: track.album,
-                            track: track.track,
-                            trackNumber: track.trackNumber,
-                            discNumber: track.discNumber
-                        )
-                    }
-                }
-            )
+            .padding(16)
+            .glassCard(cornerRadius: 16)
         }
-        .padding(18)
-        .glassCard(cornerRadius: 16)
+    }
+
+    private var favoriteButton: some View {
+        FavoriteButton(
+            isFavorite: isFavorite,
+            action: {
+                Task {
+                    await store.toggleFavorite(
+                        artist: track.artist,
+                        album: track.album,
+                        track: track.track,
+                        trackNumber: track.trackNumber,
+                        discNumber: track.discNumber
+                    )
+                }
+            }
+        )
     }
 
     private func formatDuration(_ duration: Int64) -> String {

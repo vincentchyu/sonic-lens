@@ -24,6 +24,8 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于发现并连接 SonicLens 服务端</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>用于将分享图片保存到系统照片</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 </dict>

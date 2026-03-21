@@ -81,7 +81,8 @@
         /* AI 模型选择器样式 */
         .ai-model-selector {
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            align-items: stretch;
             gap: 8px;
             margin-bottom: 15px;
             background: var(--card-bg);
@@ -1348,6 +1349,108 @@
             object-fit: cover;
         }
 
+        .artwork-slot {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: inherit;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .artwork-slot img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        .artwork-fallback {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: inherit;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            user-select: none;
+        }
+
+        .artwork-fallback--small {
+            font-size: 1.4rem;
+        }
+
+        .album-grid {
+            --album-card-size: 196px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--album-card-size), var(--album-card-size)));
+            gap: 26px 24px;
+            justify-content: start;
+            align-content: start;
+            padding: 12px 10px 16px;
+        }
+
+        .album-card {
+            width: var(--album-card-size);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            cursor: pointer;
+            transition: transform 0.2s ease, filter 0.2s ease;
+        }
+
+        .album-card:hover {
+            transform: translateY(-2px);
+            filter: saturate(1.03);
+        }
+
+        .album-card-cover {
+            width: var(--album-card-size);
+            height: var(--album-card-size);
+            border-radius: 14px;
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+        }
+
+        .album-card-name {
+            font-size: 0.98rem;
+            font-weight: 700;
+            line-height: 1.2;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .album-card-artist {
+            font-size: 0.92rem;
+            line-height: 1.2;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 900px) {
+            .album-grid {
+                --album-card-size: 176px;
+                gap: 22px 18px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .album-grid {
+                --album-card-size: min(43vw, 168px);
+                gap: 18px 14px;
+                justify-content: center;
+            }
+        }
+
         .now-playing-copy {
             min-width: 0;
             flex: 1;
@@ -1805,6 +1908,359 @@
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15);
         }
 
+        .album-detail-modal-body {
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            height: 78vh;
+            min-height: 0;
+        }
+
+        .album-detail-tabs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(14px) saturate(140%);
+            -webkit-backdrop-filter: blur(14px) saturate(140%);
+            flex-shrink: 0;
+        }
+
+        .dark-mode .album-detail-tabs {
+            background: rgba(15, 23, 42, 0.26);
+        }
+
+        .album-detail-tab {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .album-detail-tab:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .album-detail-tab.active {
+            color: #fff;
+            background: var(--primary-color);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 20px rgba(99, 102, 241, 0.25);
+        }
+
+        .album-detail-tab-panel {
+            display: none;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .album-detail-tab-panel.active {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .album-detail-grid {
+            display: grid;
+            grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.05fr) minmax(380px, 1.2fr);
+            gap: 24px;
+            flex: 1;
+            min-height: 0;
+            align-items: stretch;
+            overflow: hidden;
+        }
+
+        .album-detail-pane {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            min-height: 0;
+        }
+
+        .album-detail-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .album-pane-heading {
+            margin: 0;
+            font-size: 0.9em;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            letter-spacing: 1px;
+        }
+
+        .album-pane-subtitle {
+            margin: 6px 0 0 0;
+            font-size: 0.82rem;
+            line-height: 1.55;
+            color: var(--text-secondary);
+        }
+
+        .album-insight-pane {
+            position: relative;
+        }
+
+        .album-insight-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .album-insight-shell {
+            color: var(--text-primary);
+        }
+
+        .album-insight-overview {
+            margin-bottom: 18px;
+            padding: 18px;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            background:
+                radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 42%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+        }
+
+        .dark-mode .album-insight-overview {
+            background:
+                radial-gradient(circle at top right, rgba(141, 162, 251, 0.18), transparent 42%),
+                linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0.05));
+        }
+
+        .album-insight-eyebrow {
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--primary-color);
+            opacity: 0.9;
+        }
+
+        .album-insight-title {
+            margin: 10px 0 4px 0;
+            font-size: 1.25rem;
+            line-height: 1.3;
+            color: var(--text-primary);
+        }
+
+        .album-insight-meta-line {
+            font-size: 0.92rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .album-insight-kpi-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .album-insight-kpi {
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border-color);
+        }
+
+        .dark-mode .album-insight-kpi {
+            background: rgba(15, 23, 42, 0.32);
+        }
+
+        .album-insight-kpi-label {
+            display: block;
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .album-insight-kpi-value {
+            display: block;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .album-insight-source-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .album-analysis-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .album-analysis-card {
+            padding: 14px 15px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+                rgba(255, 255, 255, 0.03);
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dark-mode .album-analysis-card {
+            background:
+                linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0.04)),
+                rgba(15, 23, 42, 0.18);
+        }
+
+        .album-analysis-card--empty {
+            opacity: 0.72;
+            border-style: dashed;
+        }
+
+        .album-analysis-card-header {
+            margin-bottom: 10px;
+        }
+
+        .album-analysis-card-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+            font-size: 0.98rem;
+            color: var(--text-primary);
+        }
+
+        .album-analysis-card-desc {
+            margin: 6px 0 0 0;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            color: var(--text-secondary);
+        }
+
+        .album-analysis-card-body {
+            color: var(--text-primary);
+            font-size: 0.93rem;
+            line-height: 1.78;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .album-insight-source-item {
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .dark-mode .album-insight-source-item {
+            background: rgba(15, 23, 42, 0.24);
+        }
+
+        .album-insight-source-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .album-insight-source-value {
+            color: var(--text-primary);
+            font-size: 0.92rem;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .album-insight-raw {
+            margin: 0;
+            padding: 16px;
+            border-radius: 12px;
+            background: var(--background-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 0.82rem;
+            line-height: 1.65;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .album-insight-status {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 260px;
+            padding: 20px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .album-insight-status strong {
+            color: var(--text-primary);
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+
+        #albumInsightContent .insight-tabs {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            margin: 0 0 14px 0;
+            padding: 8px 0;
+            background: var(--card-bg);
+        }
+
+        @media (max-width: 1680px) {
+            .album-detail-grid {
+                grid-template-columns: minmax(260px, 0.95fr) minmax(320px, 1.05fr) minmax(420px, 1.3fr);
+            }
+        }
+
+        @media (max-width: 1180px) {
+            .album-detail-grid {
+                grid-template-columns: repeat(2, minmax(280px, 1fr));
+            }
+
+            .album-analysis-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .album-detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .album-detail-tabs {
+                overflow-x: auto;
+            }
+
+            .album-insight-toolbar {
+                justify-content: flex-start;
+            }
+        }
+
         #trackDetailsModal .modal-header {
             flex-shrink: 0;
         }
@@ -2255,12 +2711,12 @@
             <div class="minimize-handle">−</div>
         </div>
     </div>
-    <div id="nowPlayingInfo">
-        <div class="now-playing-media">
-            <div class="now-playing-cover">
-                <img id="trackCoverArt" alt="专辑封面" style="display:none;">
-            </div>
-            <div class="now-playing-copy">
+        <div id="nowPlayingInfo">
+            <div class="now-playing-media">
+                <div class="now-playing-cover">
+                    <div id="trackCoverArt" class="artwork-slot" data-artwork-compact="1"></div>
+                </div>
+                <div class="now-playing-copy">
                 <div class="track-title-favorite-container">
                     <div class="track-title" id="trackTitle"></div>
                     <button
@@ -2693,6 +3149,10 @@
                     <button id="refreshInsightListBtn" class="time-filter">刷新</button>
                 </div>
             </div>
+            <div class="insight-tabs" id="insightListTargetTabs" style="margin: 0 18px 14px 18px;">
+                <div class="insight-tab active" data-target-type="track" onclick="switchInsightListTarget('track')">曲目解析</div>
+                <div class="insight-tab" data-target-type="album" onclick="switchInsightListTarget('album')">专辑解析</div>
+            </div>
             <div id="insightListContent">
                 <div class="loading">加载中...</div>
             </div>
@@ -2727,6 +3187,7 @@
 
     let currentInsightKeyword = "";
     let insightSearchTimeout = null;
+    let currentInsightTargetType = "track";
 
     // 专辑列表分页及搜索变量
     let currentAlbumPage = 1;
@@ -2747,6 +3208,7 @@
     let currentPendingAlbumWorkItemID = 0;
     let currentPendingCandidates = [];
     let currentPendingSelectedMBID = "";
+    let currentPendingAlbumStalePromptedWorkItemID = 0;
 
     // 曲目列表分页及搜索变量
     let currentTrackPage = 1;
@@ -2952,9 +3414,11 @@
                 document.getElementById("nowPlaying").style.display = "none";
                 const coverArtElement = document.getElementById("trackCoverArt");
                 if (coverArtElement) {
-                    coverArtElement.removeAttribute("src");
-                    coverArtElement.style.display = "none";
+                    applyArtworkPlaceholder(coverArtElement, "", { compact: true });
                 }
+                currentTrackInfo = null;
+                currentSource = null;
+                lastTrackKey = "";
                 // 清除进度更新定时器
                 if (progressInterval) {
                     clearInterval(progressInterval);
@@ -3026,10 +3490,26 @@
         }
     };
 
+    const albumInsightState = {
+        albumID: 0,
+        albumMeta: null,
+        insights: [],
+        insight: null,
+        view: 'summary',
+        loading: false,
+        generating: false,
+        lastError: '',
+    };
+
+    let currentAlbumDetailTab = 'info';
+
     let lastTrackKey = ""; // 用于检测切歌
     let currentRankingType = "all"; // 当前排行榜类型
     let rankingSearchKeyword = ""; // 当前排行榜搜索关键字
     let rankingSearchTimeout = null; // 排行榜搜索防抖计算器
+    const artworkResolveCache = new Map();
+    const artworkResolveInflight = new Map();
+    let artworkResolveSequence = 0;
 
     // 格式化时间（秒转为mm:ss）
     function formatTime(seconds) {
@@ -3111,6 +3591,222 @@
             formatTime(trackDuration);
     }
 
+    function resolveCoverArtURL(rawURL) {
+        if (!rawURL) return "";
+        const trimmed = String(rawURL).trim();
+        if (!trimmed) return "";
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+        const normalizedPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+        const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+        return `${protocol}//${window.location.hostname}:9000${normalizedPath}`;
+    }
+
+    function getAlbumInitial(name) {
+        const trimmed = String(name || "").trim();
+        if (!trimmed) return "?";
+        const chars = Array.from(trimmed);
+        return (chars[0] || "?").toUpperCase();
+    }
+
+    function buildArtworkResolveCacheKey(entity) {
+        const albumID = Number(entity.albumID || entity.album_id || entity.resolved_album_id || 0);
+        const albumArtist = String(entity.albumArtist || entity.album_artist || "").trim();
+        const artist = String(entity.artist || "").trim();
+        const album = String(entity.album || "").trim();
+        const artworkKey = String(entity.artworkKey || entity.artwork_key || "").trim();
+
+        if (albumID > 0) return `album:${albumID}`;
+        if (albumArtist || artist || album) return `seed:${albumArtist}|${artist}|${album}`;
+        if (artworkKey) return `artwork:${artworkKey}`;
+        return "";
+    }
+
+    function renderArtworkPlaceholder(albumName, compact = false, extraStyle = "") {
+        return `<div class="artwork-fallback ${compact ? "artwork-fallback--small" : ""}" style="${extraStyle}">${esc(getAlbumInitial(albumName))}</div>`;
+    }
+
+    function applyArtworkPlaceholder(container, albumName, options = {}) {
+        if (!container) return;
+        container.dataset.albumName = albumName || "";
+        container.dataset.artworkCompact = options.compact ? "1" : "0";
+        container.dataset.placeholderStyle = options.placeholderStyle || "";
+        container.innerHTML = renderArtworkPlaceholder(
+            albumName,
+            options.compact,
+            options.placeholderStyle || "",
+        );
+    }
+
+    function applyArtworkImage(container, rawURL, altText) {
+        if (!container) return false;
+        const resolvedURL = resolveCoverArtURL(rawURL);
+        if (!resolvedURL) return false;
+        container.innerHTML =
+            `<img src="${esc(resolvedURL)}" alt="${esc(altText || "专辑封面")}" loading="lazy" onerror="window.handleArtworkImageError(this)">`;
+        return true;
+    }
+
+    window.handleArtworkImageError = function (img) {
+        if (!img || !img.parentElement) return;
+        const container = img.parentElement;
+        applyArtworkPlaceholder(
+            container,
+            container.dataset.albumName || "",
+            {
+                compact: container.dataset.artworkCompact === "1",
+                placeholderStyle: container.dataset.placeholderStyle || "",
+            },
+        );
+    };
+
+    async function resolveArtworkForEntity(entity = {}) {
+        const normalized = {
+            albumID: Number(entity.albumID || entity.album_id || entity.resolved_album_id || 0),
+            albumArtist: String(entity.albumArtist || entity.album_artist || "").trim(),
+            artist: String(entity.artist || "").trim(),
+            album: String(entity.album || "").trim(),
+            artworkKey: String(entity.artworkKey || entity.artwork_key || "").trim(),
+            coverArtURL: String(entity.coverArtURL || entity.cover_art_url || "").trim(),
+        };
+
+        if (normalized.coverArtURL) {
+            return {
+                exists: true,
+                cover_art_url: normalized.coverArtURL,
+                cover_art_object_key: normalized.artworkKey,
+            };
+        }
+
+        const cacheKey = buildArtworkResolveCacheKey(normalized);
+        if (!cacheKey) {
+            return { exists: false, cover_art_url: "", cover_art_object_key: "" };
+        }
+        if (artworkResolveCache.has(cacheKey)) {
+            return artworkResolveCache.get(cacheKey);
+        }
+        if (artworkResolveInflight.has(cacheKey)) {
+            return artworkResolveInflight.get(cacheKey);
+        }
+
+        const params = new URLSearchParams();
+        if (normalized.albumID > 0) params.set("album_id", String(normalized.albumID));
+        if (normalized.albumArtist) params.set("albumArtist", normalized.albumArtist);
+        if (normalized.artist) params.set("artist", normalized.artist);
+        if (normalized.album) params.set("album", normalized.album);
+        if (normalized.artworkKey) params.set("artworkKey", normalized.artworkKey);
+
+        const request = fetch(`/api/artwork/resolve?${params.toString()}`)
+            .then(resp => resp.ok ? resp.json() : Promise.reject(new Error(`resolve artwork failed: ${resp.status}`)))
+            .then(data => ({
+                exists: Boolean(data && data.exists && data.cover_art_url),
+                cover_art_url: String((data && data.cover_art_url) || "").trim(),
+                cover_art_object_key: String((data && data.cover_art_object_key) || "").trim(),
+            }))
+            .catch(err => {
+                console.warn("resolve artwork failed:", err);
+                return { exists: false, cover_art_url: "", cover_art_object_key: "" };
+            })
+            .then(result => {
+                artworkResolveCache.set(cacheKey, result);
+                artworkResolveInflight.delete(cacheKey);
+                return result;
+            });
+
+        artworkResolveInflight.set(cacheKey, request);
+        return request;
+    }
+
+    function hydrateArtworkSlot(container, entity = {}, options = {}) {
+        if (!container) return;
+
+        const albumName = entity.album || entity.name || "";
+        const compact =
+            options.compact !== undefined ? options.compact : container.dataset.artworkCompact === "1";
+        const placeholderStyle = options.placeholderStyle || container.dataset.placeholderStyle || "";
+        const altText = options.altText || albumName || "专辑封面";
+
+        const requestToken = String(++artworkResolveSequence);
+        container.dataset.artworkRequestToken = requestToken;
+        applyArtworkPlaceholder(container, albumName, { compact, placeholderStyle });
+
+        if (applyArtworkImage(container, entity.coverArtURL || entity.cover_art_url, altText)) {
+            return;
+        }
+
+        resolveArtworkForEntity(entity).then(result => {
+            if (container.dataset.artworkRequestToken !== requestToken) return;
+            if (result && result.exists && result.cover_art_url) {
+                applyArtworkImage(container, result.cover_art_url, altText);
+                return;
+            }
+            applyArtworkPlaceholder(container, albumName, { compact, placeholderStyle });
+        });
+    }
+
+    function hydrateArtworkSlots(root) {
+        if (!root) return;
+        root.querySelectorAll("[data-artwork-slot='1']").forEach(container => {
+            hydrateArtworkSlot(
+                container,
+                {
+                    albumID: Number(container.dataset.albumId || container.dataset.resolvedAlbumId || 0),
+                    albumArtist: container.dataset.albumArtist || "",
+                    artist: container.dataset.artist || "",
+                    album: container.dataset.album || "",
+                    artworkKey: container.dataset.artworkKey || "",
+                    coverArtURL: container.dataset.coverArtUrl || "",
+                },
+                {
+                    compact: container.dataset.artworkCompact === "1",
+                    altText: container.dataset.altText || "专辑封面",
+                    placeholderStyle: container.dataset.placeholderStyle || "",
+                },
+            );
+        });
+    }
+
+    function isNowPlayingExpanded() {
+        const nowPlaying = document.getElementById("nowPlaying");
+        return Boolean(
+            nowPlaying &&
+            nowPlaying.style.display !== "none" &&
+            !nowPlaying.classList.contains("minimized"),
+        );
+    }
+
+    function syncNowPlayingArtwork() {
+        const coverArtElement = document.getElementById("trackCoverArt");
+        if (!coverArtElement || !currentTrackInfo) return;
+
+        const albumName = currentTrackInfo.album || currentTrackInfo.title || "";
+        const compact = true;
+        const placeholderStyle = "";
+        const altText = currentTrackInfo.album || currentTrackInfo.title || "专辑封面";
+
+        if (!isNowPlayingExpanded()) {
+            applyArtworkPlaceholder(coverArtElement, albumName, { compact, placeholderStyle });
+            coverArtElement.dataset.artworkRequestToken = "";
+            return;
+        }
+
+        hydrateArtworkSlot(
+            coverArtElement,
+            {
+                albumArtist: currentTrackInfo.album_artist || "",
+                artist: currentTrackInfo.artist || "",
+                album: currentTrackInfo.album || "",
+                artworkKey: currentTrackInfo.artwork_key || "",
+                coverArtURL: currentTrackInfo.cover_art_url || "",
+            },
+            {
+                compact,
+                altText,
+                placeholderStyle,
+            },
+        );
+    }
+
     // 更新正在播放的信息
     function updateNowPlaying(source, data) {
         // 检测是否切歌
@@ -3130,8 +3826,18 @@
         // 清除之前的进度更新定时器
         startProgressTicker();
 
-        // 显示悬浮窗
-        document.getElementById("nowPlaying").style.display = "block";
+        // 显示悬浮窗，默认保持收起，避免在未展开时提前拉取封面
+        const nowPlaying = document.getElementById("nowPlaying");
+        const wasHidden = Boolean(
+            nowPlaying &&
+            window.getComputedStyle(nowPlaying).display === "none",
+        );
+        if (nowPlaying) {
+            nowPlaying.style.display = "block";
+            if (wasHidden) {
+                nowPlaying.classList.add("minimized");
+            }
+        }
 
         // 如果歌曲改变了，且歌词窗口是打开的，则更新歌词
         if (trackChanged) {
@@ -3144,17 +3850,7 @@
         // 根据来源更新信息
         let sourceClass = "";
         let sourceText = "";
-        const coverArtElement = document.getElementById("trackCoverArt");
-
-        if (coverArtElement) {
-            if (data.cover_art_url) {
-                coverArtElement.src = data.cover_art_url;
-                coverArtElement.style.display = "block";
-            } else {
-                coverArtElement.removeAttribute("src");
-                coverArtElement.style.display = "none";
-            }
-        }
+        syncNowPlayingArtwork();
 
         if (source === "Audirvana") {
             document.getElementById("trackTitle").textContent = " " + data.title;
@@ -3240,6 +3936,8 @@
     }
 
     let pendingAnalysisTrack = null; // 暂存待分析的曲目信息（用于处理详情页分析）
+    let pendingAnalysisMode = 'track';
+    let pendingAnalysisAlbumID = 0;
 
     // --- AI 解析交互逻辑重构 ---
 
@@ -3255,15 +3953,77 @@
     // 2. 显示模型选择弹窗
     function showModelPicker(targetTrack = null, contextType = 'nowPlaying') {
         // 如果传入了 targetTrack（比如从详情页传来），则暂存它
+        pendingAnalysisMode = 'track';
+        pendingAnalysisAlbumID = 0;
         pendingAnalysisTrack = targetTrack || currentTrackInfo;
         pendingAnalysisContext = contextType;
         showModal("aiModelPickerModal");
+    }
+
+    function showAlbumInsightModelPicker() {
+        if (!window.currentAlbumID) {
+            alert("当前没有可分析的专辑");
+            return;
+        }
+        pendingAnalysisMode = 'album';
+        pendingAnalysisAlbumID = window.currentAlbumID;
+        pendingAnalysisTrack = null;
+        pendingAnalysisContext = 'album';
+        showModal("aiModelPickerModal");
+    }
+
+    let availableAIPlatforms = [];
+    let aiModelsByPlatform = {};
+
+    function getSelectedAIRequest() {
+        const providerSelect = document.getElementById('aiProviderSelect');
+        const modelSelect = document.getElementById('aiModelSelect');
+        return {
+            provider: providerSelect ? providerSelect.value : '',
+            model: modelSelect ? modelSelect.value : ''
+        };
+    }
+
+    async function loadModelsForPlatform(platformId, preferredModel = '') {
+        const select = document.getElementById('aiModelSelect');
+        if (!select || !platformId) {
+            return;
+        }
+
+        if (!aiModelsByPlatform[platformId]) {
+            const resp = await fetch(`/api/ai-models/${encodeURIComponent(platformId)}/models`);
+            if (!resp.ok) {
+                throw new Error('加载模型目录失败');
+            }
+            const data = await resp.json();
+            aiModelsByPlatform[platformId] = Array.isArray(data.models) ? data.models : [];
+        }
+
+        const models = aiModelsByPlatform[platformId];
+        select.innerHTML = '';
+        models.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item.id;
+            opt.textContent = item.display_name || item.id;
+            if ((preferredModel && item.id === preferredModel) || (!preferredModel && item.is_default)) {
+                opt.selected = true;
+            }
+            select.appendChild(opt);
+        });
+
+        if (!select.value && models.length > 0) {
+            select.value = models[0].id;
+        }
     }
 
     // 3. 用户选择模型后点击“开始分析”
     function startAnalysisWithSelectedModel() {
         console.log("startAnalysisWithSelectedModel triggered");
         hideModal("aiModelPickerModal");
+        if (pendingAnalysisMode === 'album') {
+            fetchAlbumInsight(true, pendingAnalysisAlbumID);
+            return;
+        }
         // 使用暂存的曲目信息和上下文开启强制分析流
         console.log("Calling fetchTrackInsight(true, ...)");
         fetchTrackInsight(true, pendingAnalysisTrack, pendingAnalysisContext);
@@ -3728,10 +4488,13 @@
         const discNumber = trackInfo.disc_number || trackInfo.discNumber || 0;
 
         // 如果是强制分析，必须有已选模型
-        let modelType = "";
+        let provider = "";
+        let modelName = "";
         if (force) {
-            modelType = document.getElementById('aiModelSelect').value;
-            console.log("Force analysis started. Model:", modelType, "SSE:", sseEnabled);
+            const selection = getSelectedAIRequest();
+            provider = selection.provider;
+            modelName = selection.model;
+            console.log("Force analysis started. Provider:", provider, "Model:", modelName, "SSE:", sseEnabled);
             if (aiButton) aiButton.disabled = true;
             if (streamContent) streamContent.innerHTML = getRandomLoadingHtml();
             if (actionFooter) actionFooter.style.display = "none";
@@ -3748,7 +4511,7 @@
             // 如果已有连接先关闭
             if (state.eventSource) state.eventSource.close();
             
-            const url = `/api/track-insight-stream?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&track=${encodeURIComponent(track)}&trackNumber=${encodeURIComponent(trackNumber)}&discNumber=${encodeURIComponent(discNumber)}&force=true&modelType=${encodeURIComponent(modelType)}`;
+            const url = `/api/track-insight-stream?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&track=${encodeURIComponent(track)}&trackNumber=${encodeURIComponent(trackNumber)}&discNumber=${encodeURIComponent(discNumber)}&force=true&provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(modelName)}`;
             const eventSource = new EventSource(url);
             state.eventSource = eventSource;
             let fullText = "";
@@ -3779,7 +4542,7 @@
         } else if (force) {
             // --- 强制执行分析模式 (POST) ---
             console.log("Starting POST analysis fetch...");
-            const body = {artist, album, track, track_number: trackNumber, disc_number: discNumber, modelType};
+            const body = {artist, album, track, track_number: trackNumber, disc_number: discNumber, provider, model: modelName};
             fetch("/api/track-insight", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
@@ -3870,16 +4633,20 @@
             const resp = await fetch("/api/ai-models");
             if (!resp.ok) return;
             const data = await resp.json();
-            const select = document.getElementById("aiModelSelect");
-            if (data.models && data.models.length > 0) {
-                select.innerHTML = "";
-                data.models.forEach(m => {
+            const providerSelect = document.getElementById("aiProviderSelect");
+            const platforms = Array.isArray(data.platforms) ? data.platforms : [];
+            if (providerSelect && platforms.length > 0) {
+                availableAIPlatforms.splice(0, availableAIPlatforms.length, ...platforms);
+                providerSelect.innerHTML = "";
+                platforms.forEach(item => {
                     const opt = document.createElement("option");
-                    opt.value = m;
-                    opt.textContent = m.charAt(0).toUpperCase() + m.slice(1);
-                    if (m === "ollama") opt.selected = true;
-                    select.appendChild(opt);
+                    opt.value = item.id;
+                    opt.textContent = item.display_name || item.id;
+                    if (item.id === "ollama") opt.selected = true;
+                    providerSelect.appendChild(opt);
                 });
+                const preferredPlatform = providerSelect.value || platforms[0].id;
+                await loadModelsForPlatform(preferredPlatform, platforms.find(item => item.id === preferredPlatform)?.default_model || "");
             }
         } catch (e) {
             console.error("加载模型失败:", e);
@@ -4206,6 +4973,443 @@
         return html;
     }
 
+    function escapeHtmlText(value) {
+        if (value === null || value === undefined) return "";
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function prettyJsonLike(value) {
+        if (value === null || value === undefined || value === '') {
+            return '';
+        }
+        if (typeof value === 'object') {
+            return JSON.stringify(value, null, 2);
+        }
+        if (typeof value === 'string') {
+            try {
+                return JSON.stringify(JSON.parse(value), null, 2);
+            } catch (e) {
+                return value;
+            }
+        }
+        return String(value);
+    }
+
+    function parseAlbumInsightMetadata(rawMetadata) {
+        if (!rawMetadata) return {};
+        if (typeof rawMetadata === 'object') return rawMetadata;
+        if (typeof rawMetadata !== 'string') return {};
+        try {
+            const parsed = JSON.parse(rawMetadata);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function parseInsightSections(rawSections) {
+        if (!rawSections) return null;
+        if (typeof rawSections === 'object') return rawSections;
+        if (typeof rawSections !== 'string' || rawSections.trim() === '') return null;
+        try {
+            const parsed = JSON.parse(rawSections);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function formatAlbumInsightSectionTitle(sectionKey) {
+        const sectionTitles = {
+            album_positioning: "作品定位",
+            theme_and_narrative: "主题与叙事",
+            literary_analysis: "文学解读",
+            musical_analysis: "听感与编排",
+            author_motivation: "作者动机",
+            philosophical_reflection: "哲学反思",
+            key_tracks: "关键曲目",
+            listening_guide: "聆听指南",
+        };
+        if (sectionTitles[sectionKey]) return sectionTitles[sectionKey];
+        return String(sectionKey || "")
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function getAlbumInsightSectionDefinitions() {
+        return [
+            {
+                key: 'album_positioning',
+                icon: '🧭',
+                title: '作品定位',
+                description: '专辑在艺术家生涯和作品谱系中的位置',
+            },
+            {
+                key: 'theme_and_narrative',
+                icon: '🪡',
+                title: '主题与叙事',
+                description: '整张专辑的主题母题、叙事线与情绪推进',
+            },
+            {
+                key: 'literary_analysis',
+                icon: '✍️',
+                title: '文学解读',
+                description: '意象、修辞、象征与文本组织层面的文学解读',
+            },
+            {
+                key: 'musical_analysis',
+                icon: '🎼',
+                title: '听感与编排',
+                description: '曲风、编排、听感推进与曲序设计',
+            },
+            {
+                key: 'author_motivation',
+                icon: '🎙️',
+                title: '作者动机',
+                description: '创作者动机、创作处境与表达意图',
+            },
+            {
+                key: 'philosophical_reflection',
+                icon: '🪞',
+                title: '哲学反思',
+                description: '专辑折射出的价值观、存在主题与哲学反思',
+            },
+            {
+                key: 'key_tracks',
+                icon: '🎯',
+                title: '关键曲目',
+                description: '关键曲目及其在整张专辑中的作用',
+            },
+            {
+                key: 'listening_guide',
+                icon: '🎧',
+                title: '聆听指南',
+                description: '欣赏整张专辑的切入角度和收听建议',
+            },
+        ];
+    }
+
+    function formatAlbumInsightMetaValue(value) {
+        if (Array.isArray(value)) {
+            return value.length > 0 ? value.join(", ") : "-";
+        }
+        if (value && typeof value === 'object') {
+            try {
+                return JSON.stringify(value, null, 2);
+            } catch (e) {
+                return String(value);
+            }
+        }
+        if (value === null || value === undefined || value === "") {
+            return "-";
+        }
+        return String(value);
+    }
+
+    function buildAlbumInsightStatusHtml(title, description, actionHtml = "") {
+        return `
+            <div class="album-insight-status">
+                <strong>${title}</strong>
+                <div style="max-width: 420px; line-height: 1.7;">${description}</div>
+                ${actionHtml ? `<div style="margin-top: 16px;">${actionHtml}</div>` : ""}
+            </div>
+        `;
+    }
+
+    function switchAlbumDetailTab(tabName) {
+        currentAlbumDetailTab = tabName;
+
+        const infoTab = document.getElementById('albumDetailTabInfo');
+        const insightTab = document.getElementById('albumDetailTabInsight');
+        const infoBtn = document.getElementById('albumDetailTabBtnInfo');
+        const insightBtn = document.getElementById('albumDetailTabBtnInsight');
+
+        if (infoTab) infoTab.classList.toggle('active', tabName === 'info');
+        if (insightTab) insightTab.classList.toggle('active', tabName === 'insight');
+        if (infoBtn) infoBtn.classList.toggle('active', tabName === 'info');
+        if (insightBtn) insightBtn.classList.toggle('active', tabName === 'insight');
+
+        if (tabName === 'insight') {
+            if (albumInsightState.albumID !== window.currentAlbumID && window.currentAlbumID) {
+                fetchAlbumInsight(false, window.currentAlbumID);
+            } else {
+                renderAlbumInsightPanel();
+            }
+        }
+    }
+
+    function generateAlbumInsightContentHtml(insight) {
+        const metadata = parseAlbumInsightMetadata(insight.metadata);
+        const sections = parseInsightSections(insight.analysis_by_section);
+        const sectionDefinitions = getAlbumInsightSectionDefinitions();
+        const totalTracks = metadata.total_tracks || (albumInsightState.albumMeta && Array.isArray(albumInsightState.albumMeta.track_album) ? albumInsightState.albumMeta.track_album.length : "-");
+        const analyzedTracks = metadata.analyzed_tracks || (Array.isArray(metadata.selected_track_insight_ids) ? metadata.selected_track_insight_ids.length : "-");
+        const createdAt = insight.created_at ? new Date(insight.created_at).toLocaleString('zh-CN') : '-';
+        const title = insight.album || (albumInsightState.albumMeta && albumInsightState.albumMeta.name) || '当前专辑';
+        const artist = insight.artist || (albumInsightState.albumMeta && albumInsightState.albumMeta.artist) || '未知艺术家';
+
+        let html = '<div class="album-insight-shell">';
+        html += `
+            <div class="album-insight-overview">
+                <div class="album-insight-eyebrow">Album Insight</div>
+                <h3 class="album-insight-title">${escapeHtmlText(title)}</h3>
+                <div class="album-insight-meta-line">${escapeHtmlText(artist)} · ${escapeHtmlText(insight.llm_provider || 'AI')} · 生成于 ${escapeHtmlText(createdAt)}</div>
+                <div class="album-insight-kpi-row">
+                    <div class="album-insight-kpi">
+                        <span class="album-insight-kpi-label">曲目总数</span>
+                        <span class="album-insight-kpi-value">${escapeHtmlText(totalTracks)}</span>
+                    </div>
+                    <div class="album-insight-kpi">
+                        <span class="album-insight-kpi-label">纳入分析</span>
+                        <span class="album-insight-kpi-value">${escapeHtmlText(analyzedTracks)}</span>
+                    </div>
+                    <div class="album-insight-kpi">
+                        <span class="album-insight-kpi-label">来源模型</span>
+                        <span class="album-insight-kpi-value">${escapeHtmlText(insight.llm_provider || 'AI')}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (sections && Object.keys(sections).length > 0) {
+            const consumedKeys = new Set();
+            const primarySectionCards = sectionDefinitions.map((sectionDef) => {
+                const rawValue = sections[sectionDef.key];
+                const content = formatAlbumInsightMetaValue(rawValue);
+                const hasContent = content !== "-";
+                consumedKeys.add(sectionDef.key);
+                return `
+                    <div class="album-analysis-card ${hasContent ? '' : 'album-analysis-card--empty'}">
+                        <div class="album-analysis-card-header">
+                            <h4 class="album-analysis-card-title"><span>${sectionDef.icon}</span> ${escapeHtmlText(sectionDef.title)}</h4>
+                            <p class="album-analysis-card-desc">${escapeHtmlText(sectionDef.description)}</p>
+                        </div>
+                        <div class="album-analysis-card-body">${hasContent ? escapeHtmlText(content).replace(/\n/g, '<br>') : '<span style="color: var(--text-secondary);">当前结果未返回这一分区内容。</span>'}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const extraSectionEntries = Object.entries(sections).filter(([key]) => !consumedKeys.has(key));
+
+            html += `
+                <div class="insight-section">
+                    <h3><span>🧩</span> 结构化分区</h3>
+                    <div class="album-analysis-grid">${primarySectionCards}</div>
+                </div>
+            `;
+
+            if (extraSectionEntries.length > 0) {
+                const extraSectionsHtml = extraSectionEntries.map(([sectionKey, sectionValue]) => `
+                    <div class="section-item">
+                        <span class="section-name">${escapeHtmlText(formatAlbumInsightSectionTitle(sectionKey))}</span>
+                        <div class="section-content">${escapeHtmlText(formatAlbumInsightMetaValue(sectionValue)).replace(/\n/g, '<br>')}</div>
+                    </div>
+                `).join('');
+
+                html += `
+                    <div class="insight-section">
+                        <h3><span>➕</span> 扩展分区</h3>
+                        <div class="analysis-sections">${extraSectionsHtml}</div>
+                    </div>
+                `;
+            }
+        }
+
+        if (insight.analysis_summary) {
+            html += `
+                <div class="insight-section">
+                    <h3><span>💿</span> 专辑总评</h3>
+                    <div class="analysis-text">${escapeHtmlText(insight.analysis_summary).replace(/\n/g, '<br>')}</div>
+                </div>
+            `;
+        }
+
+        if (insight.background_info) {
+            html += `
+                <div class="insight-section">
+                    <h3><span>🎨</span> 创作背景</h3>
+                    <div class="analysis-text">${escapeHtmlText(insight.background_info).replace(/\n/g, '<br>')}</div>
+                </div>
+            `;
+        }
+
+        if (insight.era_context) {
+            html += `
+                <div class="insight-section">
+                    <h3><span>🌍</span> 时代语境</h3>
+                    <div class="analysis-text">${escapeHtmlText(insight.era_context).replace(/\n/g, '<br>')}</div>
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    function renderAlbumInsightPanel() {
+        const container = document.getElementById('albumInsightContent');
+        const refreshBtn = document.getElementById('albumInsightRefreshBtn');
+        const analyzeBtn = document.getElementById('albumInsightAnalyzeBtn');
+        if (!container) return;
+
+        if (refreshBtn) {
+            refreshBtn.disabled = !albumInsightState.albumID || albumInsightState.loading || albumInsightState.generating;
+            refreshBtn.style.opacity = refreshBtn.disabled ? '0.55' : '1';
+            refreshBtn.style.cursor = refreshBtn.disabled ? 'not-allowed' : 'pointer';
+        }
+
+        if (analyzeBtn) {
+            analyzeBtn.disabled = !albumInsightState.albumID || albumInsightState.generating;
+            analyzeBtn.style.opacity = analyzeBtn.disabled ? '0.55' : '1';
+            analyzeBtn.style.cursor = analyzeBtn.disabled ? 'not-allowed' : 'pointer';
+            if (albumInsightState.generating) {
+                analyzeBtn.textContent = '分析中...';
+            } else if (albumInsightState.insights.length > 0) {
+                analyzeBtn.textContent = '重新分析';
+            } else {
+                analyzeBtn.textContent = '开始分析';
+            }
+        }
+
+        if (albumInsightState.loading && albumInsightState.insights.length === 0) {
+            container.innerHTML = buildAlbumInsightStatusHtml("正在加载专辑音眸", "正在查询这张专辑已有的聚合分析结果，请稍候。");
+            return;
+        }
+
+        if (albumInsightState.generating) {
+            container.innerHTML = buildAlbumInsightStatusHtml("正在生成专辑音眸", "正在按曲序聚合已有曲目音眸，返回整张专辑的主题、叙事与听感结构。");
+            return;
+        }
+
+        if (albumInsightState.lastError && albumInsightState.insights.length === 0) {
+            container.innerHTML = buildAlbumInsightStatusHtml(
+                "暂时无法返回专辑分析",
+                escapeHtmlText(albumInsightState.lastError),
+                `<button class="time-filter" onclick="showAlbumInsightModelPicker()" style="background: var(--primary-color); color: #fff;">开始分析</button>`
+            );
+            return;
+        }
+
+        if (albumInsightState.insights.length === 0 || !albumInsightState.insight) {
+            container.innerHTML = buildAlbumInsightStatusHtml(
+                "还没有专辑音眸",
+                "这里会返回专辑级 analysis_summary、analysis_by_section、background_info、era_context 和 metadata。生成前请先确保这张专辑至少已有部分曲目音眸。",
+                `<button class="time-filter" onclick="showAlbumInsightModelPicker()" style="background: var(--primary-color); color: #fff;">开始分析</button>`
+            );
+            return;
+        }
+
+        let html = '';
+        if (albumInsightState.lastError) {
+            html += `
+                <div style="margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(244, 63, 94, 0.35); background: rgba(244, 63, 94, 0.08); color: var(--text-primary); line-height: 1.6;">
+                    <strong style="display: block; margin-bottom: 4px;">最近一次生成失败</strong>
+                    <span style="color: var(--text-secondary);">${escapeHtmlText(albumInsightState.lastError)}</span>
+                </div>
+            `;
+        }
+
+        if (albumInsightState.insights.length > 1) {
+            html += '<div class="insight-tabs">';
+            albumInsightState.insights.forEach((insight, index) => {
+                const date = new Date(insight.created_at || Date.now());
+                const timeStr = date.toLocaleString('zh-CN', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                const activeClass = albumInsightState.insight === insight ? 'active' : '';
+                html += `<div class="insight-tab ${activeClass}" onclick="switchAlbumInsightHistory(${index})">分析 ${albumInsightState.insights.length - index} <small>(${timeStr})</small></div>`;
+            });
+            html += '</div>';
+        }
+
+        html += `
+            <div class="insight-tabs" style="margin-bottom: 16px;">
+                <div class="insight-tab ${albumInsightState.view === 'summary' ? 'active' : ''}" onclick="switchAlbumInsightTab('summary')">解析详情</div>
+                <div class="insight-tab ${albumInsightState.view === 'raw' ? 'active' : ''}" onclick="switchAlbumInsightTab('raw')">原始数据</div>
+            </div>
+        `;
+
+        if (albumInsightState.view === 'raw') {
+            html += `<pre class="album-insight-raw">${escapeHtmlText(JSON.stringify(albumInsightState.insight, null, 2))}</pre>`;
+        } else {
+            html += generateAlbumInsightContentHtml(albumInsightState.insight);
+        }
+
+        container.innerHTML = html;
+        container.scrollTop = 0;
+    }
+
+    function switchAlbumInsightHistory(index) {
+        if (!albumInsightState.insights[index]) return;
+        albumInsightState.insight = albumInsightState.insights[index];
+        renderAlbumInsightPanel();
+    }
+
+    function switchAlbumInsightTab(tabName) {
+        albumInsightState.view = tabName;
+        renderAlbumInsightPanel();
+    }
+
+    async function fetchAlbumInsight(force = false, albumID = window.currentAlbumID) {
+        if (!albumID) {
+            return;
+        }
+
+        albumInsightState.albumID = albumID;
+        albumInsightState.loading = !force;
+        albumInsightState.generating = force;
+        albumInsightState.lastError = '';
+        if (!albumInsightState.view) {
+            albumInsightState.view = 'summary';
+        }
+        renderAlbumInsightPanel();
+
+        const selection = force ? getSelectedAIRequest() : {provider: '', model: ''};
+        const url = force ? '/api/album-insight' : `/api/album-insight?albumID=${encodeURIComponent(albumID)}`;
+        const options = force ? {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({album_id: albumID, provider: selection.provider, model: selection.model})
+        } : {};
+
+        try {
+            const response = await fetch(url, options);
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || '获取专辑分析失败');
+            }
+            if (albumInsightState.albumID !== albumID) {
+                return;
+            }
+
+            const insights = data.insights || (data.insight ? [data.insight] : []);
+            albumInsightState.insights = insights;
+            albumInsightState.insight = insights[0] || null;
+            albumInsightState.view = albumInsightState.view || 'summary';
+            window.currentAlbumDetailData = window.currentAlbumDetailData || {};
+            window.currentAlbumDetailData.insights = insights;
+        } catch (error) {
+            if (albumInsightState.albumID !== albumID) {
+                return;
+            }
+            albumInsightState.lastError = error.message || '获取专辑分析失败';
+        } finally {
+            if (albumInsightState.albumID === albumID) {
+                albumInsightState.loading = false;
+                albumInsightState.generating = false;
+                renderAlbumInsightPanel();
+            }
+        }
+    }
+
     // 点赞按钮点击事件处理
     function handleFavoriteButtonClick() {
         if (!currentTrackInfo || !currentSource) {
@@ -4331,6 +5535,9 @@
         // 点击缩小/展开按钮
         minimizeHandle.addEventListener("click", function () {
             nowPlaying.classList.toggle("minimized");
+            if (!nowPlaying.classList.contains("minimized")) {
+                syncNowPlayingArtwork();
+            }
         });
     }
 
@@ -6322,7 +7529,7 @@
 
         try {
             const offset = (currentInsightPage - 1) * insightPageSize;
-            const url = `/api/insights/all?limit=${insightPageSize}&offset=${offset}&keyword=${encodeURIComponent(currentInsightKeyword)}`;
+            const url = `/api/insights/all?limit=${insightPageSize}&offset=${offset}&keyword=${encodeURIComponent(currentInsightKeyword)}&analysis_target_type=${encodeURIComponent(currentInsightTargetType)}`;
             const response = await fetch(url);
             const data = await response.json();
             
@@ -6339,7 +7546,8 @@
     function renderInsightList(insights) {
         const content = document.getElementById("insightListContent");
         if (insights.length === 0) {
-            content.innerHTML = '<div class="loading">暂无解析记录</div>';
+            const emptyText = currentInsightTargetType === 'album' ? '暂无专辑解析记录' : '暂无曲目解析记录';
+            content.innerHTML = `<div class="loading">${emptyText}</div>`;
             return;
         }
 
@@ -6349,9 +7557,12 @@
         const textColor = isDark ? "#f0f0f0" : "#2c3e50";
 
         let html = `<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; color: ${textColor};">`;
+        const headerLabel = currentInsightTargetType === 'album' ? '艺术家 / 专辑' : '艺术家 / 曲目';
+
         html += `<thead style="background-color: ${headerBgColor}; position: sticky; top: 0; z-index: 10;"><tr>`;
-        html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor};">艺术家 / 曲目</th>`;
+        html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor};">${headerLabel}</th>`;
         html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor};">模型</th>`;
+        html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor};">对象类型</th>`;
         html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor};">创建于</th>`;
         html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor}; text-align: center;">状态</th>`;
         html += `<th style="padding: 12px; border-bottom: 2px solid ${borderColor}; text-align: center;">操作</th>`;
@@ -6362,23 +7573,36 @@
             const statusText = ins.is_disabled ? "已禁用" : "已启用";
             const statusClass = ins.is_disabled ? "negative" : "positive";
             const toggleText = ins.is_disabled ? "启用" : "禁用";
+            const targetType = ins.analysis_target_type || currentInsightTargetType || 'track';
+            const isAlbum = targetType === 'album';
+            const displayTitle = isAlbum ? (ins.album || '-') : (ins.track || '-');
+            const displaySubtitle = isAlbum ? (ins.artist || '-') : `${ins.artist || '-'} · ${ins.album || '-'}`;
+            const typeBadge = isAlbum
+                ? '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>'
+                : '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(16,185,129,0.16);color:#34d399;font-size:0.75em;font-weight:700;">曲目</span>';
 
             html += `<tr style="border-bottom: 1px solid ${borderColor};">`;
             html += `<td style="padding: 12px;">
-                        <div style="font-weight: bold;">${ins.artist}</div>
-                        <div style="font-size: 0.85em; opacity: 0.8;">${ins.track}</div>
+                        <div style="font-weight: bold;">${escapeHtmlText(displayTitle)}</div>
+                        <div style="font-size: 0.85em; opacity: 0.8;">${escapeHtmlText(displaySubtitle)}</div>
                      </td>`;
             html += `<td style="padding: 12px;">${ins.llm_provider || '-'}</td>`;
+            html += `<td style="padding: 12px;">${typeBadge}</td>`;
             html += `<td style="padding: 12px;">${time}</td>`;
             html += `<td style="padding: 12px; text-align: center;">
                         <span class="stat-change ${statusClass}" style="float:none; padding: 2px 8px; border-radius: 4px;">${statusText}</span>
                      </td>`;
             html += `<td style="padding: 12px; text-align: center;">
                         <div style="display: flex; gap: 8px; justify-content: center;">
-                            <button class="time-filter" onclick="toggleInsightStatus(${ins.id})" style="padding: 4px 10px;">${toggleText}</button>
-                            <button class="time-filter" onclick="showInsightDetailsById(${ins.id})" style="padding: 4px 10px;">详情</button>
-                            <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${esc(ins.artist)}', '${esc(ins.track)}')" style="padding: 4px 10px;">流水</button>
-                            <button class="time-filter" onclick="deleteInsight(${ins.id})" style="padding: 4px 10px; background-color: #e74c3c; color: white; border-color: #e74c3c;">删除</button>
+                            ${isAlbum ? `
+                                <button class="time-filter" onclick="showAlbumInsightDetailsByAlbumId(${ins.album_id || 0})" style="padding: 4px 10px;">专辑详情</button>
+                                <button class="time-filter" onclick="showAlbumInsightCallLogs(${ins.album_id || 0}, '${esc(ins.artist)}', '${esc(ins.album)}')" style="padding: 4px 10px;">流水</button>
+                            ` : `
+                                <button class="time-filter" onclick="toggleInsightStatus(${ins.id})" style="padding: 4px 10px;">${toggleText}</button>
+                                <button class="time-filter" onclick="showInsightDetailsById(${ins.id})" style="padding: 4px 10px;">详情</button>
+                                <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${esc(ins.artist)}', '${esc(ins.track)}')" style="padding: 4px 10px;">流水</button>
+                                <button class="time-filter" onclick="deleteInsight(${ins.id})" style="padding: 4px 10px; background-color: #e74c3c; color: white; border-color: #e74c3c;">删除</button>
+                            `}
                         </div>
                      </td>`;
             html += "</tr>";
@@ -6392,9 +7616,32 @@
     function updateInsightPagination() {
         const totalPages = Math.ceil(totalInsights / insightPageSize);
         const info = document.getElementById("insightPageInfo");
-        info.textContent = `第 ${currentInsightPage} 页 / 共 ${totalPages} 页 (${totalInsights} 条)`;
+        const targetLabel = currentInsightTargetType === 'album' ? '专辑' : '曲目';
+        info.textContent = `第 ${currentInsightPage} 页 / 共 ${totalPages} 页 (${totalInsights} 条 ${targetLabel})`;
         document.getElementById("insightPrevPage").disabled = currentInsightPage === 1;
         document.getElementById("insightNextPage").disabled = currentInsightPage >= totalPages;
+    }
+
+    function switchInsightListTarget(targetType) {
+        if (!targetType || targetType === currentInsightTargetType) return;
+        currentInsightTargetType = targetType;
+        currentInsightPage = 1;
+        updateInsightListTargetTabs();
+        updateInsightSearchPlaceholder();
+        loadInsightList();
+    }
+
+    function updateInsightListTargetTabs() {
+        document.querySelectorAll("#insightListTargetTabs .insight-tab").forEach((tab) => {
+            const targetType = tab.getAttribute("data-target-type");
+            tab.classList.toggle("active", targetType === currentInsightTargetType);
+        });
+    }
+
+    function updateInsightSearchPlaceholder() {
+        const input = document.getElementById("insightSearchInput");
+        if (!input) return;
+        input.placeholder = currentInsightTargetType === 'album' ? "按专辑模糊搜索..." : "按曲目模糊搜索...";
     }
 
     // 切换禁用/启用状态
@@ -6408,6 +7655,13 @@
             alert("切换状态出错");
         }
     }
+
+    function showAlbumInsightDetailsByAlbumId(albumID) {
+        if (!albumID) return;
+        hideModal('listInsightModal');
+        showAlbumDetails(albumID, 'insight');
+    }
+    window.showAlbumInsightDetailsByAlbumId = showAlbumInsightDetailsByAlbumId;
 
 
 
@@ -6427,11 +7681,11 @@
             const footer = document.getElementById(`${contextType}-aiActionFooter`);
             if (footer) footer.style.display = "none";
 
-            const response = await fetch(`/api/insights/all?limit=1000&offset=0`);
-            const data = await response.json();
-            const insight = data.insights.find(ins => ins.id === id);
-            
-            if (!insight) return alert("未找到记录");
+            const response = await fetch(`/api/insights/${id}`);
+            if (!response.ok) {
+                throw new Error("加载详情失败");
+            }
+            const insight = await response.json();
 
             // 更新上下文状态
             insightStates[contextType].insight = insight;
@@ -6487,7 +7741,7 @@
             const data = await res.json();
             
             if (!data.logs || data.logs.length === 0) {
-                content.innerHTML = '<div class="loading">暂无关联流水记录</div>';
+                content.innerHTML = '<div class="no-data">暂无关联流水记录</div>';
                 return;
             }
 
@@ -6496,22 +7750,126 @@
                 const time = new Date(log.created_at).toLocaleString("zh-CN");
                 const isError = log.status !== 'success' && log.status !== 'ok';
                 const statusColor = isError ? "#e74c3c" : "#2ecc71";
+                const targetType = log.analysis_target_type || 'track';
+                const targetKey = escapeHtmlText(log.target_key || log.track_info || '-');
+                const targetMetadata = prettyJsonLike(log.target_metadata);
+                const requestJson = prettyJsonLike(log.request_json);
+                const responseJson = prettyJsonLike(log.response_json);
+                const requestSize = log.request_json ? String(log.request_json.length) : '0';
+                const responseSize = log.response_json ? String(log.response_json.length) : '0';
+                const objectBadge = targetType === 'album'
+                    ? '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>'
+                    : '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(16,185,129,0.16);color:#34d399;font-size:0.75em;font-weight:700;">曲目</span>';
                 
                 html += `
-                <div style="border: 1px solid #444; border-radius: 8px; padding: 12px; background: rgba(255,255,255,0.02);">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="font-weight: bold;">${log.provider} (${log.model})</span>
-                        <span style="font-size: 0.8em; opacity: 0.7;">${time}</span>
+                <div style="border: 1px solid #444; border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.03); box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
+                        <div style="min-width: 0;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtmlText(log.provider)} (${escapeHtmlText(log.model)})</span>
+                                ${objectBadge}
+                            </div>
+                            <div style="font-size: 0.8em; opacity: 0.72;">${time}</div>
+                        </div>
+                        <div style="text-align: right; font-size: 0.82em; line-height: 1.5; opacity: 0.86;">
+                            <div>状态: <span style="color: ${statusColor}; font-weight: 700;">${escapeHtmlText(log.status)}</span> | 耗时: ${log.duration_ms}ms</div>
+                            <div>请求 ${requestSize} 字符 | 响应 ${responseSize} 字符</div>
+                        </div>
                     </div>
-                    <div style="margin-bottom: 8px;">
-                        状态: <span style="color: ${statusColor}">${log.status}</span> | 耗时: ${log.duration_ms}ms
+                    <div style="margin-bottom: 10px; font-size: 0.85em; opacity: 0.84; word-break: break-all;">
+                        对象键: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">${targetKey}</span>
                     </div>
+                    ${targetMetadata ? `
+                    <details style="margin-bottom: 10px;">
+                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">对象元数据</summary>
+                        <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
+                    </details>` : ''}
+                    ${log.error_msg ? `<div style="margin-bottom: 10px; color: #e74c3c; font-size: 0.86em; line-height: 1.6;">错误: ${escapeHtmlText(log.error_msg)}</div>` : ''}
                     <details>
-                        <summary style="cursor: pointer; opacity: 0.8; font-size: 0.9em;">解析详情 (JSON)</summary>
-                        <div style="margin-top: 10px; font-size: 0.8em; background: #1a1a1a; padding: 8px; border-radius: 4px; overflow-x: auto;">
-                            <strong>Prompt/Response:</strong>
-                            <pre style="white-space: pre-wrap;">${JSON.stringify({req: log.request_json, resp: log.response_json}, null, 2)}</pre>
-                            ${log.error_message ? `<div style="color: #e74c3c; margin-top: 8px;">错误: ${log.error_message}</div>` : ''}
+                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">查看原始请求与响应</summary>
+                        <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 0.8em;">
+                            <div>
+                                <div style="font-weight: 700; margin-bottom: 6px;">Request</div>
+                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
+                            </div>
+                            <div>
+                                <div style="font-weight: 700; margin-bottom: 6px;">Response</div>
+                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
+                            </div>
+                        </div>
+                    </details>
+                </div>`;
+            });
+            html += '</div>';
+            content.innerHTML = html;
+        } catch (e) {
+            console.error(e);
+            content.innerHTML = `<div class="error">加载流水日志失败</div>`;
+        }
+    }
+
+    async function showAlbumInsightCallLogs(albumID, artist, album) {
+        const content = document.getElementById("callLogContent");
+        document.getElementById("callLogTitle").textContent = `流水日志: ${artist} - ${album}`;
+
+        showModal("callLogModal");
+        content.innerHTML = '<div class="loading">加载中...</div>';
+
+        try {
+            const res = await fetch(`/api/album-insights/${albumID}/logs`);
+            const data = await res.json();
+
+            if (!data.logs || data.logs.length === 0) {
+                content.innerHTML = '<div class="no-data">暂无关联流水记录</div>';
+                return;
+            }
+
+            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+            data.logs.forEach(log => {
+                const time = new Date(log.created_at).toLocaleString("zh-CN");
+                const isError = log.status !== 'success' && log.status !== 'ok';
+                const statusColor = isError ? "#e74c3c" : "#2ecc71";
+                const targetMetadata = prettyJsonLike(log.target_metadata);
+                const requestJson = prettyJsonLike(log.request_json);
+                const responseJson = prettyJsonLike(log.response_json);
+                const requestSize = log.request_json ? String(log.request_json.length) : '0';
+                const responseSize = log.response_json ? String(log.response_json.length) : '0';
+
+                html += `
+                <div style="border: 1px solid #444; border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.03); box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
+                        <div style="min-width: 0;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtmlText(log.provider)} (${escapeHtmlText(log.model)})</span>
+                                <span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>
+                            </div>
+                            <div style="font-size: 0.8em; opacity: 0.72;">${time}</div>
+                        </div>
+                        <div style="text-align: right; font-size: 0.82em; line-height: 1.5; opacity: 0.86;">
+                            <div>状态: <span style="color: ${statusColor}; font-weight: 700;">${escapeHtmlText(log.status)}</span> | 耗时: ${log.duration_ms}ms</div>
+                            <div>请求 ${requestSize} 字符 | 响应 ${responseSize} 字符</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px; font-size: 0.85em; opacity: 0.84; word-break: break-all;">
+                        对象键: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">${escapeHtmlText(log.target_key || albumID || '-')}</span>
+                    </div>
+                    ${targetMetadata ? `
+                    <details style="margin-bottom: 10px;">
+                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">对象元数据</summary>
+                        <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
+                    </details>` : ''}
+                    ${log.error_msg ? `<div style="margin-bottom: 10px; color: #e74c3c; font-size: 0.86em; line-height: 1.6;">错误: ${escapeHtmlText(log.error_msg)}</div>` : ''}
+                    <details>
+                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">查看原始请求与响应</summary>
+                        <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 0.8em;">
+                            <div>
+                                <div style="font-weight: 700; margin-bottom: 6px;">Request</div>
+                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
+                            </div>
+                            <div>
+                                <div style="font-weight: 700; margin-bottom: 6px;">Response</div>
+                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
+                            </div>
                         </div>
                     </details>
                 </div>`;
@@ -7145,19 +8503,38 @@
             }
 
             bodyContent.innerHTML = `
-            <div class="track-info">
-              <p><strong>艺术家:</strong> ${track.artist}</p>
-              <p><strong>专辑:</strong> ${track.album_id ? `<a href="javascript:void(0)" onclick="hideModal('trackDetailsModal'); showAlbumDetails(${track.album_id})" style="color: var(--primary-color); text-decoration: underline; cursor: pointer;">${track.album}</a>` : track.album}</p>
-              <p><strong>播放次数:</strong> ${track.play_count || 0}</p>
-              ${track.duration ? `<p><strong>时长:</strong> ${formatDuration(track.duration)}</p>` : ''}
-              ${track.track_number ? `<p><strong>曲目编号:</strong> ${track.track_number}</p>` : ''}
-              ${track.genre ? `<p><strong>流派:</strong> ${track.genre}</p>` : ''}
-              <p><strong>喜欢苹果音乐:</strong> ${track.is_apple_music_fav ? "是" : "否"}</p>
-              <p><strong>喜欢Last.fm:</strong> ${track.is_last_fm_fav ? "是" : "否"}</p>
-              <p><strong>数据来源:</strong> <span class="play-source ${sourceClass}">${sourceText}</span></p>
-              <p><strong>更新时间:</strong> ${new Date(track.updated_at).toLocaleString('zh-CN')}</p>
+            <div style="display: flex; gap: 20px; align-items: flex-start;">
+              <div
+                id="trackDetailArtwork"
+                class="artwork-slot"
+                style="width: 120px; height: 120px; border-radius: 18px; flex-shrink: 0; box-shadow: 0 12px 24px rgba(0,0,0,0.12);"
+              >${renderArtworkPlaceholder(track.album || "")}</div>
+              <div class="track-info" style="flex: 1; min-width: 0;">
+                <p><strong>艺术家:</strong> ${track.artist}</p>
+                <p><strong>专辑:</strong> ${track.album_id ? `<a href="javascript:void(0)" onclick="hideModal('trackDetailsModal'); showAlbumDetails(${track.album_id})" style="color: var(--primary-color); text-decoration: underline; cursor: pointer;">${track.album}</a>` : track.album}</p>
+                <p><strong>播放次数:</strong> ${track.play_count || 0}</p>
+                ${track.duration ? `<p><strong>时长:</strong> ${formatDuration(track.duration)}</p>` : ''}
+                ${track.track_number ? `<p><strong>曲目编号:</strong> ${track.track_number}</p>` : ''}
+                ${track.genre ? `<p><strong>流派:</strong> ${track.genre}</p>` : ''}
+                <p><strong>喜欢苹果音乐:</strong> ${track.is_apple_music_fav ? "是" : "否"}</p>
+                <p><strong>喜欢Last.fm:</strong> ${track.is_last_fm_fav ? "是" : "否"}</p>
+                <p><strong>数据来源:</strong> <span class="play-source ${sourceClass}">${sourceText}</span></p>
+                <p><strong>更新时间:</strong> ${new Date(track.updated_at).toLocaleString('zh-CN')}</p>
+              </div>
             </div>
           `;
+            hydrateArtworkSlot(
+                document.getElementById("trackDetailArtwork"),
+                {
+                    albumID: track.album_id || 0,
+                    artist: track.artist || "",
+                    album: track.album || "",
+                    coverArtURL: track.cover_art_url || "",
+                },
+                {
+                    altText: track.album || track.track || "专辑封面",
+                },
+            );
         } else if (tabName === 'lyrics') {
             // 歌词 Tab
             const track = data.track;
@@ -7323,10 +8700,11 @@
      * 显示专辑详情模态框
      * @param {number} id 专辑 ID
      */
-    function showAlbumDetails(id) {
+    function showAlbumDetails(id, selectedTab = 'info') {
         if (!id) return;
         window.currentAlbumID = id; // 记录当前处理的专辑 ID
         window.currentAlbumSyncStatus = 0; // 记录当前专辑的同步状态
+        window.currentAlbumDetailData = { albumID: id, album: null, insights: [] };
         
         // 检测当前主题
         const isDark = document.body.classList.contains("dark-mode");
@@ -7335,6 +8713,7 @@
         
         const modal = document.getElementById('albumDetailsModal');
         const trackList = document.getElementById('albumTrackList');
+        const titleEl = document.getElementById('albumDetailTitle');
         const nameEl = document.getElementById('ad-name');
         const artistEl = document.getElementById('ad-artist');
         const releaseEl = document.getElementById('ad-release');
@@ -7346,6 +8725,7 @@
         const totalDiscsEl = document.getElementById('ad-total-discs');
         const adIdEl = document.getElementById('ad-id');
         const mbidEl = document.getElementById('ad-mbid');
+        const coverEl = document.getElementById('albumCoverPlaceholder');
         const mbSearchBtn = document.getElementById('mbSearchBtn');
         const mbDeepBtn = document.getElementById('mbDeepBtn');
         const candidateList = document.getElementById('mbCandidateList');
@@ -7353,6 +8733,7 @@
         // 显示模态框并重置状态
         modal.style.display = 'block';
         trackList.innerHTML = '<div class="loading">加载中...</div>';
+        if (titleEl) titleEl.textContent = '专辑详情';
         nameEl.textContent = '加载中...';
         artistEl.textContent = '-';
         releaseEl.textContent = '-';
@@ -7364,9 +8745,25 @@
         if (totalDiscsEl) totalDiscsEl.textContent = '-';
         if (adIdEl) adIdEl.textContent = id; // 直接填充传入的 ID
         if (mbidEl) mbidEl.textContent = '-';
+        if (coverEl) {
+            applyArtworkPlaceholder(coverEl, "", {
+                placeholderStyle: "font-size: 3em; opacity: 0.92;",
+            });
+        }
         mbSearchBtn.style.display = 'block';
         mbDeepBtn.style.display = 'none';
         candidateList.style.display = 'none';
+        albumInsightState.albumID = id;
+        albumInsightState.albumMeta = null;
+        albumInsightState.insights = [];
+        albumInsightState.insight = null;
+        albumInsightState.view = 'summary';
+        albumInsightState.loading = true;
+        albumInsightState.generating = false;
+        albumInsightState.lastError = '';
+        switchAlbumDetailTab(selectedTab);
+        renderAlbumInsightPanel();
+        fetchAlbumInsight(false, id);
 
         const normalizeAlbumTrackCompareKey = (value) => {
             return String(value || '')
@@ -7384,10 +8781,18 @@
                 return resp.json();
             })
             .then(data => {
+                if (window.currentAlbumID !== id) {
+                    return;
+                }
+                window.currentAlbumDetailData.album = data;
+                albumInsightState.albumMeta = data;
                 nameEl.textContent = data.name || '未知专辑';
                 nameEl.title = data.name || '未知专辑';
                 artistEl.textContent = data.artist || '未知艺术家';
                 artistEl.title = data.artist || '未知艺术家';
+                if (titleEl) {
+                    titleEl.textContent = `${data.artist || '未知艺术家'} · ${data.name || '未知专辑'}`;
+                }
                 releaseEl.textContent = data.release_date || '-';
                 releaseEl.title = data.release_date || '-';
                 genreEl.textContent = data.genre || '-';
@@ -7425,9 +8830,25 @@
                     mbidEl.textContent = mbid;
                     mbidEl.title = mbid;
                 }
+                if (coverEl) {
+                    hydrateArtworkSlot(
+                        coverEl,
+                        {
+                            albumID: data.id || id,
+                            artist: data.artist || "",
+                            album: data.name || "",
+                            coverArtURL: data.cover_art_url || "",
+                        },
+                        {
+                            altText: data.name || "专辑封面",
+                            placeholderStyle: "font-size: 3em; opacity: 0.92;",
+                        },
+                    );
+                }
                 
                 // 根据同步状态更新 UI 按钮和候选列表
                 updateMBUI(data.sync_status || 0);
+                renderAlbumInsightPanel();
                 
                 if (data.track_album && data.track_album.length > 0) {
                     let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
@@ -7523,6 +8944,9 @@
                 }
             })
             .catch(err => {
+                if (window.currentAlbumID !== id) {
+                    return;
+                }
                 console.error('获取专辑详情失败:', err);
                 trackList.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-color);">加载失败: ${err.message}</div>`;
             });
@@ -7930,6 +9354,18 @@
         </div>
         <div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr); gap: 18px; min-height: 0; flex: 1; overflow: hidden;">
             <div style="display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding-right: 6px;">
+                <div id="pendingAlbumContextStaleBanner" style="display: none; padding: 12px; border-radius: 14px; border: 1px solid rgba(243, 156, 18, 0.35); background: rgba(243, 156, 18, 0.08);">
+                    <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;">
+                        <div style="min-width: 0;">
+                            <div style="font-weight: 700; margin-bottom: 4px; color: var(--text-primary);">冻结上下文已变化</div>
+                            <div id="pendingAlbumContextStaleText" style="font-size: 0.85em; line-height: 1.5; color: var(--text-secondary);">-</div>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                            <button class="time-filter" onclick="refreshPendingAlbumWorkItemContext()">刷新冻结上下文</button>
+                            <button class="time-filter" onclick="dismissPendingAlbumContextStale()">继续使用冻结</button>
+                        </div>
+                    </div>
+                </div>
                 <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
                     <div style="font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">上下文曲目摘要</div>
                     <div id="pendingAlbumContextTracks" style="display: flex; flex-direction: column; gap: 10px;"></div>
@@ -7993,67 +9429,97 @@
             <h2 id="albumDetailTitle" style="font-size: 1.4em; font-weight: 700; color: var(--text-primary);">专辑详情</h2>
             <span class="close" onclick="hideModal('albumDetailsModal')" style="font-size: 28px; color: var(--text-secondary); transition: opacity 0.2s; cursor: pointer;">&times;</span>
         </div>
-        <div class="modal-body" id="albumDetailBody" style="padding: 25px; display: flex; gap: 24px; height: 78vh; align-items: stretch;">
-            <!-- 第一列：元数据与封面 -->
-            <div style="flex: 1; min-width: 280px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color);">
-                <div id="albumCoverPlaceholder" style="width: 100%; aspect-ratio: 1/1; background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 4em; opacity: 0.6; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">💿</div>
-                
-                <div id="albumDetailInfo" style="overflow-y: auto; flex: 1; margin-top: 20px;">
-                    <h3 id="ad-name" style="margin: 0; font-size: 1.25em; font-weight: 700; color: var(--text-primary); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</h3>
-                    <p id="ad-artist" style="margin: 5px 0 20px 0; opacity: 0.7; font-size: 0.95em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</p>
-                    
-                    <style>
-                        .meta-row { display: flex; margin-bottom: 12px; font-size: 0.9em; align-items: baseline; }
-                        .meta-label { width: 90px; color: var(--primary-color); font-weight: 600; font-size: 0.9em; flex-shrink: 0; }
-                        .meta-value { color: var(--text-primary); font-weight: 500; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
-                        .meta-value:hover { white-space: normal; word-break: break-all; }
-                    </style>
+        <div class="modal-body album-detail-modal-body" id="albumDetailBody">
+            <div class="album-detail-tabs">
+                <div id="albumDetailTabBtnInfo" class="album-detail-tab active" onclick="switchAlbumDetailTab('info')">专辑详情</div>
+                <div id="albumDetailTabBtnInsight" class="album-detail-tab" onclick="switchAlbumDetailTab('insight')">音眸专辑</div>
+            </div>
 
-                    <div style="padding-top: 20px; border-top: 1px solid var(--border-color);">
-                        <div class="meta-row"><div class="meta-label">发行日期:</div><div class="meta-value" id="ad-release" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">风格流派:</div><div class="meta-value" id="ad-genre" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">国家区域:</div><div class="meta-value" id="ad-country" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">发行状态:</div><div class="meta-value" id="ad-status" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">包装形式:</div><div class="meta-value" id="ad-packaging" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">识别条码:</div><div class="meta-value" id="ad-barcode" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">总计碟数:</div><div class="meta-value" id="ad-total-discs" title="-">-</div></div>
-                        <div class="meta-row"><div class="meta-label">专辑 ID:</div><div class="meta-value" id="ad-id" title="-">-</div></div>
+            <div id="albumDetailTabInfo" class="album-detail-tab-panel active">
+                <div class="album-detail-grid">
+                    <!-- 第一列：元数据与封面 -->
+                    <div class="album-detail-pane">
+                        <div id="albumCoverPlaceholder" class="artwork-slot" style="width: 176px; height: 176px; border-radius: 14px; align-self: center; flex-shrink: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.15);"></div>
+
+                        <div id="albumDetailInfo" class="album-detail-scroll" style="margin-top: 16px;">
+                            <h3 id="ad-name" style="margin: 0; font-size: 1.25em; font-weight: 700; color: var(--text-primary); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</h3>
+                            <p id="ad-artist" style="margin: 5px 0 20px 0; opacity: 0.7; font-size: 0.95em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</p>
+
+                            <style>
+                                .meta-row { display: flex; margin-bottom: 12px; font-size: 0.9em; align-items: baseline; }
+                                .meta-label { width: 90px; color: var(--primary-color); font-weight: 600; font-size: 0.9em; flex-shrink: 0; }
+                                .meta-value { color: var(--text-primary); font-weight: 500; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+                                .meta-value:hover { white-space: normal; word-break: break-all; }
+                            </style>
+
+                            <div style="padding-top: 20px; border-top: 1px solid var(--border-color);">
+                                <div class="meta-row"><div class="meta-label">发行日期:</div><div class="meta-value" id="ad-release" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">风格流派:</div><div class="meta-value" id="ad-genre" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">国家区域:</div><div class="meta-value" id="ad-country" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">发行状态:</div><div class="meta-value" id="ad-status" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">包装形式:</div><div class="meta-value" id="ad-packaging" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">识别条码:</div><div class="meta-value" id="ad-barcode" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">总计碟数:</div><div class="meta-value" id="ad-total-discs" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">专辑 ID:</div><div class="meta-value" id="ad-id" title="-">-</div></div>
+                            </div>
+
+                            <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
+                                <div class="meta-label" style="margin-bottom: 6px; width: 100%;">MusicBrainz ID:</div>
+                                <div id="ad-mbid" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75em; opacity: 0.5; line-height: 1.4; word-break: break-all; color: var(--text-secondary); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default;" title="-">-</div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
-                        <div class="meta-label" style="margin-bottom: 6px; width: 100%;">MusicBrainz ID:</div>
-                        <div id="ad-mbid" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75em; opacity: 0.5; line-height: 1.4; word-break: break-all; color: var(--text-secondary); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default;" title="-">-</div>
+                    <!-- 第二列：MusicBrainz 候选区 -->
+                    <div class="album-detail-pane">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h4 class="album-pane-heading">候选发行版本</h4>
+                            <div style="display: flex; gap: 8px;">
+                                <button id="mbSearchBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="syncAlbumMB('search')">查询</button>
+                                <button id="mbDeepBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(var(--primary-rgb), 0.2);" onclick="syncAlbumMB('deep')">精选维护</button>
+                            </div>
+                        </div>
+
+                        <div id="mbCandidateList" style="display: none; flex: 1; overflow: hidden;">
+                            <p style="font-size: 0.8em; margin-bottom: 15px; color: var(--text-secondary);">请点击版本进行关联校准：</p>
+                            <div id="mbCandidateContent" style="flex: 1; overflow-y: auto; padding-right: 5px; max-height: 100%;"></div>
+                        </div>
+                        <div id="mbInitialMsg" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; text-align: center;">
+                            <div style="font-size: 3em; margin-bottom: 10px;">🔍</div>
+                            <p style="font-size: 0.9em; color: var(--text-secondary);">点击"查询"获取权威库对应版本</p>
+                        </div>
+                    </div>
+
+                    <!-- 第三列：本地曲目对账清单 -->
+                    <div class="album-detail-pane">
+                        <h4 class="album-pane-heading" style="margin-bottom: 20px;">专辑曲目</h4>
+                        <div class="album-detail-scroll" style="padding-right: 5px;">
+                            <ul class="ranking-list" id="albumTrackList" style="padding: 0;">
+                                <!-- 由 JS 生成带对齐 Grid 的列表项 -->
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 第二列：MusicBrainz 候选区 -->
-            <div style="flex: 1.4; min-width: 340px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h4 style="margin: 0; font-size: 0.9em; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px;">候选发行版本</h4>
-                    <div style="display: flex; gap: 8px;">
-                        <button id="mbSearchBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="syncAlbumMB('search')">查询</button>
-                        <button id="mbDeepBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(var(--primary-rgb), 0.2);" onclick="syncAlbumMB('deep')">精选维护</button>
+            <div id="albumDetailTabInsight" class="album-detail-tab-panel">
+                <div class="album-detail-pane album-insight-pane" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px;">
+                        <div>
+                            <h4 class="album-pane-heading">音眸专辑分析</h4>
+                            <p class="album-pane-subtitle">按曲序聚合已有曲目音眸，完整返回整张专辑的结构化分析与来源信息。</p>
+                        </div>
+                        <div class="album-insight-toolbar">
+                            <button id="albumInsightRefreshBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="fetchAlbumInsight(false)">刷新</button>
+                            <button id="albumInsightAnalyzeBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: var(--primary-color); color: #fff;" onclick="showAlbumInsightModelPicker()">开始分析</button>
+                        </div>
                     </div>
-                </div>
-                
-                <div id="mbCandidateList" style="display: none; flex: 1; overflow: hidden;">
-                    <p style="font-size: 0.8em; margin-bottom: 15px; color: var(--text-secondary);">请点击版本进行关联校准：</p>
-                    <div id="mbCandidateContent" style="flex: 1; overflow-y: auto; padding-right: 5px; max-height: 100%;"></div>
-                </div>
-                <div id="mbInitialMsg" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; text-align: center;">
-                    <div style="font-size: 3em; margin-bottom: 10px;">🔍</div>
-                    <p style="font-size: 0.9em; color: var(--text-secondary);">点击"查询"获取权威库对应版本</p>
-                </div>
-            </div>
-
-            <!-- 第三列：本地曲目对账清单 -->
-            <div style="flex: 1.8; min-width: 420px; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid var(--border-color);">
-                <h4 style="margin: 0 0 20px 0; font-size: 0.9em; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px;">专辑曲目</h4>
-                <div style="flex: 1; overflow-y: auto; padding-right: 5px;">
-                    <ul class="ranking-list" id="albumTrackList" style="padding: 0;">
-                        <!-- 由 JS 生成带对齐 Grid 的列表项 -->
-                    </ul>
+                    <div id="albumInsightContent" class="album-detail-scroll">
+                        <div class="album-insight-status">
+                            <strong>正在准备专辑音眸</strong>
+                            <div>即将加载已有分析记录。</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -8269,10 +9735,16 @@
             <span class="close" onclick="hideModal('aiModelPickerModal')">×</span>
         </div>
         <div class="ai-model-selector" style="margin-bottom: 20px;">
+            <label for="aiProviderSelect">当前可用平台:</label>
+            <select id="aiProviderSelect"
+                    onchange="loadModelsForPlatform(this.value)"
+                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); margin-bottom: 12px;">
+                <option value="ollama">Ollama</option>
+            </select>
             <label for="aiModelSelect">当前可用模型:</label>
             <select id="aiModelSelect"
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); margin-bottom: 15px;">
-                <option value="ollama">Ollama (本地)</option>
+                <option value="">请先选择平台</option>
             </select>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="aiModelSseToggle" checked style="width: auto;">
@@ -8481,18 +9953,27 @@
             return;
         }
 
-        let html = '<div class="album-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding: 10px;">';
+        let html = '<div class="album-grid">';
         albums.forEach(album => {
             html += `
-                <div class="album-card" onclick="showAlbumDetails(${album.id})" style="cursor: pointer; background: var(--bg-card); padding: 15px; border-radius: 12px; transition: transform 0.2s;">
-                    <div class="album-cover-placeholder" style="width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 3rem; margin-bottom: 10px;">💿</div>
-                    <div class="album-name" style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${album.name}</div>
-                    <div class="album-artist" style="font-size: 0.85rem; opacity: 0.7;">${album.artist}</div>
+                <div class="album-card" onclick="showAlbumDetails(${album.id})">
+                    <div
+                        class="artwork-slot album-card-cover"
+                        data-artwork-slot="1"
+                        data-album-id="${album.id}"
+                        data-artist="${esc(album.artist || "")}"
+                        data-album="${esc(album.name || "")}"
+                        data-cover-art-url="${esc(album.cover_art_url || "")}"
+                        data-alt-text="${esc(album.name || "专辑封面")}"
+                    >${renderArtworkPlaceholder(album.name || "")}</div>
+                    <div class="album-card-name" title="${esc(album.name || "")}">${album.name}</div>
+                    <div class="album-card-artist" title="${esc(album.artist || "")}">${album.artist}</div>
                 </div>
             `;
         });
         html += '</div>';
         content.innerHTML = html;
+        hydrateArtworkSlots(content);
     }
 
     function updateAlbumPagination() {
@@ -8584,11 +10065,22 @@
         items.forEach(item => {
             const dateStr = new Date(item.created_at).toLocaleString();
             const isCompleted = item.status === 'completed';
-            const statusLabel = isCompleted ? '<span style="color: #27ae60;">已完成</span>' : `<span style="color: #f39c12;">${item.status}</span>`;
+            const statusLabel = renderPendingAlbumWorkItemStatusBadge(item.status);
             
             html += `
                 <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-card);">
                     <div style="display: flex; justify-content: space-between; gap: 16px; align-items: flex-start;">
+                        <div
+                            class="artwork-slot"
+                            data-artwork-slot="1"
+                            data-resolved-album-id="${Number(item.resolved_album_id || 0)}"
+                            data-artist="${esc(item.artist || "")}"
+                            data-album-artist="${esc(item.album_artist || "")}"
+                            data-album="${esc(item.album || "")}"
+                            data-artwork-compact="1"
+                            data-alt-text="${esc(item.album || "专辑封面")}"
+                            style="width: 64px; height: 64px; flex-shrink: 0; border-radius: 12px;"
+                        >${renderArtworkPlaceholder(item.album || "", true)}</div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${item.album}</div>
                             <div style="margin-top: 4px; opacity: 0.65; color: var(--text-secondary);">${item.album_artist || item.artist || '-'}</div>
@@ -8609,6 +10101,7 @@
         });
         html += '</div>';
         content.innerHTML = html;
+        hydrateArtworkSlots(content);
     }
 
     function updatePendingWorkPagination() {
@@ -8620,8 +10113,44 @@
 
     function resumePendingAlbumWorkItem(id) {
         currentPendingAlbumWorkItemID = id;
+        currentPendingAlbumStalePromptedWorkItemID = 0;
         showModal('pendingAlbumWorkItemModal');
         loadPendingAlbumWorkItemDetail();
+    }
+
+    function formatPendingAlbumWorkItemStatus(status) {
+        switch (status) {
+            case 'not_created':
+                return '尚未建单';
+            case 'open':
+            case 'mb_selected':
+            case 'deep_maintaining':
+            case 'applying':
+                return '维护中';
+            case 'completed':
+                return '已完成';
+            case 'failed':
+                return '失败';
+            default:
+                return status || '-';
+        }
+    }
+
+    function renderPendingAlbumWorkItemStatusBadge(status) {
+        const statusName = formatPendingAlbumWorkItemStatus(status);
+        if (statusName === '尚未建单') {
+            return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(127, 140, 141, 0.14); color: #7f8c8d; font-weight: 600; letter-spacing: 0.02em;">${statusName}</span>`;
+        }
+        if (statusName === '维护中') {
+            return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(var(--primary-rgb), 0.16); color: var(--primary-color); font-weight: 700; letter-spacing: 0.02em;">${statusName}</span>`;
+        }
+        if (statusName === '已完成') {
+            return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(39, 174, 96, 0.14); color: #27ae60; font-weight: 700; letter-spacing: 0.02em;">${statusName}</span>`;
+        }
+        if (statusName === '失败') {
+            return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(231, 76, 60, 0.14); color: #e74c3c; font-weight: 700; letter-spacing: 0.02em;">${statusName}</span>`;
+        }
+        return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(var(--text-secondary-rgb), 0.12); color: var(--text-secondary); font-weight: 600;">${statusName}</span>`;
     }
 
     function renderPendingAlbumList(groups) {
@@ -8635,10 +10164,22 @@
         groups.forEach(group => {
             const sourceText = (group.sources || []).join(' / ') || '-';
             const trackPreview = (group.track_names || []).slice(0, 4).join('、');
-            const workItemText = group.open_work_item_id ? `工作项 #${group.open_work_item_id} · ${group.open_work_item_status}` : '尚未建单';
+            const workItemText = group.open_work_item_id
+                ? `工作项 #${group.open_work_item_id} · ${renderPendingAlbumWorkItemStatusBadge(group.open_work_item_status)}`
+                : `${renderPendingAlbumWorkItemStatusBadge('not_created')}`;
             html += `
                 <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-card);">
                     <div style="display: flex; justify-content: space-between; gap: 16px; align-items: flex-start;">
+                        <div
+                            class="artwork-slot"
+                            data-artwork-slot="1"
+                            data-artist="${esc(group.artist || "")}"
+                            data-album-artist="${esc(group.album_artist || "")}"
+                            data-album="${esc(group.album || "")}"
+                            data-artwork-compact="1"
+                            data-alt-text="${esc(group.album || "专辑封面")}"
+                            style="width: 64px; height: 64px; flex-shrink: 0; border-radius: 12px;"
+                        >${renderArtworkPlaceholder(group.album || "", true)}</div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${group.album}</div>
                             <div style="margin-top: 4px; opacity: 0.65; color: var(--text-secondary);">${group.album_artist || group.artist || '-'}</div>
@@ -8655,6 +10196,7 @@
         });
         html += '</div>';
         content.innerHTML = html;
+        hydrateArtworkSlots(content);
     }
 
     async function openPendingAlbumWorkItem(identityKey) {
@@ -8669,6 +10211,7 @@
             return;
         }
         currentPendingAlbumWorkItemID = data.id;
+        currentPendingAlbumStalePromptedWorkItemID = 0;
         currentPendingCandidates = [];
         currentPendingSelectedMBID = "";
         document.getElementById('pendingAlbumCandidates').innerHTML = '<div class="no-data">点击“搜索候选”加载 MusicBrainz 候选版本</div>';
@@ -8678,6 +10221,10 @@
 
     async function loadPendingAlbumWorkItemDetail() {
         if (!currentPendingAlbumWorkItemID) return;
+        const staleBanner = document.getElementById('pendingAlbumContextStaleBanner');
+        if (staleBanner) {
+            staleBanner.style.display = 'none';
+        }
         const resp = await fetch(`/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}`);
         const data = await resp.json();
         if (!resp.ok) {
@@ -8725,6 +10272,33 @@
             </div>
         `).join('') : '<div class="no-data">暂无点赞事件</div>';
 
+        const staleText = document.getElementById('pendingAlbumContextStaleText');
+        const liveGroup = data.live_group || null;
+        const frozenPlayCount = playRecords.length;
+        const frozenFavoriteCount = favoriteEvents.length;
+        if (data.context_stale) {
+            staleBanner.style.display = 'block';
+            staleText.textContent = liveGroup
+                ? `实时列表与冻结上下文不一致。实时播放 ${liveGroup.play_record_count || 0} 条 · 点赞 ${liveGroup.favorite_event_count || 0} 条，当前冻结播放 ${frozenPlayCount} 条 · 点赞 ${frozenFavoriteCount} 条。`
+                : `实时列表里已经找不到这组上下文。当前冻结播放 ${frozenPlayCount} 条 · 点赞 ${frozenFavoriteCount} 条。`;
+            if (currentPendingAlbumStalePromptedWorkItemID !== currentPendingAlbumWorkItemID) {
+                currentPendingAlbumStalePromptedWorkItemID = currentPendingAlbumWorkItemID;
+                const shouldRefresh = window.confirm(
+                    liveGroup
+                        ? `当前上下文与实时列表有出入，是否刷新冻结上下文？\n\n实时播放 ${liveGroup.play_record_count || 0} 条，冻结播放 ${frozenPlayCount} 条。\n实时点赞 ${liveGroup.favorite_event_count || 0} 条，冻结点赞 ${frozenFavoriteCount} 条。`
+                        : '当前上下文已与实时列表脱节，是否刷新冻结上下文？'
+                );
+                if (shouldRefresh) {
+                    await refreshPendingAlbumWorkItemContext();
+                    return;
+                }
+            }
+        } else {
+            staleBanner.style.display = 'none';
+            staleText.textContent = '-';
+            currentPendingAlbumStalePromptedWorkItemID = 0;
+        }
+
         let resultText = '尚未执行';
         if (workItem.status === 'completed') {
             resultText = '<span style="color: #27ae60;">执行完成</span>';
@@ -8738,6 +10312,29 @@
         if (currentPendingCandidates.length > 0) {
             renderPendingAlbumCandidates(currentPendingCandidates);
         }
+    }
+
+    function dismissPendingAlbumContextStale() {
+        const staleBanner = document.getElementById('pendingAlbumContextStaleBanner');
+        if (staleBanner) {
+            staleBanner.style.display = 'none';
+        }
+        currentPendingAlbumStalePromptedWorkItemID = currentPendingAlbumWorkItemID;
+    }
+
+    async function refreshPendingAlbumWorkItemContext() {
+        if (!currentPendingAlbumWorkItemID) return;
+        const resp = await fetch(`/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}/refresh-context`, {
+            method: 'POST'
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            alert(data.error || '刷新冻结上下文失败');
+            return;
+        }
+        currentPendingAlbumStalePromptedWorkItemID = 0;
+        await loadPendingAlbumWorkItemDetail();
+        await loadPendingAlbumList();
     }
 
     async function loadPendingAlbumCandidates() {

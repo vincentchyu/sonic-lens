@@ -49,6 +49,18 @@ type TrackInsight struct {
 	IsDisabled bool `gorm:"column:is_disabled;type:tinyint(1);default:0;index" json:"is_disabled"`
 }
 
+// TrackInsightListItem 音眸列表摘要项，仅承载列表展示所需字段。
+type TrackInsightListItem struct {
+	ID              int64     `json:"id"`
+	Artist          string    `json:"artist"`
+	Album           string    `json:"album"`
+	Track           string    `json:"track"`
+	AnalysisSummary string    `json:"analysis_summary"`
+	LLMProvider     string    `json:"llm_provider"`
+	CreatedAt       time.Time `json:"created_at"`
+	IsDisabled      bool      `json:"is_disabled"`
+}
+
 type JSONText map[string]string
 
 type TrackInsightLookup struct {
@@ -173,10 +185,9 @@ func GetTrackInsights(ctx context.Context, artist, album, track string) ([]*Trac
 	return GetTrackInsightsByLookup(ctx, TrackInsightLookup{Artist: artist, Album: album, Track: track})
 }
 
-// GetAllTrackInsights 获取所有解析记录（用于管理列表）
-// GetAllTrackInsights 获取所有解析记录（用于管理列表）
-func GetAllTrackInsights(ctx context.Context, limit, offset int, keyword string) ([]*TrackInsight, int64, error) {
-	var insights []*TrackInsight
+// GetAllTrackInsightSummaries 获取音眸列表摘要（用于管理列表）。
+func GetAllTrackInsightSummaries(ctx context.Context, limit, offset int, keyword string) ([]*TrackInsightListItem, int64, error) {
+	var insights []*TrackInsightListItem
 	var total int64
 	db := GetDB().WithContext(ctx).Model(&TrackInsight{})
 
@@ -188,7 +199,8 @@ func GetAllTrackInsights(ctx context.Context, limit, offset int, keyword string)
 		return nil, 0, err
 	}
 
-	err := db.Order("created_at DESC").
+	err := db.Select("id, artist, album, track, analysis_summary, llm_provider, created_at, is_disabled").
+		Order("created_at DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&insights).Error

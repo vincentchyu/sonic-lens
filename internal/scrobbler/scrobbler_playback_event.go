@@ -1,7 +1,6 @@
 package scrobbler
 
 import (
-	"context"
 	"time"
 
 	"github.com/vincentchyu/sonic-lens/common"
@@ -20,60 +19,14 @@ type playingTrackSnapshot struct {
 	reachedScrobbleThreshold bool
 	coverArtURL              string
 	coverArtMime             string
+	coverArtObjectKey        string
 	controllerFavoriteKnown  bool
 	controllerFavorite       bool
 }
 
-func (b *BasePlayerChecker) buildPlayingTrackSnapshot(
-	ctx context.Context,
-	playerInfo common.PlayerInfoHandler,
-) playingTrackSnapshot {
-	if audirvanaInfo, ok := playerInfo.(*AudirvanaTrackInfoWrapper); ok {
-		audirvanaInfo.LogResolvedPosition(ctx)
-	}
-
-	trackKey := b.buildCurrentTrackKey(playerInfo)
-	b.currentTrack = trackKey
-
-	position := playerInfo.GetPosition()
-	duration := playerInfo.GetDuration()
-	trackChanged := b.currentTrack != b.previousTrack
-	coverArtURL, coverArtMime := b.resolveArtwork(ctx, playerInfo)
-	metadata := b.buildTrackMetadata(playerInfo)
-
-	snapshot := playingTrackSnapshot{
-		playerInfo:              playerInfo,
-		metadata:                metadata,
-		trackKey:                trackKey,
-		position:                position,
-		duration:                duration,
-		trackChanged:            trackChanged,
-		coverArtURL:             coverArtURL,
-		coverArtMime:            coverArtMime,
-		controllerFavoriteKnown: b.source == common.PlayerAppleMusic,
-	}
-	if snapshot.controllerFavoriteKnown {
-		snapshot.controllerFavorite = b.controller.IsFavorite(ctx)
-	}
-	if duration > 0 {
-		snapshot.reachedScrobbleThreshold = position/float64(duration) > b.percentScrobble &&
-			!b.scrobbledTracks[trackKey]
-	}
-
-	return snapshot
-}
-
-func (b *BasePlayerChecker) buildCurrentTrackKey(playerInfo common.PlayerInfoHandler) string {
-	trackKey := playerInfo.GetTitle()
-	if b.source == common.PlayerAudirvana {
-		if url := playerInfo.GetUrl(); url != "" {
-			trackKey = url + playerInfo.GetTitle()
-		}
-	}
-	return trackKey
-}
-
-func (s playingTrackSnapshot) toPlaybackEventInput(source common.PlayerType, startedAt time.Time) track.PlaybackEventInput {
+func (s playingTrackSnapshot) toPlaybackEventInput(
+	source common.PlayerType, startedAt time.Time,
+) track.PlaybackEventInput {
 	return track.PlaybackEventInput{
 		Artist:                  s.playerInfo.GetArtist(),
 		AlbumArtist:             s.playerInfo.GetAlbumArtist(),
@@ -89,5 +42,8 @@ func (s playingTrackSnapshot) toPlaybackEventInput(source common.PlayerType, sta
 		PlaybackStartedAt:       startedAt,
 		ControllerFavoriteKnown: s.controllerFavoriteKnown,
 		ControllerFavorite:      s.controllerFavorite,
+		CoverArtURL:             s.coverArtURL,
+		CoverArtMime:            s.coverArtMime,
+		CoverArtObjectKey:       s.coverArtObjectKey,
 	}
 }

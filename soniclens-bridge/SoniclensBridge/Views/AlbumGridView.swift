@@ -1,11 +1,30 @@
 import SwiftUI
+import Foundation
 
 struct AlbumGridView: View {
     @ObservedObject var viewModel: LibraryViewModel
     let sort: LibrarySort
     let query: String
+    let artworkBaseURL: URL?
+    let statusSummary: String?
     var prefersCompactLayout: Bool = false
     @State private var selectedAlbum: Album?
+
+    init(
+        viewModel: LibraryViewModel,
+        sort: LibrarySort,
+        query: String,
+        artworkBaseURL: URL? = nil,
+        statusSummary: String? = nil,
+        prefersCompactLayout: Bool = false
+    ) {
+        self.viewModel = viewModel
+        self.sort = sort
+        self.query = query
+        self.artworkBaseURL = artworkBaseURL
+        self.statusSummary = statusSummary
+        self.prefersCompactLayout = prefersCompactLayout
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -16,7 +35,9 @@ struct AlbumGridView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
-                    SectionHeader(title: "专辑")
+                    if prefersCompactLayout, let statusSummary {
+                        LibraryStatusSummaryChip(text: statusSummary)
+                    }
 
                     if viewModel.albums.isEmpty {
                         EmptyStateView(
@@ -28,6 +49,7 @@ struct AlbumGridView: View {
                             ForEach(Array(viewModel.albums.enumerated()), id: \.element.id) { index, album in
                                 AlbumCardView(
                                     album: album,
+                                    artworkBaseURL: artworkBaseURL,
                                     cardWidth: metrics.cardWidth,
                                     contentWidth: metrics.cardContentWidth,
                                     prefersCompactLayout: prefersCompactLayout
@@ -108,6 +130,7 @@ private struct AlbumGridMetrics {
 
 struct AlbumCardView: View {
     let album: Album
+    let artworkBaseURL: URL?
     let cardWidth: CGFloat
     let contentWidth: CGFloat
     var prefersCompactLayout: Bool = false
@@ -117,9 +140,14 @@ struct AlbumCardView: View {
         let inset: CGFloat = prefersCompactLayout ? 8 : 10
         let metadataHeight: CGFloat = prefersCompactLayout ? 68 : 84
         let contentHeight = contentWidth + spacing + metadataHeight
+        let resolvedArtworkURL = ArtworkURLResolver.resolveArtworkPath(album.coverArtURL, artworkBaseURL: artworkBaseURL)
 
         VStack(alignment: .leading, spacing: spacing) {
-            AlbumArtworkCard(size: contentWidth)
+            AlbumArtworkCard(
+                size: contentWidth,
+                artworkURL: resolvedArtworkURL,
+                title: album.name
+            )
 
             AlbumCardMetadata(
                 album: album,
@@ -145,29 +173,21 @@ struct AlbumCardView: View {
 
 private struct AlbumArtworkCard: View {
     let size: CGFloat
+    let artworkURL: String?
+    let title: String
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 16)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.accentColor.opacity(0.4),
-                        Color.accentColor.opacity(0.14)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .frame(width: size, height: size)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
-            )
-            .overlay(
-                Image(systemName: "music.note")
-                    .font(.system(size: max(size * 0.18, 24), weight: .semibold))
-                    .foregroundStyle(.secondary)
-            )
+        ArtworkSquareView(
+            artworkURL: artworkURL,
+            fallbackTitle: title,
+            size: size,
+            cornerRadius: 16,
+            style: .vivid
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.22), lineWidth: 1)
+        )
     }
 }
 

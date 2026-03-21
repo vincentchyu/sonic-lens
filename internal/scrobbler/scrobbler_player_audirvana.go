@@ -189,6 +189,8 @@ func (a *AudirvanaTrackInfoWrapper) parseTrackPositionFromURL() (int64, int64) {
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetArtwork(ctx context.Context) (*common.ArtworkData, error) {
+	ctx, span := startPlayerControllerSpan(ctx, common.PlayerAudirvana, "get_artwork")
+	defer span.End()
 	// url 后缀是.m4a  应该是在这个 字段里 "CoverArt": "(Binary data 1907659 bytes, use -b option to extract)",
 	// exiftool -json '/Users/vincent/Documents/个人/多媒体/音乐/CD/海朋森/成长小说/01 春风.m4a'
 
@@ -223,16 +225,26 @@ func (a *AudirvanaTrackInfoWrapper) GetArtworkKey(ctx context.Context) string {
 type AudirvanaPlayerController struct{}
 
 func (a *AudirvanaPlayerController) IsRunning(ctx context.Context) bool {
-	return audirvana.IsRunning(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAudirvana, "is_running")
+	defer span.End()
+
+	return audirvana.IsRunning(spanCtx)
 }
 
 func (a *AudirvanaPlayerController) GetState(ctx context.Context) (string, error) {
-	state, err := audirvana.GetState(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAudirvana, "get_state")
+	defer span.End()
+
+	state, err := audirvana.GetState(spanCtx)
+	markPlayerSpanError(span, err)
 	return string(state), err
 }
 
 func (a *AudirvanaPlayerController) GetNowPlayingTrackInfo(ctx context.Context) common.PlayerInfoHandler {
-	info := audirvana.GetNowPlayingTrackInfo(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAudirvana, "get_now_playing")
+	defer span.End()
+
+	info := audirvana.GetNowPlayingTrackInfo(spanCtx)
 	if info == nil {
 		return nil
 	}

@@ -120,6 +120,84 @@ struct TrackInsightResponse: Decodable {
     let insights: [Insight]
 }
 
+struct AlbumInsightResponse: Decodable {
+    let insights: [AlbumInsight]
+}
+
+struct AIPlatformOption: Decodable, Identifiable, Hashable {
+    let id: String
+    let displayName: String
+    let defaultModel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+        case defaultModel = "default_model"
+    }
+}
+
+struct AIModelOption: Decodable, Identifiable, Hashable {
+    let id: String
+    let displayName: String
+    let isDefault: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+        case isDefault = "is_default"
+    }
+}
+
+struct AIPlatformListResponse: Decodable {
+    let platforms: [AIPlatformOption]
+}
+
+struct AIModelListResponse: Decodable {
+    let models: [AIModelOption]
+}
+
+struct TrackInsightGenerateRequest: Encodable {
+    let artist: String
+    let album: String
+    let track: String
+    let trackNumber: Int?
+    let discNumber: Int?
+    let provider: String
+    let model: String
+
+    enum CodingKeys: String, CodingKey {
+        case artist
+        case album
+        case track
+        case trackNumber = "track_number"
+        case discNumber = "disc_number"
+        case provider
+        case model
+    }
+}
+
+struct TrackInsightGenerateResponse: Decodable {
+    let insights: [Insight]
+    let cached: Bool?
+}
+
+struct AlbumInsightGenerateRequest: Encodable {
+    let albumID: Int64
+    let provider: String
+    let model: String
+
+    enum CodingKeys: String, CodingKey {
+        case albumID = "album_id"
+        case provider
+        case model
+    }
+}
+
+struct AlbumInsightGenerateResponse: Decodable {
+    let insights: [AlbumInsight]
+    let cached: Bool?
+}
+
 struct HealthResponse: Decodable {
     let status: String
 }

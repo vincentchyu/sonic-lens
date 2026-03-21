@@ -8,10 +8,12 @@ import (
 
 	mxm "github.com/milindmadhukar/go-musixmatch"
 	"github.com/milindmadhukar/go-musixmatch/params"
+
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 var (
-	client    = http.DefaultClient
+	client    = telemetry.WrapHTTPClient(http.DefaultClient)
 	mxmClient *mxm.Client
 )
 

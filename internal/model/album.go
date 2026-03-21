@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -10,20 +11,30 @@ import (
 
 // Album represents a music album
 type Album struct {
-	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Name        string    `gorm:"column:name;type:varchar(255);not null;uniqueIndex:uidx_album_artist_name_release_date" json:"name"`
-	Artist      string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_album_artist_name_release_date" json:"artist"`
-	ReleaseDate string    `gorm:"column:release_date;type:varchar(50);uniqueIndex:uidx_album_artist_name_release_date" json:"release_date"`
-	Genre       string    `gorm:"column:genre;type:varchar(255)" json:"genre"`
-	Country     string    `gorm:"column:country;type:varchar(50)" json:"country"`
-	Status      string    `gorm:"column:status;type:varchar(50)" json:"status"`
-	Packaging   string    `gorm:"column:packaging;type:varchar(50)" json:"packaging"`
-	Barcode     string    `gorm:"column:barcode;type:varchar(255)" json:"barcode"`
-	TotalDiscs  int       `gorm:"column:total_discs;type:int;default:1" json:"total_discs"`     // 总碟数
-	DiscInfos   string    `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`        // 各碟信息(如 track counts)
-	SyncStatus  int       `gorm:"column:sync_status;type:tinyint;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成
-	CreatedAt   time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	ID                int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	Name              string    `gorm:"column:name;type:varchar(255);not null;uniqueIndex:uidx_album_artist_name_release_date" json:"name"`
+	Artist            string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_album_artist_name_release_date" json:"artist"`
+	ReleaseDate       string    `gorm:"column:release_date;type:varchar(50);uniqueIndex:uidx_album_artist_name_release_date" json:"release_date"`
+	Genre             string    `gorm:"column:genre;type:varchar(255)" json:"genre"`
+	Country           string    `gorm:"column:country;type:varchar(50)" json:"country"`
+	Status            string    `gorm:"column:status;type:varchar(50)" json:"status"`
+	Packaging         string    `gorm:"column:packaging;type:varchar(50)" json:"packaging"`
+	Barcode           string    `gorm:"column:barcode;type:varchar(255)" json:"barcode"`
+	TotalDiscs        int       `gorm:"column:total_discs;type:int;default:1" json:"total_discs"`     // 总碟数
+	DiscInfos         string    `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`        // 各碟信息(如 track counts)
+	SyncStatus        int       `gorm:"column:sync_status;type:tinyint;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成
+	CoverArtURL       string    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
+	CoverArtMime      string    `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
+	CoverArtObjectKey string    `gorm:"column:cover_art_object_key;type:varchar(512);index:idx_album_cover_art_object_key" json:"cover_art_object_key"`
+	CreatedAt         time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt         time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+}
+
+// AlbumCoverUpdate 用于更新专辑封面存储信息。
+type AlbumCoverUpdate struct {
+	CoverArtURL       string
+	CoverArtMime      string
+	CoverArtObjectKey string
 }
 
 // TableName sets the table name for the Album model
@@ -132,6 +143,15 @@ func mergeAlbumFields(target, source *Album) {
 	if target.SyncStatus == 0 && source.SyncStatus > 0 {
 		target.SyncStatus = source.SyncStatus
 	}
+	if target.CoverArtURL == "" && source.CoverArtURL != "" {
+		target.CoverArtURL = source.CoverArtURL
+	}
+	if target.CoverArtMime == "" && source.CoverArtMime != "" {
+		target.CoverArtMime = source.CoverArtMime
+	}
+	if target.CoverArtObjectKey == "" && source.CoverArtObjectKey != "" {
+		target.CoverArtObjectKey = source.CoverArtObjectKey
+	}
 }
 
 func GetAlbum(ctx context.Context, id int64) (*Album, error) {
@@ -147,7 +167,14 @@ func UpdateAlbumSyncStatus(ctx context.Context, albumID int64, syncStatus int) e
 
 // UpdateAlbumSyncStatusTx 在事务内更新专辑同步状态。
 func UpdateAlbumSyncStatusTx(tx *gorm.DB, albumID int64, syncStatus int) error {
-	return tx.Model(&Album{}).Where("id = ?", albumID).Update("sync_status", syncStatus).Error
+	return updateAlbumByIDTx(
+		tx,
+		albumID,
+		map[string]interface{}{
+			"sync_status": syncStatus,
+		},
+		nil,
+	)
 }
 
 // UpdateAlbumFields 更新专辑元数据字段集合。
@@ -157,7 +184,72 @@ func UpdateAlbumFields(ctx context.Context, albumID int64, fields map[string]int
 
 // UpdateAlbumFieldsTx 在事务内批量更新专辑元数据字段集合。
 func UpdateAlbumFieldsTx(tx *gorm.DB, albumID int64, fields map[string]interface{}) error {
-	return tx.Model(&Album{}).Where("id = ?", albumID).Updates(fields).Error
+	return updateAlbumByIDTx(tx, albumID, fields, nil)
+}
+
+// UpsertAlbumCoverByID 根据专辑 ID 更新封面信息；当 object key 已一致时跳过写入。
+func UpsertAlbumCoverByID(ctx context.Context, albumID int64, update AlbumCoverUpdate) error {
+	return UpsertAlbumCoverByIDTx(GetDB().WithContext(ctx), albumID, update)
+}
+
+// UpsertAlbumCoverByIDTx 在事务内更新封面信息。
+func UpsertAlbumCoverByIDTx(tx *gorm.DB, albumID int64, update AlbumCoverUpdate) error {
+	if albumID <= 0 {
+		return nil
+	}
+
+	updates := map[string]interface{}{}
+	if v := strings.TrimSpace(update.CoverArtURL); v != "" {
+		updates["cover_art_url"] = v
+	}
+	if v := strings.TrimSpace(update.CoverArtMime); v != "" {
+		updates["cover_art_mime"] = v
+	}
+	if v := strings.TrimSpace(update.CoverArtObjectKey); v != "" {
+		updates["cover_art_object_key"] = v
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	return updateAlbumByIDTx(
+		tx,
+		albumID,
+		updates,
+		func(query *gorm.DB) *gorm.DB {
+			if objectKey, ok := updates["cover_art_object_key"].(string); ok && objectKey != "" {
+				return query.Where("(cover_art_object_key IS NULL OR cover_art_object_key = '' OR cover_art_object_key <> ?)", objectKey)
+			}
+			return query
+		},
+	)
+}
+
+func updateAlbumByIDTx(
+	tx *gorm.DB, albumID int64, fields map[string]interface{}, decorate func(query *gorm.DB) *gorm.DB,
+) error {
+	if tx == nil || albumID <= 0 || len(fields) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]interface{}, len(fields)+1)
+	for key, value := range fields {
+		updates[key] = value
+	}
+	updates["updated_at"] = tx.NowFunc()
+
+	query := tx.Session(&gorm.Session{SkipHooks: true}).Model(&Album{}).Where("id = ?", albumID)
+	if decorate != nil {
+		query = decorate(query)
+	}
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected <= 0 {
+		return nil
+	}
+	return appendLibraryChangeTx(tx, LibraryEntityAlbum, albumID, LibraryOpUpsert)
 }
 
 func GetAlbumByArtistAndName(ctx context.Context, artist, albumName string) (*Album, error) {
