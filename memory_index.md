@@ -1,37 +1,78 @@
 # 记忆索引
 
-## 2026-03-18
+## 2026-03-28
 
-- **日期**: 2026-03-18
-    - **特性摘要**: `soniclens-bridge` 扩展为 macOS 与 iPadOS 双产品线，新增独立 iPad target、平台根路由与沉浸式播放容器，并明确共享层与平台壳边界
-    - **链接**: [Bridge 双端产品线特性清单](memory/2026-03-18/bridge_dual_platform_product_line_manifest.md)
+- **日期**: 2026-03-28
+    - **特性摘要**: Bridge 三端正在播放接入 favorite projection，统一识别 `favorite_pending` / `unfavorite_pending` 并补齐收藏状态提示闭环
+    - **链接**: [Bridge 正在播放收藏投影接入闭环](memory/2026-03-28/bridge_now_playing_favorite_projection_manifest.md)
 
-## 2026-03-15
+- **日期**: 2026-03-28
+    - **特性摘要**: 收藏链路新增 favorite projection，统一输出稳定收藏态与待归因收藏态，修复当前播放页无法感知 pending 收藏的问题
+    - **链接**: [收藏投影视图与待归因收藏态闭环](memory/2026-03-28/favorite_projection_pending_state_manifest.md)
 
-- **日期**: 2026-03-15
-    - **特性摘要**: 梳理播放流水补归因的现网 MySQL 迁移 SQL、手动 replay 顺序、验数 SQL 与人工联调清单
-    - **链接**: [播放流水补归因 MySQL 迁移与人工测试清单](memory/2026-03-15/play_replay_mysql_rollout_checklist.md)
+- **日期**: 2026-03-28
+    - **特性摘要**: 新增 SigNoz `filelog` 日志采集模板，明确应用日志本地轮转与 SigNoz 1 天 retention 解耦，形成 trace/metrics/logs 分层闭环
+    - **链接**: [SigNoz filelog 日志采集闭环](memory/2026-03-28/signoz_filelog_log_collection_closure_manifest.md)
 
-- **日期**: 2026-03-15
-    - **特性摘要**: 引入播放归因置信度分层，禁止 Apple Music 流媒体与 Roon 等弱来源继续新建专辑结构并收紧 `track` 身份解析
-    - **链接**: [播放归因置信度与弱来源止血](memory/2026-03-15/play_resolution_confidence_guardrails.md)
+- **日期**: 2026-03-28
+    - **特性摘要**: 接入 SigNoz OTLP exporter，补齐 HTTP/Redis/DB tracing 与 metrics 闭环，并统一移除重复手写 span
+    - **链接**: [SigNoz OTLP 可观测性闭环](memory/2026-03-28/signoz_otlp_observability_closure_manifest.md)
 
-- **日期**: 2026-03-15
-    - **特性摘要**: 修复专辑被曲目发布日期拆分的问题，新增重复专辑合并清洗命令并统一迁移专辑关联
-    - **链接**: [重复专辑清洗与专辑身份修复](memory/2026-03-15/duplicate_album_cleanup_and_album_identity_fix.md)
+## 2026-03-27
 
-- **日期**: 2026-03-15
-    - **特性摘要**: 按当前 MySQL 实库同步 SQL DDL，清理 DML 历史数据快照，并重建初始化脚本语义
-    - **链接**: [SQL 结构与初始化脚本同步清单](memory/2026-03-15/sql_schema_sync_manifest.md)
+- **日期**: 2026-03-27
+    - **特性摘要**: 异步协程统一走 `telemetry.GoSafe` / `GoSafeDetached` / `GoOnlySafe`，为异步任务补齐 span 与 panic 保护，并避免长循环 trace 失真
+    - **链接**: [异步协程 trace 与 panic 保护闭环](memory/2026-03-27/goroutine_trace_panic_guard_manifest.md)
 
-- **日期**: 2026-03-15
-    - **特性摘要**: 引入 model 层统一事务入口与 tx-aware DAO，完成 MusicBrainz 与 API 分层收口，并为 model 包建立 MySQL 方言 sqlmock 测试基座
-    - **链接**: [DAO 边界与 MusicBrainz 事务收口特性清单](memory/2026-03-15/dao_boundary_musicbrainz_refactor_manifest.md)
+- **日期**: 2026-03-27
+    - **特性摘要**: AI 模型选择完成平台/模型拆分，新增平台目录与模型目录接口、Redis 目录缓存，以及 Web/Bridge 双级选择闭环
+    - **链接**: [AI 模型平台与模型目录闭环特性清单](memory/2026-03-27/ai_model_platform_catalog_closure_manifest.md)
 
-- **日期**: 2026-03-15
-    - **特性摘要**: 为 Bridge 资料库引入本地 SQLite 索引、增量同步接口与变更日志删除 tombstone，统一专辑/曲目列表的本地搜索排序分页语义
-    - **链接**: [资料库本地索引与增量同步桥接特性清单](memory/2026-03-15/library_index_sync_bridge_feature_manifest.md)
-    - **设计文档**: [BroadcastLibraryUpdate 客户端交互流程](docs/broadcast_library_update_flow.md)
+## 2026-03-26
+
+- **日期**: 2026-03-26
+    - **特性摘要**: 新增专辑级音眸后端闭环，支持按曲序聚合高质量 `track_insight`、生成 `album_insight` 并暴露专辑分析 API
+    - **链接**: [专辑音眸后端闭环特性清单](memory/2026-03-26/album_insight_backend_closure_manifest.md)
+
+## 2026-03-24
+
+- **日期**: 2026-03-24
+    - **特性摘要**: Bridge iPhone ShareKit 公共壳层收口完成，分享预览统一使用背景/头图/正文/底部的公共闭环，三类场景只保留各自内容
+    - **链接**: [iPhone ShareKit 公共壳层收口特性清单](memory/2026-03-24/iphone_sharekit_public_shell_closure_manifest.md)
+
+- **日期**: 2026-03-24
+    - **特性摘要**: Bridge 新增 iPhone ShareKit，一期完成曲目信息/歌词/音眸分享预览、长图 PNG 导出、Photos 保存、系统分享与本地测试 target
+    - **链接**: [iPhone ShareKit 一期闭环特性清单](memory/2026-03-24/iphone_sharekit_phase1_manifest.md)
+
+## 2026-03-23
+
+- **日期**: 2026-03-23
+    - **特性摘要**: API 层新增 Redis 响应缓存 middleware，支持路由级 TTL、空结果 3 秒负缓存、`ETag` 回写与 304 语义，Redis 不可用时自动降级
+    - **链接**: [HTTP Redis 缓存中间件特性清单](memory/2026-03-23/http_redis_cache_middleware_manifest.md)
+
+## 2026-03-23
+
+- **日期**: 2026-03-23
+    - **特性摘要**: D1 同步恢复闭环，增加单飞保护与启动串行化，避免首轮全量与定时器重入滚动耗尽额度
+    - **链接**: [D1 增量同步单飞闭环](memory/2026-03-23/d1_incremental_singleflight_sync_closure_manifest.md)
+
+## 2026-03-22
+
+- **日期**: 2026-03-22
+    - **特性摘要**: 待归因专辑工作项详情新增实时对比与显式刷新，避免冻结上下文被误当作实时数据
+    - **链接**: [待归因专辑工作项上下文刷新特性清单](memory/2026-03-22/pending_album_work_item_context_refresh_manifest.md)
+
+## 2026-03-21
+
+- **日期**: 2026-03-21
+    - **特性摘要**: 封面链路接入 S3 兼容对象存储（MinIO/R2），scrobbler 优先对象命中并回退内存缓存，播放落库后回填 album 封面字段
+    - **链接**: [专辑封面对象存储闭环](memory/2026-03-21/album_artwork_object_storage_closure_manifest.md)
+
+## 2026-03-15 ~ 2026-03-20
+
+- **日期范围**: 2026-03-15 ~ 2026-03-20
+    - **特性摘要**: 后端完成数据归因、专辑身份、DAO/事务边界与 SQL 语义治理；Bridge 完成本地优先资料库、共享层边界与三端产品线闭环
+    - **链接**: [2026-03-15 至 2026-03-20 核心收敛摘要](memory/2026-03-20/2026-03-15_to_2026-03-20_foundation_summary.md)
 
 ## 2026-03-14
 

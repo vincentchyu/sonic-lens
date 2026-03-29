@@ -7,13 +7,16 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/api"
 	"github.com/vincentchyu/sonic-lens/cmd"
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/bonjour"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/lyrics"
 	"github.com/vincentchyu/sonic-lens/core/musicbrainz"
+	"github.com/vincentchyu/sonic-lens/core/objectstorage"
 	"github.com/vincentchyu/sonic-lens/core/redis"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/cache"
@@ -92,18 +95,37 @@ func initServer() error {
 	if err := model.InitDB(config.ConfigObj.Database.Path, dbLogger); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
-
+	lyrics.InitMxmClient(config.ConfigObj.Musixmatch.ApiKey)
+	if err := objectstorage.Init(config.ConfigObj.ObjectStorage); err != nil {
+		log.Warn(ctx, "对象存储初始化失败，将回退内存封面存储", zap.Error(err))
+	}
 	// Initialize genre cache with refresh timer
 	cancelFuncCacheInitializeGenreCache := cache.InitializeGenreCache(ctx)
 
 	// Start D1 sync scheduler
-	// go d1sync.StartD1SyncScheduler(ctx)
+	telemetry.GoOnlySafe(
+		ctx, func(asyncCtx context.Context) {
+			d1sync.StartD1SyncScheduler(asyncCtx)
+		},
+	)
 	// Start dashboard stat scheduler
-	go d1sync.StartDashboardStatScheduler(ctx)
-	go d1sync.StartTrackPlayReplayScheduler(ctx)
+	telemetry.GoOnlySafe(
+		ctx, func(asyncCtx context.Context) {
+			d1sync.StartDashboardStatScheduler(asyncCtx)
+		},
+	)
+	telemetry.GoOnlySafe(
+		ctx, func(asyncCtx context.Context) {
+			d1sync.StartTrackPlayReplayScheduler(asyncCtx)
+		},
+	)
 
 	// Start scrobblerRun goroutine
-	go api.StartHTTPServer(ctx, config.ConfigObj.Telemetry.Name)
+	telemetry.GoOnlySafe(
+		ctx, func(asyncCtx context.Context) {
+			api.StartHTTPServer(asyncCtx, config.ConfigObj.Telemetry.Name)
+		},
+	)
 
 	// 启动 Bonjour 广播用于局域网发现
 	stopBonjour := bonjour.Start(ctx, config.ConfigObj.Bonjour, config.ConfigObj.HTTP.Port)

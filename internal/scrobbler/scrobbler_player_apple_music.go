@@ -89,6 +89,8 @@ func (a *AppleMusicTrackInfoWrapper) GetDiscNumber() int8 {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetArtwork(ctx context.Context) (*common.ArtworkData, error) {
+	ctx, span := startPlayerControllerSpan(ctx, common.PlayerAppleMusic, "get_artwork")
+	defer span.End()
 	cacheKey := a.GetArtworkKey(ctx)
 	controlNowPlayingImg, err := exec.GetMediaControlNowPlayingImg(ctx)
 	if err != nil {
@@ -110,16 +112,27 @@ func (a *AppleMusicTrackInfoWrapper) GetArtworkKey(ctx context.Context) string {
 type AppleMusicPlayerController struct{}
 
 func (a *AppleMusicPlayerController) IsRunning(ctx context.Context) bool {
-	return applemusic.IsRunning(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAppleMusic, "is_running")
+	defer span.End()
+
+	running := applemusic.IsRunning(spanCtx)
+	return running
 }
 
 func (a *AppleMusicPlayerController) GetState(ctx context.Context) (string, error) {
-	state, err := applemusic.GetState(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAppleMusic, "get_state")
+	defer span.End()
+
+	state, err := applemusic.GetState(spanCtx)
+	markPlayerSpanError(span, err)
 	return string(state), err
 }
 
 func (a *AppleMusicPlayerController) GetNowPlayingTrackInfo(ctx context.Context) common.PlayerInfoHandler {
-	info := applemusic.GetNowPlayingTrackInfoV2(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAppleMusic, "get_now_playing")
+	defer span.End()
+
+	info := applemusic.GetNowPlayingTrackInfoV2(spanCtx)
 	if info == nil {
 		return nil
 	}
@@ -127,20 +140,28 @@ func (a *AppleMusicPlayerController) GetNowPlayingTrackInfo(ctx context.Context)
 }
 
 func (a *AppleMusicPlayerController) SetFavorite(ctx context.Context) error {
-	favorite := a.IsFavorite(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAppleMusic, "set_favorite")
+	defer span.End()
+
+	favorite := a.IsFavorite(spanCtx)
 	if !favorite {
-		err := applemusic.SetFavorite(ctx, true)
+		err := applemusic.SetFavorite(spanCtx, true)
 		if err != nil {
-			log.Warn(ctx, "AppleMusicPlayerController SetFavorite", zap.Error(err))
+			log.Warn(spanCtx, "AppleMusicPlayerController SetFavorite", zap.Error(err))
+			markPlayerSpanError(span, err)
 			return err
 		}
 	}
 	return nil
 }
 func (a *AppleMusicPlayerController) IsFavorite(ctx context.Context) bool {
-	favorite, err := applemusic.IsFavorite(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerAppleMusic, "is_favorite")
+	defer span.End()
+
+	favorite, err := applemusic.IsFavorite(spanCtx)
 	if err != nil {
-		log.Warn(ctx, "AppleMusicPlayerController IsFavorite", zap.Error(err))
+		log.Warn(spanCtx, "AppleMusicPlayerController IsFavorite", zap.Error(err))
+		markPlayerSpanError(span, err)
 		return false
 	}
 	return favorite

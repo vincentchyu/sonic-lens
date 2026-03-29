@@ -96,6 +96,10 @@ CREATE TABLE IF NOT EXISTS track_play_records
     TEXT
     NOT
     NULL,
+    album_id
+    INTEGER
+    DEFAULT
+    0,
     duration
     INTEGER,
     play_time
@@ -114,8 +118,28 @@ CREATE TABLE IF NOT EXISTS track_play_records
     INTEGER
     DEFAULT
     1,
+    music_brainz_id
+    TEXT,
     source
     TEXT,
+    resolved_track_id
+    INTEGER
+    DEFAULT
+    0,
+    resolution_status
+    TEXT
+    NOT
+    NULL
+    DEFAULT
+    'pending',
+    resolution_confidence
+    INTEGER
+    DEFAULT
+    0,
+    library_applied
+    INTEGER
+    DEFAULT
+    0,
     created_at
     TEXT
     NOT
@@ -130,6 +154,11 @@ CREATE TABLE IF NOT EXISTS track_play_records
 CREATE INDEX IF NOT EXISTS idx_play_records_play_time ON track_play_records(play_time DESC);
 CREATE INDEX IF NOT EXISTS idx_play_records_artist ON track_play_records(artist);
 CREATE INDEX IF NOT EXISTS idx_play_records_source ON track_play_records(source);
+CREATE INDEX IF NOT EXISTS idx_play_records_album_id ON track_play_records(album_id);
+CREATE INDEX IF NOT EXISTS idx_play_records_music_brainz_id ON track_play_records(music_brainz_id);
+CREATE INDEX IF NOT EXISTS idx_play_records_resolved_track_id ON track_play_records(resolved_track_id);
+CREATE INDEX IF NOT EXISTS idx_play_records_resolution_status ON track_play_records(resolution_status);
+CREATE INDEX IF NOT EXISTS idx_play_records_library_applied ON track_play_records(library_applied);
 
 -- 流派统计表
 CREATE TABLE IF NOT EXISTS genres
@@ -208,6 +237,7 @@ CREATE TABLE IF NOT EXISTS top_album_stat
 (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     period_days INTEGER NOT NULL,
+    album_id    INTEGER DEFAULT 0,
     album       TEXT    NOT NULL,
     artist      TEXT    DEFAULT '',
     play_count  INTEGER DEFAULT 0,

@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
 	"go.uploadedlobster.com/mbtypes"
 	"go.uploadedlobster.com/musicbrainzws2"
 	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
+	"github.com/vincentchyu/sonic-lens/core/log"
 	coremusicbrainz "github.com/vincentchyu/sonic-lens/core/musicbrainz"
+	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -31,9 +34,11 @@ type Service interface {
 	GetPendingAlbumGroups(ctx context.Context, limit int) ([]*model.PendingAlbumGroup, error)
 	CreateOrGetPendingAlbumWorkItem(ctx context.Context, identityKey string) (*model.PendingAlbumWorkItem, error)
 	GetPendingAlbumWorkItemDetail(ctx context.Context, workItemID int64) (*model.PendingAlbumWorkItemDetail, error)
+	RefreshPendingAlbumWorkItemContext(ctx context.Context, workItemID int64) (*model.PendingAlbumWorkItem, error)
 	SearchPendingAlbumMBReleases(ctx context.Context, workItemID int64) ([]*model.ReleaseMB, error)
 	LinkPendingAlbumMBRelease(ctx context.Context, workItemID, releaseMBID int64, mbid string) error
 	DeepMaintainPendingAlbumWorkItem(ctx context.Context, workItemID int64) (*DeepMaintainPendingAlbumReport, error)
+	ListWorkItems(ctx context.Context, limit, offset int, keyword string, statusGroup string) ([]*model.PendingAlbumWorkItem, int64, error)
 }
 
 type serviceImpl struct{}
@@ -57,6 +62,25 @@ func (s *serviceImpl) GetPendingAlbumWorkItemDetail(
 	ctx context.Context, workItemID int64,
 ) (*model.PendingAlbumWorkItemDetail, error) {
 	return model.GetPendingAlbumWorkItemDetail(ctx, workItemID)
+}
+
+func (s *serviceImpl) RefreshPendingAlbumWorkItemContext(
+	ctx context.Context, workItemID int64,
+) (*model.PendingAlbumWorkItem, error) {
+	log.Info(ctx, "刷新待归因专辑冻结上下文", zap.Int64("work_item_id", workItemID))
+	item, err := model.RefreshPendingAlbumWorkItemContext(ctx, workItemID)
+	if err != nil {
+		log.Error(ctx, "刷新待归因专辑冻结上下文失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
+		return nil, err
+	}
+	log.Info(ctx, "待归因专辑冻结上下文刷新完成", zap.Int64("work_item_id", workItemID))
+	return item, nil
+}
+
+func (s *serviceImpl) ListWorkItems(
+	ctx context.Context, limit, offset int, keyword string, statusGroup string,
+) ([]*model.PendingAlbumWorkItem, int64, error) {
+	return model.ListPendingAlbumWorkItems(ctx, limit, offset, keyword, statusGroup)
 }
 
 func escapeLucene(in string) string {
@@ -91,6 +115,7 @@ func normalizeTrackLookupKey(title string) string {
 }
 
 func (s *serviceImpl) SearchPendingAlbumMBReleases(ctx context.Context, workItemID int64) ([]*model.ReleaseMB, error) {
+	log.Info(ctx, "搜索待归因专辑的 MB Releases", zap.Int64("work_item_id", workItemID))
 	item, err := model.GetPendingAlbumWorkItemByID(ctx, workItemID)
 	if err != nil {
 		return nil, err
@@ -101,13 +126,14 @@ func (s *serviceImpl) SearchPendingAlbumMBReleases(ctx context.Context, workItem
 		escapeLucene(item.Album),
 		escapeLucene(pendingAlbumOwner(item)),
 	)
-	client := coremusicbrainz.GetClient()
-	searchRes, err := client.SearchReleases(
+	log.Info(ctx, "搜索待归因专辑的 MB Releases", zap.String("query", query))
+	searchRes, err := coremusicbrainz.SearchReleases(
 		ctx,
 		musicbrainzws2.SearchFilter{Query: query},
 		musicbrainzws2.Paginator{Limit: 10},
 	)
 	if err != nil {
+		log.Error(ctx, "搜索待归因专辑的 MB Releases 失败", zap.String("query", query), zap.Error(err))
 		return nil, err
 	}
 
@@ -125,6 +151,7 @@ func (s *serviceImpl) SearchPendingAlbumMBReleases(ctx context.Context, workItem
 			},
 		)
 	}
+	log.Info(ctx, "搜索待归因专辑的 MB Releases 完成", zap.Int64("work_item_id", workItemID), zap.Int("count", len(results)))
 	return results, nil
 }
 
@@ -220,11 +247,14 @@ func extractReleaseGenres(release musicbrainzws2.Release) string {
 func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 	ctx context.Context, workItemID int64,
 ) (*DeepMaintainPendingAlbumReport, error) {
+	log.Info(ctx, "开始深度维护待归因专辑工作项", zap.Int64("work_item_id", workItemID))
 	detail, err := model.GetPendingAlbumWorkItemDetail(ctx, workItemID)
 	if err != nil {
+		log.Error(ctx, "获取待归因专辑工作项详情失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
 	if detail.WorkItem == nil || strings.TrimSpace(detail.WorkItem.SelectedMBID) == "" {
+		log.Warn(ctx, "待归因专辑工作项未选择 MBID", zap.Int64("work_item_id", workItemID))
 		return nil, errors.New("work item has no selected mbid")
 	}
 
@@ -235,11 +265,11 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		detail.WorkItem.ResolvedAlbumID,
 		"",
 	); err != nil {
+		log.Error(ctx, "更新待归因专辑工作项进度失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
 
-	client := coremusicbrainz.GetClient()
-	release, err := client.LookupRelease(
+	release, err := coremusicbrainz.LookupRelease(
 		ctx,
 		mbtypes.MBID(detail.WorkItem.SelectedMBID),
 		musicbrainzws2.IncludesFilter{Includes: []string{"recordings", "media", "artist-credits", "genres"}},
@@ -248,6 +278,7 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		_ = model.UpdatePendingAlbumWorkItemProgress(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, 0, err.Error(),
 		)
+		log.Error(ctx, "拉取 MusicBrainz 专辑详情失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
 
@@ -407,7 +438,25 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		_ = model.UpdatePendingAlbumWorkItemProgress(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, report.ResolvedAlbumID, err.Error(),
 		)
+		log.Error(ctx, "深度维护事务执行失败", zap.Int64("work_item_id", workItemID), zap.Int64("album_id", report.ResolvedAlbumID), zap.Error(err))
 		return nil, err
+	}
+	if coverErr := artworklogic.EnsureAlbumCover(
+		ctx,
+		artworklogic.EnsureAlbumCoverInput{
+			AlbumID:     report.ResolvedAlbumID,
+			AlbumArtist: detail.WorkItem.AlbumArtist,
+			Artist:      detail.WorkItem.Artist,
+			Album:       detail.WorkItem.Album,
+		},
+	); coverErr != nil {
+		log.Warn(
+			ctx,
+			"DeepMaintainPendingAlbumWorkItem ensure album cover err",
+			zap.Int64("work_item_id", workItemID),
+			zap.Int64("album_id", report.ResolvedAlbumID),
+			zap.Error(coverErr),
+		)
 	}
 
 	if err := model.UpdatePendingAlbumWorkItemProgress(
@@ -417,6 +466,7 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		report.ResolvedAlbumID,
 		"",
 	); err != nil {
+		log.Error(ctx, "更新待归因专辑工作项为应用阶段失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
 
@@ -440,6 +490,7 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		_ = model.UpdatePendingAlbumWorkItemProgress(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, report.ResolvedAlbumID, err.Error(),
 		)
+		log.Error(ctx, "回放播放记录失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
 	report.AppliedPlayRecords = len(replayReport.Results)
@@ -449,6 +500,7 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		_ = model.UpdatePendingAlbumWorkItemProgress(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, report.ResolvedAlbumID, err.Error(),
 		)
+		log.Error(ctx, "应用收藏事件失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
 	report.AppliedFavoriteEvents = favResult.AppliedCount
@@ -460,7 +512,19 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		report.ResolvedAlbumID,
 		"",
 	); err != nil {
+		log.Error(ctx, "更新待归因专辑工作项为完成失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
+	log.Info(
+		ctx,
+		"深度维护待归因专辑工作项完成",
+		zap.Int64("work_item_id", workItemID),
+		zap.Int64("album_id", report.ResolvedAlbumID),
+		zap.Int("reused_heard_tracks", report.ReusedHeardTracks),
+		zap.Int("created_tracks", report.CreatedTracks),
+		zap.Int("track_album_writes", report.TrackAlbumWrites),
+		zap.Int("applied_play_records", report.AppliedPlayRecords),
+		zap.Int("applied_favorite_events", report.AppliedFavoriteEvents),
+	)
 	return report, nil
 }

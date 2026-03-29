@@ -107,3 +107,24 @@ go build -o sonic-lens
 ## 6. 开发与贡献
 
 了解详细架构或参与贡献，请参考代码中的 `core/` 与 `internal/` 目录注释。
+
+## 7. SigNoz 日志采集
+
+当前 SonicLens 应用侧保持 `zap + lumberjack` 本地文件日志策略，不在应用内直连 OTLP logs exporter。
+如果需要把日志上报到本地 SigNoz，推荐使用 OpenTelemetry Collector 的 `filelog` receiver 采集 `./.logs/go_lastfm-scrobbler.log*`，再转发到 SigNoz OTLP `4317`。
+
+仓库已提供 Collector 示例配置：
+
+- `config/otelcol/filelog_signoz.yaml.example`
+
+推荐闭环：
+
+1. 应用侧继续保留本地日志文件轮转策略。
+2. 本地 Collector 用 `filelog` 采集 JSON 日志并转发到 SigNoz。
+3. SigNoz 管理端单独设置日志 retention，例如 `1` 天。
+
+说明：
+
+- `filelog` 只负责采集路径，不决定 SigNoz 里的保存时长。
+- SigNoz retention 与应用本地日志保留天数是两套独立策略。
+- 当前仓库里的 tracing / metrics 仍由应用直接走 OTLP gRPC exporter。

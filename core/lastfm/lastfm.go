@@ -12,18 +12,24 @@ import (
 
 	redisgo "github.com/redis/go-redis/v9"
 	"github.com/shkh/lastfm-go/lastfm"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 	alog "github.com/vincentchyu/sonic-lens/core/log"
 	coreredisclient "github.com/vincentchyu/sonic-lens/core/redis"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 var (
 	lastfmApi    = new(Api)
 	_redisClient *redisgo.Client
 )
+
+const tracerName = "sonic-lens/core/lastfm"
 
 type Api struct {
 	*lastfm.Api
@@ -259,62 +265,115 @@ func GetLovedTracksUser(user string, limit int) (result *GetLovedTracksResp, err
 	return result, err
 }
 
+func startClientSpan(
+	ctx context.Context,
+	spanName string,
+	attrs ...attribute.KeyValue,
+) (context.Context, trace.Span) {
+	spanCtx, span := telemetry.StartSpanForTracerName(
+		ctx,
+		tracerName,
+		spanName,
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+	span.SetAttributes(append([]attribute.KeyValue{
+		attribute.String("external.system", "lastfm"),
+	}, attrs...)...)
+	return spanCtx, span
+}
+
+func markSpanError(span trace.Span, err error) {
+	if err == nil {
+		return
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+}
+
 func PushTrackScrobble(ctx context.Context, req *PushTrackScrobbleReq) (string, error) {
-	alog.Info(ctx, "PushTrackScrobble:", zap.Any("req", req))
+	spanCtx, span := startClientSpan(
+		ctx,
+		"lastfm.track.scrobble",
+		attribute.String("lastfm.operation", "track.scrobble"),
+		attribute.Int64("lastfm.track_number", req.TrackNumber),
+		attribute.Int64("lastfm.duration_sec", req.Duration),
+	)
+	defer span.End()
+
+	alog.Info(spanCtx, "PushTrackScrobble:", zap.Any("req", req))
 
 	// 检查API是否已初始化
 	if lastfmApi == nil || lastfmApi.Api == nil {
-		alog.Warn(ctx, "Last.fm API not initialized")
-		return "", fmt.Errorf("last.fm api not initialized")
+		err := fmt.Errorf("last.fm api not initialized")
+		alog.Warn(spanCtx, "Last.fm API not initialized")
+		markSpanError(span, err)
+		return "", err
 	}
 
 	reqMap, err := req.ToMap()
 	if err != nil {
-		alog.Warn(ctx, "TrackUpdateNowPlaying", zap.Error(err))
+		alog.Warn(spanCtx, "TrackUpdateNowPlaying", zap.Error(err))
+		markSpanError(span, err)
 		return "", err
 	}
 	result, err := lastfmApi.Track.Scrobble(reqMap)
 	if err != nil {
-		alog.Warn(ctx, "TrackUpdateNowPlaying", zap.Error(err))
+		alog.Warn(spanCtx, "TrackUpdateNowPlaying", zap.Error(err))
+		markSpanError(span, err)
 		return "", err
 	}
 
 	marshal, err := json.Marshal(result)
 	if err != nil {
-		alog.Warn(ctx, "TrackUpdateNowPlaying", zap.Error(err))
+		alog.Warn(spanCtx, "TrackUpdateNowPlaying", zap.Error(err))
+		markSpanError(span, err)
 		return "", err
 	}
 	return string(marshal), nil
 }
 
 func TrackUpdateNowPlaying(ctx context.Context, req *TrackUpdateNowPlayingReq) error {
-	alog.Info(ctx, "TrackUpdateNowPlaying", zap.Any("req", req))
+	spanCtx, span := startClientSpan(
+		ctx,
+		"lastfm.track.update_now_playing",
+		attribute.String("lastfm.operation", "track.update_now_playing"),
+		attribute.Int64("lastfm.duration_sec", req.Duration),
+	)
+	defer span.End()
+
+	alog.Info(spanCtx, "TrackUpdateNowPlaying", zap.Any("req", req))
 
 	// 检查API是否已初始化
 	if lastfmApi == nil || lastfmApi.Api == nil {
-		alog.Warn(ctx, "Last.fm API not initialized")
-		return fmt.Errorf("last.fm api not initialized")
+		err := fmt.Errorf("last.fm api not initialized")
+		alog.Warn(spanCtx, "Last.fm API not initialized")
+		markSpanError(span, err)
+		return err
 	}
 
 	resp := new(TrackUpdateNowPlayingResp)
 	argsMap, err := req.ToMap()
 	if err != nil {
+		markSpanError(span, err)
 		return err
 	}
 	result, err := lastfmApi.Track.UpdateNowPlaying(argsMap)
 	if err != nil {
-		alog.Warn(ctx, "TrackUpdateNowPlaying", zap.Error(err))
+		alog.Warn(spanCtx, "TrackUpdateNowPlaying", zap.Error(err))
+		markSpanError(span, err)
 		return err
 	}
 
 	marshal, err := json.Marshal(result)
 	if err != nil {
-		alog.Warn(ctx, "TrackUpdateNowPlaying", zap.Error(err))
+		alog.Warn(spanCtx, "TrackUpdateNowPlaying", zap.Error(err))
+		markSpanError(span, err)
 		return err
 	}
 	err = json.Unmarshal(marshal, resp)
 	if err != nil {
-		alog.Warn(ctx, "TrackUpdateNowPlaying", zap.Error(err))
+		alog.Warn(spanCtx, "TrackUpdateNowPlaying", zap.Error(err))
+		markSpanError(span, err)
 		return err
 	}
 
@@ -334,20 +393,32 @@ func IsFavorite(ctx context.Context, artist, track string) (bool, error) {
 	// redis使用github.com/redis/go-redis. go-redis,在core抽象redis包包含初始化 client的、初始化、创建
 	// reids相关的配置在config中加入
 	// Try to get value from Redis cache first
-	if val, err := _redisClient.Get(ctx, redisKey).Result(); err == nil {
-		// Cache hit
-		isLoved := val == "true"
-		alog.Info(ctx, "Track loved status (from cache)", zap.Bool("isLoved", isLoved))
-		return isLoved, nil
-	} else if !errors.Is(err, redisgo.Nil) {
-		// Redis error (not a cache miss)
-		alog.Info(ctx, "Redis error when getting cached favorite status", zap.Error(err))
+	if _redisClient != nil {
+		if val, err := _redisClient.Get(ctx, redisKey).Result(); err == nil {
+			// Cache hit
+			isLoved := val == "true"
+			alog.Info(ctx, "Track loved status (from cache)", zap.Bool("isLoved", isLoved))
+			return isLoved, nil
+		} else if !errors.Is(err, redisgo.Nil) {
+			// Redis error (not a cache miss)
+			alog.Info(ctx, "Redis error when getting cached favorite status", zap.Error(err))
+		}
 	}
 
 	// 检查API是否已初始化
+	spanCtx, span := startClientSpan(
+		ctx,
+		"lastfm.track.get_info",
+		attribute.String("lastfm.operation", "track.get_info"),
+		attribute.Bool("lastfm.cache.hit", false),
+	)
+	defer span.End()
+
 	if lastfmApi == nil || lastfmApi.Api == nil {
-		alog.Warn(ctx, "Last.fm API not initialized")
-		return false, fmt.Errorf("last.fm api not initialized")
+		err := fmt.Errorf("last.fm api not initialized")
+		alog.Warn(spanCtx, "Last.fm API not initialized")
+		markSpanError(span, err)
+		return false, err
 	}
 	req := TrackGetInfoReq{
 		Artist:   artist,
@@ -357,19 +428,22 @@ func IsFavorite(ctx context.Context, artist, track string) (bool, error) {
 	// 调用Last.fm API获取歌曲信息
 	res, err := req.ToMap()
 	if err != nil {
-		alog.Warn(ctx, "IsFavorite", zap.Error(err))
+		alog.Warn(spanCtx, "IsFavorite", zap.Error(err))
+		markSpanError(span, err)
 		return false, err
 	}
 	result, err := lastfmApi.Track.GetInfo(
 		res,
 	)
 	if err != nil {
-		alog.Warn(ctx, "Failed to get track info", zap.Error(err))
+		alog.Warn(spanCtx, "Failed to get track info", zap.Error(err))
+		markSpanError(span, err)
 		return false, err
 	}
 
 	// UserLoved字段为"1"表示已收藏，"0"表示未收藏
 	isLoved := result.UserLoved == "1"
+	span.SetAttributes(attribute.Bool("lastfm.result.user_loved", isLoved))
 	alog.Info(ctx, "Track loved status", zap.Bool("isLoved", isLoved))
 
 	// Cache the result in Redis for 4 minutes
@@ -379,8 +453,10 @@ func IsFavorite(ctx context.Context, artist, track string) (bool, error) {
 			cacheValue = "true"
 		}
 		// Set cache with 4-minute expiration
-		if err := _redisClient.Set(ctx, redisKey, cacheValue, 4*time.Minute).Err(); err != nil {
-			alog.Warn(ctx, "Failed to cache favorite status", zap.Error(err))
+		if _redisClient != nil {
+			if err := _redisClient.Set(ctx, redisKey, cacheValue, 4*time.Minute).Err(); err != nil {
+				alog.Warn(ctx, "Failed to cache favorite status", zap.Error(err))
+			}
 		}
 	}
 
@@ -389,15 +465,31 @@ func IsFavorite(ctx context.Context, artist, track string) (bool, error) {
 
 // SetFavorite sets the loved/favorited status of the track in Last.fm
 func SetFavorite(ctx context.Context, artist, track string, favorited bool) error {
+	spanName := "lastfm.track.unlove"
+	operation := "track.unlove"
+	if favorited {
+		spanName = "lastfm.track.love"
+		operation = "track.love"
+	}
+	spanCtx, span := startClientSpan(
+		ctx,
+		spanName,
+		attribute.String("lastfm.operation", operation),
+		attribute.Bool("lastfm.favorited", favorited),
+	)
+	defer span.End()
+
 	alog.Info(
-		ctx, "Setting track loved status", zap.String("artist", artist), zap.String("track", track),
+		spanCtx, "Setting track loved status", zap.String("artist", artist), zap.String("track", track),
 		zap.Bool("favorited", favorited),
 	)
 
 	// 检查API是否已初始化
 	if lastfmApi == nil || lastfmApi.Api == nil {
-		alog.Warn(ctx, "Last.fm API not initialized")
-		return fmt.Errorf("last.fm api not initialized")
+		err := fmt.Errorf("last.fm api not initialized")
+		alog.Warn(spanCtx, "Last.fm API not initialized")
+		markSpanError(span, err)
+		return err
 	}
 
 	var err error
@@ -410,10 +502,11 @@ func SetFavorite(ctx context.Context, artist, track string, favorited bool) erro
 			},
 		)
 		if err != nil {
-			alog.Warn(ctx, "Failed to love track", zap.Error(err))
+			alog.Warn(spanCtx, "Failed to love track", zap.Error(err))
+			markSpanError(span, err)
 			return err
 		}
-		alog.Info(ctx, "Track loved successfully")
+		alog.Info(spanCtx, "Track loved successfully")
 	} else {
 		// 取消收藏歌曲
 		err = lastfmApi.Track.UnLove(
@@ -423,17 +516,20 @@ func SetFavorite(ctx context.Context, artist, track string, favorited bool) erro
 			},
 		)
 		if err != nil {
-			alog.Warn(ctx, "Failed to unlove track", zap.Error(err))
+			alog.Warn(spanCtx, "Failed to unlove track", zap.Error(err))
+			markSpanError(span, err)
 			return err
 		}
-		alog.Info(ctx, "Track unloved successfully")
+		alog.Info(spanCtx, "Track unloved successfully")
 	}
 
 	// Delete cache entry for this track
 	{
 		redisKey := fmt.Sprintf("cache:isFavorite:lastfm:%s:%s", artist, track)
-		if err := _redisClient.Del(ctx, redisKey).Err(); err != nil {
-			alog.Warn(ctx, "Failed to delete cached favorite status", zap.Error(err))
+		if _redisClient != nil {
+			if err := _redisClient.Del(ctx, redisKey).Err(); err != nil {
+				alog.Warn(spanCtx, "Failed to delete cached favorite status", zap.Error(err))
+			}
 		}
 	}
 

@@ -14,15 +14,19 @@ import (
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
+	"github.com/vincentchyu/sonic-lens/core/ai"
 	"github.com/vincentchyu/sonic-lens/core/artwork"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
+	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
 	musicbrainzlogic "github.com/vincentchyu/sonic-lens/internal/logic/musicbrainz"
@@ -32,16 +36,17 @@ import (
 	"github.com/vincentchyu/sonic-lens/internal/scrobbler"
 )
 
-func parseInt8Query(c *gin.Context, key string) int8 {
-	raw := strings.TrimSpace(c.Query(key))
-	if raw == "" {
-		return 0
+func StartHTTPServer(ctx context.Context, name string) {
+	r := setupRouter(name)
+	port := config.ConfigObj.HTTP.Port
+	if port == "" {
+		port = "8080" // Default port
 	}
-	v, err := strconv.Atoi(raw)
+	log.Info(ctx, "Starting HTTP server on port", zap.String("port", port))
+	err := r.Run(":" + port)
 	if err != nil {
-		return 0
+		panic(err)
 	}
-	return int8(v)
 }
 
 func setupRouter(name string) *gin.Engine {
@@ -49,7 +54,12 @@ func setupRouter(name string) *gin.Engine {
 
 	// Add OpenTelemetry middleware
 	r.Use(
-		otelgin.Middleware(name),
+		otelgin.Middleware(
+			name,
+			otelgin.WithTracerProvider(telemetry.GetTracerProvider()),
+			otelgin.WithMeterProvider(telemetry.GetMeterProvider()),
+			otelgin.WithPropagators(otel.GetTextMapPropagator()),
+		),
 		func(c *gin.Context) {
 			traceID := trace.SpanFromContext(c.Request.Context()).SpanContext().TraceID().String()
 			c.Header("Trace-Id", traceID)
@@ -60,12 +70,46 @@ func setupRouter(name string) *gin.Engine {
 	r.StaticFile("/static/chartjs-adapter-date-fns.bundle.min.js", "./static/chartjs-adapter-date-fns.bundle.min.js")
 	r.StaticFile("/static/full.min.css", "./static/full.min.css")
 	r.StaticFile("/static/html2canvas.min.js", "./static/html2canvas.min.js")
+	r.StaticFile("/static/lrc-utils.js", "./static/lrc-utils.js")
 	r.StaticFile("/static/3.4.17", "./static/3.4.17")
 	r.StaticFile("/static/chart.js", "./static/chart.js")
 	r.StaticFile("/static/logo.svg", "./static/logo.svg")
 	r.StaticFile("/static/logo_black.svg", "./static/logo_black.svg")
 	r.StaticFile("/static/logo_all.svg", "./static/logo_all.svg")
 	r.StaticFile("/static/logo_all_black.svg", "./static/logo_all_black.svg")
+
+	artworkService := artworklogic.NewService()
+	r.GET(
+		"/api/artwork/resolve", redisCache(10*time.Minute), func(c *gin.Context) {
+			albumID := parseInt64Query(c, "album_id")
+			if albumID <= 0 {
+				albumID = parseInt64Query(c, "albumID")
+			}
+			result, err := artworkService.Resolve(
+				c.Request.Context(),
+				artworklogic.ResolveArtworkInput{
+					AlbumID:     albumID,
+					AlbumArtist: c.Query("albumArtist"),
+					Artist:      c.Query("artist"),
+					Album:       c.Query("album"),
+					ArtworkKey:  c.Query("artworkKey"),
+				},
+			)
+			if err != nil {
+				log.Error(c.Request.Context(), "resolve artwork err", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(
+				http.StatusOK,
+				gin.H{
+					"exists":               result.Exists,
+					"cover_art_url":        result.CoverArtURL,
+					"cover_art_object_key": result.CoverArtObjectKey,
+				},
+			)
+		},
+	)
 
 	r.GET(
 		"/api/artwork/:key", func(c *gin.Context) {
@@ -84,7 +128,6 @@ func setupRouter(name string) *gin.Engine {
 			_, _ = c.Writer.Write(entry.Data)
 		},
 	)
-
 	// 首页
 	r.GET(
 		"/", func(c *gin.Context) {
@@ -208,21 +251,16 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
-	// 获取当前系统支持的 AI 分析模型
-	r.GET(
-		"/api/ai-models", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(http.StatusOK, gin.H{"models": []string{}})
-				return
-			}
-			models := insightService.GetAvailableAIProviders()
-			c.JSON(http.StatusOK, gin.H{"models": models})
-		},
-	)
+	registerAIRoutes(r, insightService)
 
 	// 获取某首歌已有的 AI 解析结果 (仅查询)
 	r.GET(
-		"/api/track-insight", func(c *gin.Context) {
+		"/api/track-insight", redisCache(1*time.Minute), func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 歌词解析服务未初始化"})
+				return
+			}
+
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")
@@ -244,9 +282,39 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	// 获取某张专辑已有的 AI 解析结果 (仅查询)
+	r.GET(
+		"/api/album-insight", redisCache(1*time.Minute), func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 专辑解析服务未初始化"})
+				return
+			}
+
+			albumIDStr := c.Query("albumID")
+			if albumIDStr == "" {
+				albumIDStr = c.Query("album_id")
+			}
+			albumID, err := strconv.ParseInt(albumIDStr, 10, 64)
+			if err != nil || albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的专辑 ID"})
+				return
+			}
+
+			insights, err := insightService.GetAlbumInsightOnly(c.Request.Context(), albumID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(
+				http.StatusOK,
+				gin.H{"insights": sanitizeAlbumInsightsForClient(insights, shouldHideAlbumInsightDebugData(c))},
+			)
+		},
+	)
+
 	// Get play for a specific track
 	r.GET(
-		"/api/track", func(c *gin.Context) {
+		"/api/track", redisCache(1*time.Minute), func(c *gin.Context) {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			trackName := c.Query("trackName")
@@ -294,112 +362,6 @@ func setupRouter(name string) *gin.Engine {
 					"is_last_fm_fav":     record.IsLastFmFav,
 					"source":             record.Source,
 					"updated_at":         record.UpdatedAt,
-				},
-			)
-		},
-	)
-
-	// 获取 / 生成某首歌的歌词解析结果
-	r.POST(
-		"/api/track-insight", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(
-					http.StatusServiceUnavailable, gin.H{
-						"error": "AI 歌词解析服务未正确初始化，请检查 OPENAI_API_KEY 等配置",
-					},
-				)
-				return
-			}
-
-			var req struct {
-				Artist      string `json:"artist"`
-				Album       string `json:"album"`
-				Track       string `json:"track"`
-				TrackNumber int8   `json:"track_number"`
-				DiscNumber  int8   `json:"disc_number"`
-				ModelType   string `json:"modelType"`
-			}
-			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
-				return
-			}
-
-			ctx := c.Request.Context()
-			// POST 接口语义为强制分析
-			insights, cached, err := insightService.GetOrCreateInsight(
-				ctx, req.Artist, req.Album, req.Track, req.TrackNumber, req.DiscNumber, true, req.ModelType,
-			)
-			if err != nil {
-				log.Error(
-					ctx, "获取或生成歌词解析失败",
-					zap.String("artist", req.Artist),
-					zap.String("album", req.Album),
-					zap.String("track", req.Track),
-					zap.Error(err),
-				)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "生成歌词解析失败"})
-				return
-			}
-
-			c.JSON(
-				http.StatusOK, gin.H{
-					"insights": insights,
-					"cached":   cached,
-				},
-			)
-		},
-	)
-
-	// 流式获取歌词解析结果 (SSE)
-	r.GET(
-		"/api/track-insight-stream", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
-				return
-			}
-
-			artist := c.Query("artist")
-			album := c.Query("album")
-			track := c.Query("track")
-			trackNumber := parseInt8Query(c, "trackNumber")
-			discNumber := parseInt8Query(c, "discNumber")
-			force, _ := strconv.ParseBool(c.DefaultQuery("force", "false"))
-			modelType := c.Query("modelType")
-
-			if artist == "" || track == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "参数不足"})
-				return
-			}
-
-			ch, _, err := insightService.GetOrCreateInsightStream(
-				c.Request.Context(), artist, album, track, trackNumber, discNumber, force, modelType,
-			)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			// 设置 SSE 必要的 Response Headers
-			c.Header("Content-Type", "text/event-stream")
-			c.Header("Cache-Control", "no-cache")
-			c.Header("Connection", "keep-alive")
-			c.Header("Transfer-Encoding", "chunked")
-			// 针对 Nginx 等代理，禁用响应缓冲，实现真正的实时流
-			c.Header("X-Accel-Buffering", "no")
-
-			c.Stream(
-				func(w io.Writer) bool {
-					if chunk, ok := <-ch; ok {
-						// 写入 SSE 格式消息：data: <content>\n\n
-						c.Render(
-							-1, sse.Event{
-								Event: "message",
-								Data:  chunk,
-							},
-						)
-						return true
-					}
-					return false
 				},
 			)
 		},
@@ -459,11 +421,18 @@ func setupRouter(name string) *gin.Engine {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 			keyword := c.Query("keyword")
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery(
+					"analysis_target_type", string(common.AnalysisTargetTypeTrack),
+				),
+			)
 			if limit > 100 {
 				limit = 100
 			}
 
-			insights, total, err := insightService.GetAllInsights(c.Request.Context(), limit, offset, keyword)
+			insights, total, err := insightService.GetAllInsights(
+				c.Request.Context(), limit, offset, keyword, targetType,
+			)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -501,6 +470,29 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	// 获取单条解析详情
+	r.GET(
+		"/api/insights/:id", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+			idStr := c.Param("id")
+			insightID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || insightID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+				return
+			}
+
+			insight, err := insightService.GetInsightByID(c.Request.Context(), insightID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, insight)
+		},
+	)
+
 	// 直接删除解析记录
 	r.DELETE(
 		"/api/insights/:id", func(c *gin.Context) {
@@ -525,13 +517,13 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取某次解析关联的 LLM 调用流水
 	r.GET(
-		"/api/insights/:id/logs", func(c *gin.Context) {
+		"/api/insights/:id/logs", redisCache(72*time.Hour), func(c *gin.Context) {
 			if insightService == nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
 				return
 			}
 
-			// 由于目前模型定义中日志是按 artist + track 关联的，我们先通过 ID 查到曲目信息
+			// 曲目调用日志按 artist + album + track 关联，这里先通过 ID 查到目标曲目信息
 			idStr := c.Param("id")
 			insightID, err := strconv.ParseInt(idStr, 10, 64)
 			if err != nil || insightID <= 0 {
@@ -553,7 +545,31 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			logs, err := insightService.GetTrackCallLogs(c.Request.Context(), target.Artist, target.Track)
+			logs, err := insightService.GetTrackCallLogs(c.Request.Context(), target.Artist, target.Album, target.Track)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"logs": logs})
+		},
+	)
+
+	// 获取某张专辑对应的 LLM 调用流水
+	r.GET(
+		"/api/album-insights/:id/logs", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			idStr := c.Param("id")
+			albumID, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+				return
+			}
+
+			logs, err := insightService.GetAlbumCallLogs(c.Request.Context(), albumID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -587,7 +603,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取歌词数据（优先查库，没有则调用 lrcapi 等）
 	r.GET(
-		"/api/track-lyrics", func(c *gin.Context) {
+		"/api/track-lyrics", redisCache(20*time.Minute), func(c *gin.Context) {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")
@@ -655,10 +671,61 @@ func setupRouter(name string) *gin.Engine {
 	)
 
 	r.GET(
+		"/api/pending-albums/work-items", func(c *gin.Context) {
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			keyword := c.Query("keyword")
+			statusGroup := c.Query("status_group")
+
+			if limit > 100 {
+				limit = 100
+			}
+
+			items, total, err := pendingAlbumService.ListWorkItems(
+				c.Request.Context(), limit, offset, keyword, statusGroup,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(
+				http.StatusOK, gin.H{
+					"items":  items,
+					"total":  total,
+					"limit":  limit,
+					"offset": offset,
+				},
+			)
+		},
+	)
+
+	r.GET(
 		"/api/pending-albums/work-items/:id", func(c *gin.Context) {
 			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 			if workItemID <= 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			detail, err := pendingAlbumService.GetPendingAlbumWorkItemDetail(c.Request.Context(), workItemID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, detail)
+		},
+	)
+
+	r.POST(
+		"/api/pending-albums/work-items/:id/refresh-context", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			if _, err := pendingAlbumService.RefreshPendingAlbumWorkItemContext(
+				c.Request.Context(), workItemID,
+			); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 			detail, err := pendingAlbumService.GetPendingAlbumWorkItemDetail(c.Request.Context(), workItemID)
@@ -748,7 +815,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取已缓存的候选结果
 	r.GET(
-		"/api/musicbrainz/candidates/:album_id", func(c *gin.Context) {
+		"/api/musicbrainz/candidates/:album_id", redisCache(10*time.Minute), func(c *gin.Context) {
 			albumID, _ := strconv.ParseInt(c.Param("album_id"), 10, 64)
 			if albumID <= 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
@@ -974,7 +1041,7 @@ func setupRouter(name string) *gin.Engine {
 	)
 	// 获取专辑详情（含歌曲列表）
 	r.GET(
-		"/api/albums/:id", func(c *gin.Context) {
+		"/api/albums/:id", redisCache(2*time.Minute), func(c *gin.Context) {
 			idStr := c.Param("id")
 			albumID, err := strconv.ParseInt(idStr, 10, 64)
 			if err != nil || albumID <= 0 {
@@ -1265,7 +1332,7 @@ func setupRouter(name string) *gin.Engine {
 	// 获取热门流派数据（按播放次数和曲目数）
 	genreService := genre.NewGenreService()
 	r.GET(
-		"/api/dashboard/top-genres", func(c *gin.Context) {
+		"/api/dashboard/top-genres", redisCache(72*time.Hour), func(c *gin.Context) {
 			ctx := c.Request.Context()
 
 			// 获取限制参数，默认10个
@@ -1429,7 +1496,7 @@ func setupRouter(name string) *gin.Engine {
 				metadata.Confidence = currentPlaying.Data.Confidence
 			}
 			// 调用logic层方法处理收藏逻辑
-			appleMusicFav, lastFmFav, err := trackService.SetTrackFavorite(
+			favoriteProjection, err := trackService.SetTrackFavorite(
 				ctx,
 				req.Artist,
 				req.Album,
@@ -1447,8 +1514,11 @@ func setupRouter(name string) *gin.Engine {
 
 			c.JSON(
 				http.StatusOK, gin.H{
-					"apple_music": appleMusicFav,
-					"lastfm":      lastFmFav,
+					"apple_music":       favoriteProjection.AppleMusic,
+					"lastfm":            favoriteProjection.LastFM,
+					"apple_music_state": favoriteProjection.AppleMusicState,
+					"lastfm_state":      favoriteProjection.LastFMState,
+					"favorite_state":    favoriteProjection.FavoriteState,
 				},
 			)
 		},
@@ -1468,7 +1538,11 @@ func setupRouter(name string) *gin.Engine {
 			websocket.AddClient(conn)
 
 			// 启动goroutine处理WebSocket消息
-			go websocket.HandleWebSocketMessages(conn)
+			telemetry.GoOnlySafe(
+				c.Request.Context(), func(context.Context) {
+					websocket.HandleWebSocketMessages(conn)
+				},
+			)
 		},
 	)
 
@@ -1482,17 +1556,305 @@ func setupRouter(name string) *gin.Engine {
 	return r
 }
 
-func StartHTTPServer(ctx context.Context, name string) {
-	r := setupRouter(name)
-	port := config.ConfigObj.HTTP.Port
-	if port == "" {
-		port = "8080" // Default port
+func parseInt8Query(c *gin.Context, key string) int8 {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return 0
 	}
-	log.Info(ctx, "Starting HTTP server on port", zap.String("port", port))
-	err := r.Run(":" + port)
+	v, err := strconv.Atoi(raw)
 	if err != nil {
-		panic(err)
+		return 0
 	}
+	return int8(v)
+}
+
+func parseInt64Query(c *gin.Context, key string) int64 {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func isAISelectionBadRequest(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "不支持的 AI 平台") ||
+		strings.Contains(msg, "不支持的旧模型平台参数") ||
+		strings.Contains(msg, "不支持模型") ||
+		strings.Contains(msg, "未配置默认模型") ||
+		strings.Contains(msg, "未配置:") ||
+		strings.Contains(msg, "不能为空")
+}
+
+const clientTerminalHeader = "X-SonicLens-Terminal"
+
+func clientTerminal(c *gin.Context) string {
+	terminal := strings.TrimSpace(strings.ToLower(c.GetHeader(clientTerminalHeader)))
+	if terminal == "" {
+		return "web"
+	}
+	return terminal
+}
+
+func shouldHideAlbumInsightDebugData(c *gin.Context) bool {
+	switch clientTerminal(c) {
+	case "web":
+		return false
+	default:
+		return true
+	}
+}
+
+func sanitizeAlbumInsightsForClient(insights []*model.AlbumInsight, hideDebugData bool) []*model.AlbumInsight {
+	if !hideDebugData {
+		return insights
+	}
+
+	sanitized := make([]*model.AlbumInsight, len(insights))
+	for i, insight := range insights {
+		if insight == nil {
+			continue
+		}
+		copyInsight := *insight
+		copyInsight.Metadata = ""
+		sanitized[i] = &copyInsight
+	}
+	return sanitized
+}
+
+type aiRouteService interface {
+	GetAvailableAIPlatforms() []ai.PlatformOption
+	GetPlatformModels(ctx context.Context, platform common.AIModelPlatform) ([]ai.ModelOption, error)
+	GetOrCreateInsight(
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+		provider, model, legacyModelType string,
+	) ([]*model.TrackInsight, bool, error)
+	GetOrCreateAlbumInsight(
+		ctx context.Context, albumID int64, force bool, provider, model, legacyModelType string,
+	) ([]*model.AlbumInsight, bool, error)
+	GetOrCreateInsightStream(
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+		provider, model, legacyModelType string,
+	) (<-chan string, bool, error)
+}
+
+// registerAIRoutes 注册 AI 模型目录与解析相关路由，便于复用和单测注入。
+func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
+	// 获取当前系统支持的 AI 平台列表
+	r.GET(
+		"/api/ai-models", redisCache(), func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusOK, gin.H{"platforms": []ai.PlatformOption{}})
+				return
+			}
+			platforms := insightService.GetAvailableAIPlatforms()
+			c.JSON(http.StatusOK, gin.H{"platforms": platforms})
+		},
+	)
+
+	// 获取某个平台支持的模型列表
+	r.GET(
+		"/api/ai-models/:platform/models", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusOK, gin.H{"models": []ai.ModelOption{}})
+				return
+			}
+
+			platform := common.ParseAIModelPlatform(c.Param("platform"))
+			if !platform.IsValid() {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 AI 平台"})
+				return
+			}
+
+			models, err := insightService.GetPlatformModels(c.Request.Context(), platform)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if isAISelectionBadRequest(err) {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"models": models})
+		},
+	)
+
+	// 获取 / 生成某首歌的歌词解析结果
+	r.POST(
+		"/api/track-insight", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(
+					http.StatusServiceUnavailable, gin.H{
+						"error": "AI 歌词解析服务未正确初始化，请检查 OPENAI_API_KEY 等配置",
+					},
+				)
+				return
+			}
+
+			var req struct {
+				Artist      string `json:"artist"`
+				Album       string `json:"album"`
+				Track       string `json:"track"`
+				TrackNumber int8   `json:"track_number"`
+				DiscNumber  int8   `json:"disc_number"`
+				Provider    string `json:"provider"`
+				Model       string `json:"model"`
+				ModelType   string `json:"modelType"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+				return
+			}
+
+			ctx := c.Request.Context()
+			insights, cached, err := insightService.GetOrCreateInsight(
+				ctx, req.Artist, req.Album, req.Track, req.TrackNumber, req.DiscNumber, true, req.Provider, req.Model,
+				req.ModelType,
+			)
+			if err != nil {
+				log.Error(
+					ctx, "获取或生成歌词解析失败",
+					zap.String("artist", req.Artist),
+					zap.String("album", req.Album),
+					zap.String("track", req.Track),
+					zap.Error(err),
+				)
+				status := http.StatusInternalServerError
+				if isAISelectionBadRequest(err) {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(
+				http.StatusOK, gin.H{
+					"insights": insights,
+					"cached":   cached,
+				},
+			)
+		},
+	)
+
+	// 获取 / 生成某张专辑的聚合解析结果
+	r.POST(
+		"/api/album-insight", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(
+					http.StatusServiceUnavailable, gin.H{
+						"error": "AI 专辑解析服务未正确初始化，请检查模型配置",
+					},
+				)
+				return
+			}
+
+			var req struct {
+				AlbumID   int64  `json:"album_id"`
+				Provider  string `json:"provider"`
+				Model     string `json:"model"`
+				ModelType string `json:"modelType"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+				return
+			}
+			if req.AlbumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的专辑 ID"})
+				return
+			}
+
+			ctx := c.Request.Context()
+			insights, cached, err := insightService.GetOrCreateAlbumInsight(
+				ctx, req.AlbumID, true, req.Provider, req.Model, req.ModelType,
+			)
+			if err != nil {
+				log.Error(
+					ctx, "获取或生成专辑解析失败",
+					zap.Int64("album_id", req.AlbumID),
+					zap.Error(err),
+				)
+				status := http.StatusInternalServerError
+				if isAISelectionBadRequest(err) {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(
+				http.StatusOK, gin.H{
+					"insights": sanitizeAlbumInsightsForClient(insights, shouldHideAlbumInsightDebugData(c)),
+					"cached":   cached,
+				},
+			)
+		},
+	)
+
+	// 流式获取歌词解析结果 (SSE)
+	r.GET(
+		"/api/track-insight-stream", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			artist := c.Query("artist")
+			album := c.Query("album")
+			track := c.Query("track")
+			trackNumber := parseInt8Query(c, "trackNumber")
+			discNumber := parseInt8Query(c, "discNumber")
+			force, _ := strconv.ParseBool(c.DefaultQuery("force", "false"))
+			provider := c.Query("provider")
+			modelName := c.Query("model")
+			modelType := c.Query("modelType")
+
+			if artist == "" || track == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "参数不足"})
+				return
+			}
+
+			ch, _, err := insightService.GetOrCreateInsightStream(
+				c.Request.Context(), artist, album, track, trackNumber, discNumber, force, provider, modelName,
+				modelType,
+			)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if isAISelectionBadRequest(err) {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.Header("Content-Type", "text/event-stream")
+			c.Header("Cache-Control", "no-cache")
+			c.Header("Connection", "keep-alive")
+			c.Header("Transfer-Encoding", "chunked")
+			c.Header("X-Accel-Buffering", "no")
+
+			c.Stream(
+				func(w io.Writer) bool {
+					if chunk, ok := <-ch; ok {
+						c.Render(
+							-1, sse.Event{
+								Event: "message",
+								Data:  chunk,
+							},
+						)
+						return true
+					}
+					return false
+				},
+			)
+		},
+	)
 }
 
 // FillInTrendCycle FillInTrendCycle

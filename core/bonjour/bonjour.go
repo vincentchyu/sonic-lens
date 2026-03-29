@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/grandcat/zeroconf"
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
-// Start 在局域网内广播 SonicLens 服务
+// Start 在局域网内广播 SonicLens 服务，并自动巡检 IP 变动。
 func Start(ctx context.Context, cfg config.BonjourConfig, portStr string) func() {
 	if !cfg.Enabled {
 		log.Info(ctx, "Bonjour 广播已禁用")
@@ -32,15 +36,8 @@ func Start(ctx context.Context, cfg config.BonjourConfig, portStr string) func()
 	if serviceType == "" {
 		serviceType = "_soniclens._tcp"
 	}
-	if serviceType[len(serviceType)-1] != '.' {
-		serviceType = serviceType + "."
-	}
-
-	domain := cfg.Domain
-	if domain == "" {
-		domain = "local."
-	}
-	domain = strings.TrimSuffix(domain, ".")
+	// zeroconf 库不要求也不建议 serviceType 以点结尾，多余的点会导致 "bad rdata"
+	serviceType = strings.TrimSuffix(serviceType, ".")
 
 	instanceName := cfg.Name
 	if instanceName == "" {
@@ -60,46 +57,90 @@ func Start(ctx context.Context, cfg config.BonjourConfig, portStr string) func()
 		"health=/health",
 	}
 
-	hostName := buildBonjourHostName(domain)
-	ips := listServiceIPs()
+	var (
+		mu            sync.Mutex
+		currentServer *zeroconf.Server
+		currentIPs    []string
+	)
 
-	server, err := zeroconf.RegisterProxy(instanceName, serviceType, domain, port, hostName, ips, txt, nil)
-	if err != nil {
-		log.Error(ctx, "Bonjour 广播启动失败", zap.Error(err))
-		return func() {}
+	// updateRegistration 执行具体的注册/重新注册逻辑
+	updateRegistration := func() {
+		mu.Lock()
+		defer mu.Unlock()
+
+		newIPs := listIPs()
+		// 如果 IP 没变且服务已在运行，则跳过
+		if reflect.DeepEqual(currentIPs, newIPs) && currentServer != nil {
+			return
+		}
+
+		// 如果已有服务，先关闭
+		if currentServer != nil {
+			currentServer.Shutdown()
+			currentServer = nil
+			log.Info(
+				ctx, "检测到 IP 变动，正在重新注册 Bonjour 广播", zap.Strings("old_ips", currentIPs),
+				zap.Strings("new_ips", newIPs),
+			)
+		}
+
+		if len(newIPs) == 0 {
+			log.Warn(ctx, "未发现可用局域网 IP，无法注册 Bonjour 广播")
+			currentIPs = nil
+			return
+		}
+
+		// 使用 Register 而非 RegisterProxy，代码中明确指定 "local." 避免某些环境下的歧义
+		server, err := zeroconf.Register(instanceName, serviceType, "local.", port, txt, nil)
+		if err != nil {
+			log.Error(ctx, "Bonjour 广播注册失败", zap.Error(err))
+			return
+		}
+
+		currentServer = server
+		currentIPs = newIPs
+
+		log.Info(
+			ctx, "Bonjour 广播已激活",
+			zap.String("name", instanceName),
+			zap.String("service", serviceType),
+			// zap.String("domain", domain),
+			zap.Strings("ips", currentIPs),
+			zap.Int("port", port),
+		)
 	}
 
-	log.Info(
-		ctx, "Bonjour 广播已启动",
-		zap.String("name", instanceName),
-		zap.String("service", serviceType),
-		zap.String("domain", domain),
-		zap.String("host", hostName),
-		zap.Strings("ips", ips),
-		zap.Int("port", port),
+	// 初始注册
+	updateRegistration()
+
+	// 启动定时巡检协程（每分钟检查一次 IP）
+	telemetry.GoOnlySafe(
+		ctx, func(asyncCtx context.Context) {
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-asyncCtx.Done():
+					return
+				case <-ticker.C:
+					updateRegistration()
+				}
+			}
+		},
 	)
 
 	return func() {
-		server.Shutdown()
-		log.Info(ctx, "Bonjour 广播已停止")
+		mu.Lock()
+		if currentServer != nil {
+			currentServer.Shutdown()
+			log.Info(ctx, "Bonjour 广播已停止")
+		}
+		mu.Unlock()
 	}
 }
 
-// buildBonjourHostName 规范化主机名，避免出现 .local.local. 这类重复后缀。
-func buildBonjourHostName(domain string) string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		host = "soniclens"
-	}
-
-	host = strings.TrimSuffix(host, ".")
-	host = strings.TrimSuffix(host, "."+domain)
-
-	return fmt.Sprintf("%s.%s.", host, domain)
-}
-
-// listServiceIPs 返回本机可用于 Bonjour 广播的非回环单播地址。
-func listServiceIPs() []string {
+// listIPs 仅用于比对网络状态是否发生变化
+func listIPs() []string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil

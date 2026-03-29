@@ -61,7 +61,30 @@ func TestUpdateTrackMusicBrainzPositionTx(t *testing.T) {
 	)).
 		WithArgs(int8(2), "mbid-track", int8(6), modelTestNow, int64(90)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(regexp.QuoteMeta(
+		"INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)",
+	)).
+		WithArgs("track", int64(90), "upsert").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	require.NoError(t, UpdateTrackMusicBrainzPositionTx(GetDB(), 90, "mbid-track", 2, 6))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateTrackMusicBrainzMetadataTx(t *testing.T) {
+	_, mock := newModelTestDB(t)
+
+	mock.ExpectExec(regexp.QuoteMeta(
+		"UPDATE `track` SET `disc_number`=?,`duration`=?,`music_brainz_id`=?,`track_number`=?,`updated_at`=? WHERE id = ?",
+	)).
+		WithArgs(int8(1), int64(253), "mbid-track-meta", int8(7), modelTestNow, int64(91)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(regexp.QuoteMeta(
+		"INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)",
+	)).
+		WithArgs("track", int64(91), "upsert").
+		WillReturnResult(sqlmock.NewResult(2, 1))
+
+	require.NoError(t, UpdateTrackMusicBrainzMetadataTx(GetDB(), 91, "mbid-track-meta", 1, 7, 253))
 	require.NoError(t, mock.ExpectationsWereMet())
 }

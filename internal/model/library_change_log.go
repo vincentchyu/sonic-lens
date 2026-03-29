@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 )
 
@@ -43,7 +44,16 @@ func appendLibraryChangeTx(tx *gorm.DB, entityType string, entityID int64, opera
 	if err := tx.Session(&gorm.Session{NewDB: true, SkipHooks: true}).Create(entry).Error; err != nil {
 		return err
 	}
-	go websocket.BroadcastLibraryUpdate(context.Background(), entityType, entityID, operation, entry.ID)
+
+	asyncCtx := context.Background()
+	if tx.Statement != nil && tx.Statement.Context != nil {
+		asyncCtx = tx.Statement.Context
+	}
+	telemetry.GoSafeDetached(
+		asyncCtx, "model.library_change_log.broadcast_update", func(goCtx context.Context) {
+			websocket.BroadcastLibraryUpdate(goCtx, entityType, entityID, operation, entry.ID)
+		},
+	)
 	return nil
 }
 

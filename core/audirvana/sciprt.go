@@ -36,6 +36,7 @@ type (
 
 func IsRunning(ctx context.Context) bool {
 	tell, err := applesciprt.Tell(
+		ctx,
 		common.AppSystemEvents, fmt.Sprintf(
 			`set listApplicationProcessNames to name of every application process
 			if listApplicationProcessNames contains "%s" then
@@ -60,7 +61,7 @@ func IsRunning(ctx context.Context) bool {
 // GetState 使用 AppleScript 从 Audirvana Origin 应用获取当前播放器状态。
 // 返回播放器状态（common.PlayerState）以及过程中遇到的任何错误。
 func GetState(ctx context.Context) (playerState common.PlayerState, err error) {
-	result, err := applesciprt.Tell(common.AppAudirvanaOrigin, `set audirvanaState to get player state`)
+	result, err := applesciprt.Tell(ctx, common.AppAudirvanaOrigin, `set audirvanaState to get player state`)
 	if err != nil {
 		alog.Warn(ctx, "err:", zap.Error(err))
 		return "", err
@@ -73,6 +74,7 @@ func GetState(ctx context.Context) (playerState common.PlayerState, err error) {
 // 如果在执行 AppleScript 或解析数据时发生错误，函数会记录警告并返回 nil。
 func GetNowPlayingTrackInfo(ctx context.Context) *TrackInfo {
 	tell, err := applesciprt.Tell(
+		ctx,
 		common.AppAudirvanaOrigin,
 		`set playingTrack to playing track title
 	set playingAlbum to playing track album

@@ -1,30 +1,55 @@
-/.logs/go_lastfm-scrobbler*.log
-/core/exec/.logs/
-/shell/bin/sonic-lens
-/config/config_*.yaml
-/internal/scrobbler/.logs/
+# hide
 /.logs/
 /.storage/
-/.derivedData/
 /.tmp/
-/shell/bin/nowplaying-cli-mac
-/venv/
-internal/model/sql/
-frontend/node_modules
-/node_modules/
-/config/config.yaml
-frontend/package-lock.json
-frontend/dist/
 .github/
 .gemini/
+/.iflow/
+/.cursor/
+/docs/
+/skills/
+
+# log
+/core/exec/.logs/
+/internal/scrobbler/.logs/
+/core/exec/exec1_test.go
+/.logs/go_lastfm-scrobbler*.log
+
+# bin
+/shell/bin/sonic-lens
+/shell/bin/nowplaying-cli-mac
+
+# dev
+/config/config*.yaml
+internal/model/sql/
+/backup/
+
+# py
+/venv/
+/.venv/
+
+# web
+/node_modules/
+frontend/node_modules
+frontend/package-lock.json
+frontend/dist/
+
+# cf
 /cloudflare/worker_project/.wrangler/
 /cloudflare/web_project/.wrangler/
 /cloudflare/worker_project/wrangler.toml
-/.iflow/
-/.cursor/
-/core/exec/exec1_test.go
-/docs/
-/.venv/
-/skills/
-/backup/
-/soniclens-bridge/build/
+
+# Xcode
+.derivedData/
+build/
+
+# XcodeGen
+# *.xcodeproj
+# *.xcworkspace
+
+# user settings
+*.xcuserstate
+# *.xcworkspace/xcuserdata/
+# *.xcodeproj/xcuserdata/
+
+.codex/*

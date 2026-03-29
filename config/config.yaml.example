@@ -1,3 +1,8 @@
+# 本地文件日志配置
+log:
+  path: ./.logs                                 # SonicLens 本地日志目录
+  level: info                                   # debug / info / warn / error
+
 # Cloudflare D1 同步配置示例
 # 将此配置添加到你的 config/config.yaml 文件中
 
@@ -10,12 +15,45 @@ dashboard:
   trendDays: 180                                # 趋势统计保留天数，默认180天
   hourlyTrendDays: 0                            # 小时趋势保留天数，<=0 表示跟随 trendDays（推荐）
 
+telemetry:
+  name: "sonic-lens"                            # OpenTelemetry service.name
+  endpoint: "http://127.0.0.1:4317"             # SigNoz OTLP gRPC Collector 地址
+  insecure: true                                # 本地 / 内网 collector 常见是明文 gRPC
+  sampler: 1.0                                  # 生产可按需降到 0.1 / 0.2
+  metricIntervalSeconds: 15                     # 指标导出周期
+  runtimeMetricsEnabled: true                   # 采集 Go runtime 指标
+  dbStatsMetricsEnabled: true                   # 采集 database/sql 连接池指标
+  environment: "dev"                            # deployment.environment
+  # 当前应用代码只直连 trace + metrics；日志建议继续写本地文件，
+  # 再用 config/otelcol/filelog_signoz.yaml.example 的 filelog Collector 采集。
+  # SigNoz 的日志 retention 请在管理端单独设置，例如 1 天；它与本地文件保留天数解耦。
+
 cloudflare:
   account_id: "your_cloudflare_account_id"      # Cloudflare Account ID
   api_token: "your_cloudflare_api_token"        # Cloudflare API Token (需要 D1 权限)
   d1_database_id: "your_d1_database_id"         # D1 数据库 ID
   sync_enabled: true                            # 是否启用 D1 同步
   sync_interval: 24                             # 同步间隔(小时),默认 24 小时
+
+# 对象存储配置（MinIO / S3 / R2）
+objectStorage:
+  enabled: false
+  provider: "s3"
+  endpoint: "http://127.0.0.1:9000"
+  bucket: "album"
+  region: "auto"
+  accessKeyId: "admin"
+  secretAccessKey: "change_me"
+  cdnUrl: ""                                    # 可选，填写后优先返回 CDN 前缀地址
+  basePrefix: "v1"
+  originalPrefix: "originals/"
+  thumbnailPrefix: "thumbnails/"
+  forcePathStyle: true
+  useSSL: false
+
+# 也可通过环境变量覆盖（推荐生产环境）：
+# ENDPOINT / BUCKET / REGION / ACCESS_KEY_ID / SECRET_ACCESS_KEY / CDN_URL
+# BASE_PREFIX / ORIGINAL_PREFIX / THUMBNAIL_PREFIX
 
 # AI 大模型配置示例
 ai:
@@ -43,7 +81,11 @@ ai:
   doubao:
     apiKey: ""                                  # 预留字段
     baseUrl: ""                                 # 预留字段
-    model: ""                                   # 预留字段
+    model: ""                                   # 运行时调用使用的 endpoint / model
+    managementAccessKey: ""                     # 可选：用于动态拉取模型目录的管理侧 AK
+    managementSecretKey: ""                     # 可选：用于动态拉取模型目录的管理侧 SK
+    managementRegion: "cn-beijing"              # 可选：管理侧 Region
+    projectName: ""                             # 可选：ARK 项目名，缺失时回退当前配置模型
 
 # 注意事项:
 # 1. **安全性**: api_token 具有账户权限,切勿提交到 Git 仓库

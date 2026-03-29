@@ -7,11 +7,11 @@ import (
 
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/config"
 	alog "github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 var redisClient *redis.Client
@@ -33,13 +33,16 @@ func InitRedis(redisConfig config.RedisConfig, logger *zap.Logger) {
 
 	// Enable tracing instrumentation (if Redis is available)
 	if err := redisotel.InstrumentTracing(
-		redisClient, redisotel.WithTracerProvider(otel.GetTracerProvider()),
+		redisClient, redisotel.WithTracerProvider(telemetry.GetTracerProvider()),
 	); err != nil {
 		alog.Warn(context.Background(), "Failed to enable Redis tracing instrumentation", zap.Error(err))
 	}
 
 	// Enable metrics instrumentation (if Redis is available)
-	if err := redisotel.InstrumentMetrics(redisClient); err != nil {
+	if err := redisotel.InstrumentMetrics(
+		redisClient,
+		redisotel.WithMeterProvider(telemetry.GetMeterProvider()),
+	); err != nil {
 		alog.Warn(context.Background(), "Failed to enable Redis metrics instrumentation", zap.Error(err))
 	}
 

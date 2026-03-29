@@ -34,6 +34,9 @@ func newAlbumCleanupTestDB(t *testing.T, name string) *gorm.DB {
 				total_discs INTEGER DEFAULT 1,
 				disc_infos TEXT,
 				sync_status INTEGER DEFAULT 0,
+				cover_art_url TEXT,
+				cover_art_mime TEXT,
+				cover_art_object_key TEXT,
 				created_at DATETIME,
 				updated_at DATETIME
 			)

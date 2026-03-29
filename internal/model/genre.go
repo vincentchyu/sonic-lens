@@ -40,17 +40,7 @@ func (Genre) TableName() string {
 // CreateGenre creates a new genre
 func CreateGenre(ctx context.Context, genre *Genre) error {
 	log.Debug(ctx, "creating genre", zap.Any("genre", genre))
-	err := GetDB().WithContext(ctx).Create(genre).Error
-	if err == nil {
-		// Trigger cache refresh when a new genre is created
-		go func() {
-			// In a real implementation, we would update the cache with the new genre data
-			// For now, we'll just trigger a full refresh
-			// todo
-			// _ = GetGenreCache().RefreshFromDB(ctx)
-		}()
-	}
-	return err
+	return GetDB().WithContext(ctx).Create(genre).Error
 }
 
 // GetGenreByName retrieves a genre by name
@@ -88,31 +78,12 @@ func GetAllGenres(ctx context.Context, limit, offset int) ([]*Genre, error) {
 
 // UpdateGenre updates a genre
 func UpdateGenre(ctx context.Context, genre *Genre) error {
-	err := GetDB().WithContext(ctx).Save(genre).Error
-	if err == nil {
-		// Trigger cache refresh when a genre is updated
-		go func() {
-			// In a real implementation, we would update the cache with the modified genre data
-			// For now, we'll just trigger a full refresh
-			// todo
-			// _ = GetGenreCache().RefreshFromDB(ctx)
-		}()
-	}
-	return err
+	return GetDB().WithContext(ctx).Save(genre).Error
 }
 
 // DeleteGenre deletes a genre
 func DeleteGenre(ctx context.Context, id uint) error {
-	err := GetDB().WithContext(ctx).Delete(&Genre{}, id).Error
-	if err == nil {
-		// Trigger cache refresh when a genre is deleted
-		go func() {
-			// In a real implementation, we would remove the deleted genre from the cache
-			// For now, we'll just trigger a full refresh
-			// _ = GetGenreCache().RefreshFromDB(ctx)
-		}()
-	}
-	return err
+	return GetDB().WithContext(ctx).Delete(&Genre{}, id).Error
 }
 
 // IncrementGenrePlayCount increments the play count for a genre

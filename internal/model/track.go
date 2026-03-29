@@ -79,20 +79,23 @@ func (t *Track) AfterDelete(tx *gorm.DB) error {
 
 // TrackMetadata represents metadata for a music track
 type TrackMetadata struct {
-	AlbumArtist   string                         `json:"album_artist"`   // 专辑艺术家
-	TrackNumber   int8                           `json:"track_number"`   // 曲目编号
-	Duration      int64                          `json:"duration"`       // 持续时间(秒)
-	Genre         string                         `json:"genre"`          // 流派
-	Composer      string                         `json:"composer"`       // 作曲家
-	ReleaseDate   string                         `json:"release_date"`   // 发布日期
-	MusicBrainzID string                         `json:"musicbrainz_id"` // MusicBrainz ID
-	Source        string                         `json:"source"`         // 数据来源：Apple Music, Audirvana, Roon等
-	BundleID      string                         `json:"bundle_id"`      // 应用标识符 (用于media-control)
-	UniqueID      string                         `json:"unique_id"`      // 唯一标识符 (用于media-control)
-	DiscNumber    int8                           `json:"disc_number"`    // 盘编号
-	PlayerType    string                         `json:"player_type"`    // 播放器类型
-	Confidence    common.TrackMetadataConfidence `json:"confidence"`     // 元数据置信度
-	ReleaseYear   int                            `json:"release_year"`   // 仅有年份时的弱提示
+	AlbumArtist       string                         `json:"album_artist"`         // 专辑艺术家
+	TrackNumber       int8                           `json:"track_number"`         // 曲目编号
+	Duration          int64                          `json:"duration"`             // 持续时间(秒)
+	Genre             string                         `json:"genre"`                // 流派
+	Composer          string                         `json:"composer"`             // 作曲家
+	ReleaseDate       string                         `json:"release_date"`         // 发布日期
+	MusicBrainzID     string                         `json:"musicbrainz_id"`       // MusicBrainz ID
+	Source            string                         `json:"source"`               // 数据来源：Apple Music, Audirvana, Roon等
+	BundleID          string                         `json:"bundle_id"`            // 应用标识符 (用于media-control)
+	UniqueID          string                         `json:"unique_id"`            // 唯一标识符 (用于media-control)
+	DiscNumber        int8                           `json:"disc_number"`          // 盘编号
+	PlayerType        string                         `json:"player_type"`          // 播放器类型
+	Confidence        common.TrackMetadataConfidence `json:"confidence"`           // 元数据置信度
+	ReleaseYear       int                            `json:"release_year"`         // 仅有年份时的弱提示
+	CoverArtURL       string                         `json:"cover_art_url"`        // 播放期封面访问地址
+	CoverArtMime      string                         `json:"cover_art_mime"`       // 封面 MIME
+	CoverArtObjectKey string                         `json:"cover_art_object_key"` // 封面对象存储键
 }
 
 // IncrementTrackPlayCountParams represents parameters for IncrementTrackPlayCount function
@@ -1137,7 +1140,7 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 				UniqueID:      candidate.UniqueID,
 			},
 		)
-		if err := tx.Model(&Track{}).Where("id = ?", existing.ID).Updates(
+		result := tx.Model(&Track{}).Where("id = ?", existing.ID).Updates(
 			map[string]interface{}{
 				"album_artist":    updated.AlbumArtist,
 				"duration":        updated.Duration,
@@ -1151,8 +1154,14 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 				"disc_number":     updated.DiscNumber,
 				"track_number":    updated.TrackNumber,
 			},
-		).Error; err != nil {
-			return nil, err
+		)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected > 0 {
+			if err := appendLibraryChangeTx(tx, LibraryEntityTrack, existing.ID, LibraryOpUpsert); err != nil {
+				return nil, err
+			}
 		}
 		return GetTrackByIDTx(tx, existing.ID)
 	}
@@ -1178,13 +1187,20 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 func UpdateTrackMusicBrainzPositionTx(
 	tx *gorm.DB, trackID int64, musicBrainzID string, discNumber, trackNumber int8,
 ) error {
-	return tx.Model(&Track{}).Where("id = ?", trackID).Updates(
+	result := tx.Model(&Track{}).Where("id = ?", trackID).Updates(
 		map[string]interface{}{
 			"music_brainz_id": musicBrainzID,
 			"disc_number":     discNumber,
 			"track_number":    trackNumber,
 		},
-	).Error
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected <= 0 {
+		return nil
+	}
+	return appendLibraryChangeTx(tx, LibraryEntityTrack, trackID, LibraryOpUpsert)
 }
 
 // UpdateTrackMusicBrainzMetadataTx 在事务内同步曲目的 MB 标识、位置和时长。
@@ -1199,7 +1215,14 @@ func UpdateTrackMusicBrainzMetadataTx(
 	if duration > 0 {
 		fields["duration"] = duration
 	}
-	return tx.Model(&Track{}).Where("id = ?", trackID).Updates(fields).Error
+	result := tx.Model(&Track{}).Where("id = ?", trackID).Updates(fields)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected <= 0 {
+		return nil
+	}
+	return appendLibraryChangeTx(tx, LibraryEntityTrack, trackID, LibraryOpUpsert)
 }
 
 // GetAllTrackPlayCounts retrieves all track play counts

@@ -10,11 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/applesciprt"
 	alog "github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -309,6 +313,7 @@ func (ti *TrackInfo) ToTrackMetadata() model.TrackMetadata {
 
 func IsRunning(ctx context.Context) bool {
 	tell, err := applesciprt.Tell(
+		ctx,
 		common.AppSystemEvents, fmt.Sprintf(
 			`set listApplicationProcessNames to name of every application process
 			if listApplicationProcessNames contains "%s" then
@@ -333,7 +338,7 @@ func IsRunning(ctx context.Context) bool {
 // GetState 使用 AppleScript 从 Apple Music 应用获取当前播放器状态。
 // 返回播放器状态（common.PlayerState）以及过程中遇到的任何错误。
 func GetState(ctx context.Context) (playerState common.PlayerState, err error) {
-	result, err := applesciprt.Tell("Music", `set musicState to get player state`)
+	result, err := applesciprt.Tell(ctx, "Music", `set musicState to get player state`)
 	if err != nil {
 		alog.Warn(ctx, "err:", zap.Error(err))
 		return "", err
@@ -361,6 +366,7 @@ func GetNowPlayingTrackInfo(ctx context.Context) *TrackInfo {
 
 	// 使用更简洁的AppleScript代码获取所有相关信息
 	tell, err := applesciprt.Tell(
+		ctx,
 		"Music",
 		`try
 			if player state is playing then
@@ -641,7 +647,7 @@ func GetNowPlayingTrackInfoV2(ctx context.Context) *TrackInfo {
 	}
 
 	// 使用更简洁的AppleScript代码获取所有相关信息
-	tell, err := run(appleSciprtGetNowPlayingTrackInfo)
+	tell, err := run(ctx, appleSciprtGetNowPlayingTrackInfo)
 	if err != nil {
 		alog.Warn(ctx, "AppleScript runtime error:", zap.String("response", tell))
 		return nil
@@ -673,6 +679,7 @@ func GetNowPlayingTrackInfoV2(ctx context.Context) *TrackInfo {
 // IsFavorite checks if the current track is favorited in Apple Music
 func IsFavorite(ctx context.Context) (bool, error) {
 	tell, err := applesciprt.Tell(
+		ctx,
 		"Music",
 		`if exists current track then
 		return favorited of current track
@@ -695,6 +702,7 @@ func IsFavorite(ctx context.Context) (bool, error) {
 func SetFavorite(ctx context.Context, favorited bool) error {
 	alog.Debug(ctx, "apple music. Track love status:", zap.Bool("favorited", favorited))
 	_, err := applesciprt.Tell(
+		ctx,
 		"Music",
 		fmt.Sprintf(`set favorited of current track to %s`, strconv.FormatBool(favorited)),
 	)
@@ -715,13 +723,28 @@ func parseTrackInfo(output string) (*tmp, error) {
 }
 
 // Build the AppleScript command from a set of optional parameters, return the output
-func run(command string) (string, error) {
+func run(ctx context.Context, command string) (string, error) {
+	_, span := telemetry.StartSpanForTracerName(
+		ctx,
+		"sonic-lens/core/applemusic",
+		"applemusic.run_osascript",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	span.SetAttributes(
+		attribute.String("command.name", "osascript"),
+		attribute.String("script.engine", "applescript"),
+		attribute.String("script.operation", "run"),
+	)
+	defer span.End()
+
 	cmd := exec.Command("osascript", "-e", command)
 	output, err := cmd.CombinedOutput()
 	prettyOutput := strings.Replace(string(output), "\n", "", -1)
 
 	// Ignore errors from the user hitting the cancel button
 	if err != nil && strings.Index(string(output), "User canceled.") < 0 {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return "", errors.New(err.Error() + ": " + prettyOutput + " (" + command + ")")
 	}
 

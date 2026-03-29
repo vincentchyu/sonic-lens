@@ -33,6 +33,14 @@ type TrackFavoriteEvent struct {
 	UpdatedAt            time.Time                      `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
+// TrackFavoritePendingSnapshot 描述同一首歌当前尚未归因完成的收藏意图。
+type TrackFavoritePendingSnapshot struct {
+	AppleMusicKnown    bool `json:"-"`
+	AppleMusicFavorite bool `json:"-"`
+	LastFmKnown        bool `json:"-"`
+	LastFmFavorite     bool `json:"-"`
+}
+
 const (
 	TrackFavoriteEventSourceAppleMusic = "Apple Music"
 	TrackFavoriteEventSourceLastFm     = "Last.fm"
@@ -57,6 +65,68 @@ func CreateTrackFavoriteEvent(ctx context.Context, event *TrackFavoriteEvent) er
 		event.ResolutionStatus = TrackFavoriteEventResolutionPending
 	}
 	return GetDB().WithContext(ctx).Create(event).Error
+}
+
+// GetPendingTrackFavoriteSnapshot 按曲目身份读取尚未归因完成的最新收藏意图。
+func GetPendingTrackFavoriteSnapshot(ctx context.Context, identity TrackIdentity) (*TrackFavoritePendingSnapshot, error) {
+	return getPendingTrackFavoriteSnapshotTx(GetDB().WithContext(ctx), identity)
+}
+
+func getPendingTrackFavoriteSnapshotTx(
+	tx *gorm.DB, identity TrackIdentity,
+) (*TrackFavoritePendingSnapshot, error) {
+	if tx == nil {
+		return nil, gorm.ErrInvalidDB
+	}
+
+	identity = normalizeTrackIdentity(identity)
+	var events []*TrackFavoriteEvent
+	query := tx.Model(&TrackFavoriteEvent{}).
+		Where("applied = ?", false).
+		Where("artist = ? AND album = ? AND track = ?", identity.Artist, identity.Album, identity.Track).
+		Where(
+			"resolution_status IN ?", []string{
+				TrackFavoriteEventResolutionPending,
+				TrackFavoriteEventResolutionUnresolved,
+				TrackFavoriteEventResolutionAmbiguous,
+			},
+		)
+
+	if identity.TrackNumber > 0 {
+		query = query.Where(
+			"(track_number = 0 OR (track_number = ? AND (disc_number = 0 OR disc_number = ?)))",
+			identity.TrackNumber,
+			identity.DiscNumber,
+		)
+	}
+
+	if err := query.Order("id DESC").Find(&events).Error; err != nil {
+		return nil, err
+	}
+
+	snapshot := &TrackFavoritePendingSnapshot{}
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+		switch event.Source {
+		case TrackFavoriteEventSourceAppleMusic, "":
+			if !snapshot.AppleMusicKnown {
+				snapshot.AppleMusicKnown = true
+				snapshot.AppleMusicFavorite = event.ProviderFavorite
+			}
+		case TrackFavoriteEventSourceLastFm:
+			if !snapshot.LastFmKnown {
+				snapshot.LastFmKnown = true
+				snapshot.LastFmFavorite = event.ProviderFavorite
+			}
+		}
+		if snapshot.AppleMusicKnown && snapshot.LastFmKnown {
+			break
+		}
+	}
+
+	return snapshot, nil
 }
 
 func getOpenTrackFavoriteEventTx(tx *gorm.DB, candidate *TrackFavoriteEvent) (*TrackFavoriteEvent, error) {

@@ -11,10 +11,11 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/vincentchyu/sonic-lens/config"
+	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/ai"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/lyrics"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -22,37 +23,55 @@ import (
 type Service interface {
 	// GetOrCreateInsight 获取或创建某首歌的解析结果，第二个返回值表示是否命中缓存
 	GetOrCreateInsight(
-		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+		provider, model, legacyModelType string,
 	) ([]*model.TrackInsight, bool, error)
 	// RecordFeedback 记录用户点赞/点踩反馈
 	RecordFeedback(ctx context.Context, insightID int64, score int, comment string) error
 	// GetOrCreateInsightStream 获取大模型流式解析结果，第二个返回值表示是否命中缓存
 	GetOrCreateInsightStream(
-		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
+		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+		provider, model, legacyModelType string,
 	) (<-chan string, bool, error)
-	// GetAvailableAIProviders 获取当前系统可用的 AI 服务模型
-	GetAvailableAIProviders() []string
+	// GetAvailableAIPlatforms 获取当前系统可用的 AI 平台。
+	GetAvailableAIPlatforms() []ai.PlatformOption
+	// GetPlatformModels 获取某个平台可用的模型目录。
+	GetPlatformModels(ctx context.Context, platform common.AIModelPlatform) ([]ai.ModelOption, error)
 	// GetInsightOnly 仅从数据库获取已有的解析结果，不触发 AI 分析
-	GetInsightOnly(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) ([]*InsightWithScore, error)
+	GetInsightOnly(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
+		[]*InsightWithScore, error,
+	)
+	// GetAlbumInsightOnly 仅从数据库获取已有的专辑解析结果，不触发 AI 分析
+	GetAlbumInsightOnly(ctx context.Context, albumID int64) ([]*model.AlbumInsight, error)
+	// GetOrCreateAlbumInsight 获取或创建某张专辑的解析结果，第二个返回值表示是否命中缓存
+	GetOrCreateAlbumInsight(
+		ctx context.Context, albumID int64, force bool, provider, model, legacyModelType string,
+	) ([]*model.AlbumInsight, bool, error)
 	// GetAllInsights 分页获取所有解析记录
-	GetAllInsights(ctx context.Context, limit, offset int, keyword string) ([]*model.TrackInsight, int64, error)
+	GetAllInsights(
+		ctx context.Context, limit, offset int, keyword string, targetType common.AnalysisTargetType,
+	) ([]*model.InsightListItem, int64, error)
 	// GetInsightByID 按主键获取解析记录，避免上层通过分页结果回扫定位。
 	GetInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error)
 	// ToggleInsightStatus 切换解析记录的禁用状态
 	ToggleInsightStatus(ctx context.Context, id int64) error
 	// GetTrackCallLogs 获取某曲目的 LLM 调用流水
-	GetTrackCallLogs(ctx context.Context, artist, track string) ([]*model.LLMCallLog, error)
+	GetTrackCallLogs(ctx context.Context, artist, album, track string) ([]*model.LLMCallLog, error)
+	// GetAlbumCallLogs 获取某专辑的 LLM 调用流水
+	GetAlbumCallLogs(ctx context.Context, albumID int64) ([]*model.LLMCallLog, error)
 	// DeleteInsight 删除解析记录
 	DeleteInsight(ctx context.Context, id int64) error
 	// GetInsightFeedbacks 获取关联反馈
 	GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
 	// GetLyrics 获取歌词内容，缺失时自动回源并写入缓存。
-	GetLyrics(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.TrackLyrics, error)
+	GetLyrics(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
+		*model.TrackLyrics, error,
+	)
 }
 
 type serviceImpl struct {
 	llmCache  map[string]ai.LLMProvider
-	providers []lyrics.LyricsProvider
+	providers []lyrics.Provider
 }
 
 type InsightWithScore struct {
@@ -64,33 +83,37 @@ type InsightWithScore struct {
 func NewService() (Service, error) {
 	return &serviceImpl{
 		llmCache: make(map[string]ai.LLMProvider),
-		providers: []lyrics.LyricsProvider{
+		providers: []lyrics.Provider{
 			lyrics.NewLrcAPIProvider(),
-			lyrics.NewMusixmatchProvider(),
+			lyrics.NewMxmProvider(),
 		},
 	}, nil
 }
 
 // getLLMProvider 获取指定的 Provider，如果不存在则实例化并缓存
-func (s *serviceImpl) getLLMProvider(modelType string) (ai.LLMProvider, error) {
-	if modelType == "" {
-		// 默认使用配置中的默认 Provider
-		return ai.NewProviderFromConfig()
-	}
-	if p, ok := s.llmCache[modelType]; ok {
+func (s *serviceImpl) getLLMProvider(selection ai.ResolvedProviderSelection) (ai.LLMProvider, error) {
+	cacheKey := string(selection.Platform) + "::" + selection.Model
+	if p, ok := s.llmCache[cacheKey]; ok {
 		return p, nil
 	}
-	p, err := ai.NewProviderByName(modelType)
+	p, err := ai.NewProviderBySelection(selection.Platform, selection.Model)
 	if err != nil {
 		return nil, err
 	}
-	s.llmCache[modelType] = p
+	s.llmCache[cacheKey] = p
 	return p, nil
 }
 
-// GetAvailableAIProviders 获取当前配置中可用的 AI 模型列表
-func (s *serviceImpl) GetAvailableAIProviders() []string {
-	return config.ConfigObj.AI.GetAvailableProviders()
+// GetAvailableAIPlatforms 获取当前配置中可用的 AI 平台列表。
+func (s *serviceImpl) GetAvailableAIPlatforms() []ai.PlatformOption {
+	return ai.GetConfiguredPlatforms()
+}
+
+// GetPlatformModels 获取某个平台可用的模型目录。
+func (s *serviceImpl) GetPlatformModels(ctx context.Context, platform common.AIModelPlatform) (
+	[]ai.ModelOption, error,
+) {
+	return ai.GetModelsByPlatform(ctx, platform)
 }
 
 // GetInsightOnly 仅从数据库获取已有的解析结果
@@ -140,13 +163,222 @@ func (s *serviceImpl) GetInsightOnly(
 	return result, nil
 }
 
+// GetAlbumInsightOnly 仅从数据库获取已有的专辑解析结果。
+func (s *serviceImpl) GetAlbumInsightOnly(ctx context.Context, albumID int64) ([]*model.AlbumInsight, error) {
+	if albumID <= 0 {
+		return nil, errors.New("albumID 不能为空")
+	}
+
+	detail, err := model.GetAlbumWithTracks(ctx, albumID)
+	if err != nil {
+		return nil, err
+	}
+
+	return model.GetAlbumInsightsByLookup(
+		ctx,
+		model.AlbumInsightLookup{
+			AlbumID: albumID,
+			Artist:  detail.Artist,
+			Album:   detail.Name,
+		},
+	)
+}
+
+// GetOrCreateAlbumInsight 获取或创建某张专辑的解析结果。
+func (s *serviceImpl) GetOrCreateAlbumInsight(
+	ctx context.Context, albumID int64, force bool, provider, modelName, legacyModelType string,
+) ([]*model.AlbumInsight, bool, error) {
+	selection, err := ai.ResolveProviderSelection(
+		ai.ProviderSelectionInput{
+			Provider:        provider,
+			Model:           modelName,
+			LegacyModelType: legacyModelType,
+		},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(modelName) != "" {
+		if err := ai.ValidateModelAvailability(ctx, selection.Platform, selection.Model); err != nil {
+			return nil, false, err
+		}
+	}
+
+	log.Info(
+		ctx,
+		"开始获取或创建专辑解析",
+		zap.Int64("album_id", albumID),
+		zap.Bool("force", force),
+		zap.String("provider", string(selection.Platform)),
+		zap.String("model", selection.Model),
+	)
+
+	if albumID <= 0 {
+		return nil, false, errors.New("albumID 不能为空")
+	}
+
+	detail, err := model.GetAlbumWithTracks(ctx, albumID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	lookup := model.AlbumInsightLookup{
+		AlbumID: albumID,
+		Artist:  detail.Artist,
+		Album:   detail.Name,
+	}
+	insights, err := model.GetAlbumInsightsByLookup(ctx, lookup)
+	if err == nil && len(insights) > 0 && !force {
+		insights[0].LastUsedAt = time.Now()
+		_ = model.UpdateAlbumInsight(ctx, insights[0])
+		log.Info(
+			ctx,
+			"专辑解析命中缓存",
+			zap.Int64("album_id", albumID),
+			zap.String("artist", detail.Artist),
+			zap.String("album", detail.Name),
+			zap.Int("insight_count", len(insights)),
+		)
+		return insights, true, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
+	}
+
+	trackContexts, selectedInsightIDs, totalTracks, err := s.buildAlbumTrackContexts(ctx, detail)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(trackContexts) == 0 {
+		return nil, false, errors.New("当前专辑下暂无可用的曲目音眸分析，请先生成曲目分析")
+	}
+
+	llmReq := ai.AlbumAnalysisRequest{
+		AlbumID:           detail.ID,
+		Artist:            detail.Artist,
+		Album:             detail.Name,
+		ReleaseDate:       detail.ReleaseDate,
+		Genre:             detail.Genre,
+		TrackCount:        totalTracks,
+		AnalyzedTracks:    len(trackContexts),
+		TrackContexts:     trackContexts,
+		RequestedProvider: selection.RequestedProvider,
+		RequestedModel:    selection.RequestedModel,
+	}
+
+	llm, err := s.getLLMProvider(selection)
+	if err != nil {
+		log.Error(
+			ctx,
+			"获取专辑分析模型失败",
+			zap.Int64("album_id", albumID),
+			zap.String("artist", detail.Artist),
+			zap.String("album", detail.Name),
+			zap.Error(err),
+		)
+		return nil, false, err
+	}
+
+	llmResp, err := llm.AnalyzeAlbum(ctx, llmReq)
+	if err != nil {
+		log.Error(
+			ctx,
+			"调用大模型进行专辑分析失败",
+			zap.Int64("album_id", albumID),
+			zap.String("artist", detail.Artist),
+			zap.String("album", detail.Name),
+			zap.Error(err),
+		)
+		return nil, false, err
+	}
+
+	newInsight := &model.AlbumInsight{
+		AlbumID:           detail.ID,
+		Artist:            detail.Artist,
+		Album:             detail.Name,
+		AnalysisSummary:   llmResp.AnalysisSummary,
+		AnalysisBySection: llmResp.AnalysisBySection,
+		BackgroundInfo:    llmResp.BackgroundInfo,
+		EraContext:        llmResp.EraContext,
+		LLMProvider:       llmResp.LLMProvider,
+		LastUsedAt:        time.Now(),
+	}
+
+	metadata := llmResp.Metadata
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["album_id"] = detail.ID
+	metadata["total_tracks"] = totalTracks
+	metadata["analyzed_tracks"] = len(trackContexts)
+	metadata["selected_track_insight_ids"] = selectedInsightIDs
+	if serialized, serErr := json.Marshal(metadata); serErr == nil {
+		newInsight.Metadata = string(serialized)
+	}
+
+	if err := model.CreateAlbumInsight(ctx, newInsight); err != nil {
+		return nil, false, err
+	}
+
+	insights, err = model.GetAlbumInsightsByLookup(ctx, lookup)
+	if err != nil {
+		log.Warn(
+			ctx,
+			"重新读取专辑解析失败，直接返回新建结果",
+			zap.Int64("album_id", albumID),
+			zap.Error(err),
+		)
+		return []*model.AlbumInsight{newInsight}, false, nil
+	}
+
+	log.Info(
+		ctx,
+		"专辑解析获取完成",
+		zap.Int64("album_id", albumID),
+		zap.String("artist", detail.Artist),
+		zap.String("album", detail.Name),
+		zap.Bool("cache_hit", false),
+		zap.Int("insight_count", len(insights)),
+		zap.Int("analyzed_tracks", len(trackContexts)),
+	)
+	return insights, false, nil
+}
+
 // GetOrCreateInsight 获取或创建某首歌的解析结果
 func (s *serviceImpl) GetOrCreateInsight(
-	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+	provider, modelName, legacyModelType string,
 ) ([]*model.TrackInsight, bool, error) {
 	artist = strings.TrimSpace(artist)
 	album = strings.TrimSpace(album)
 	track = strings.TrimSpace(track)
+
+	selection, err := ai.ResolveProviderSelection(
+		ai.ProviderSelectionInput{
+			Provider:        provider,
+			Model:           modelName,
+			LegacyModelType: legacyModelType,
+		},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(modelName) != "" {
+		if err := ai.ValidateModelAvailability(ctx, selection.Platform, selection.Model); err != nil {
+			return nil, false, err
+		}
+	}
+
+	log.Info(
+		ctx,
+		"开始获取或创建歌曲解析",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+		zap.Bool("force", force),
+		zap.String("provider", string(selection.Platform)),
+		zap.String("model", selection.Model),
+	)
 
 	if artist == "" || album == "" || track == "" {
 		return nil, false, errors.New("artist, album, track 不能为空")
@@ -164,6 +396,14 @@ func (s *serviceImpl) GetOrCreateInsight(
 		// 命中缓存，更新最近一条的使用时间
 		insights[0].LastUsedAt = time.Now()
 		_ = model.UpdateTrackInsight(ctx, insights[0])
+		log.Info(
+			ctx,
+			"歌曲解析命中缓存",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Int("insight_count", len(insights)),
+		)
 		return insights, true, nil
 	}
 	// 如果强制刷新或没找到且出错不是 NotFound，返回错误
@@ -184,7 +424,9 @@ func (s *serviceImpl) GetOrCreateInsight(
 
 	// 查询历史差评反馈，用于改进分析质量
 	feedbackCtx := ""
-	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(ctx, lookup); fbErr == nil && len(negativeFeedbacks) > 0 {
+	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(
+		ctx, lookup,
+	); fbErr == nil && len(negativeFeedbacks) > 0 {
 		var feedbackComments []string
 		for _, fb := range negativeFeedbacks {
 			if fb.Comment != "" {
@@ -201,17 +443,27 @@ func (s *serviceImpl) GetOrCreateInsight(
 
 	// 调用大模型进行翻译与解析
 	llmReq := ai.TrackAnalysisRequest{
-		Title:           track,
-		Artist:          artist,
-		Album:           album,
-		Lyrics:          ai.CleanLyrics(lyrics),
-		LangSource:      "auto",
-		LangTarget:      "zh-CN",
-		FeedbackContext: feedbackCtx,
+		Title:             track,
+		Artist:            artist,
+		Album:             album,
+		Lyrics:            ai.CleanLyrics(lyrics),
+		LangSource:        "auto",
+		LangTarget:        "zh-CN",
+		FeedbackContext:   feedbackCtx,
+		RequestedProvider: selection.RequestedProvider,
+		RequestedModel:    selection.RequestedModel,
 	}
 
-	llm, err := s.getLLMProvider(modelType)
+	llm, err := s.getLLMProvider(selection)
 	if err != nil {
+		log.Error(
+			ctx,
+			"获取分析模型失败",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Error(err),
+		)
 		return nil, false, err
 	}
 	llmResp, err := llm.AnalyzeTrack(ctx, llmReq)
@@ -251,24 +503,76 @@ func (s *serviceImpl) GetOrCreateInsight(
 	if err := model.CreateTrackInsight(ctx, newInsight); err != nil {
 		return nil, false, err
 	}
+	log.Info(
+		ctx,
+		"歌曲解析已创建并落库",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+	)
 
 	// 重新获取完整列表
 	insights, err = model.GetTrackInsightsByLookup(ctx, lookup)
 	if err != nil {
 		// 降级：只返回新创建的
+		log.Warn(
+			ctx,
+			"重新读取歌曲解析失败，直接返回新建结果",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Error(err),
+		)
 		return []*model.TrackInsight{newInsight}, false, nil
 	}
 
+	log.Info(
+		ctx,
+		"歌曲解析获取完成",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+		zap.Bool("cache_hit", false),
+		zap.Int("insight_count", len(insights)),
+	)
 	return insights, false, nil
 }
 
 // GetOrCreateInsightStream 获取流式解析结果
 func (s *serviceImpl) GetOrCreateInsightStream(
-	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, modelType string,
+	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+	provider, modelName, legacyModelType string,
 ) (<-chan string, bool, error) {
 	artist = strings.TrimSpace(artist)
 	album = strings.TrimSpace(album)
 	track = strings.TrimSpace(track)
+
+	selection, err := ai.ResolveProviderSelection(
+		ai.ProviderSelectionInput{
+			Provider:        provider,
+			Model:           modelName,
+			LegacyModelType: legacyModelType,
+		},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(modelName) != "" {
+		if err := ai.ValidateModelAvailability(ctx, selection.Platform, selection.Model); err != nil {
+			return nil, false, err
+		}
+	}
+
+	log.Info(
+		ctx,
+		"开始获取歌曲流式解析",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+		zap.Bool("force", force),
+		zap.String("provider", string(selection.Platform)),
+		zap.String("model", selection.Model),
+	)
 
 	// 先尝试从数据库中获取已存在的解析
 	trackObj, _ := model.GetTrackByIdentity(ctx, artist, album, track, trackNumber, discNumber)
@@ -285,6 +589,14 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 		// 为了保持一致性，我们这里直接返回 insights 的 JSON
 		out <- string(b)
 		close(out)
+		log.Info(
+			ctx,
+			"歌曲流式解析命中缓存",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Int("insight_count", len(insights)),
+		)
 		return out, true, nil
 	}
 
@@ -296,7 +608,9 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 
 	// 查询历史差评反馈，用于改进分析质量
 	feedbackCtx := ""
-	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(ctx, lookup); fbErr == nil && len(negativeFeedbacks) > 0 {
+	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(
+		ctx, lookup,
+	); fbErr == nil && len(negativeFeedbacks) > 0 {
 		var feedbackComments []string
 		for _, fb := range negativeFeedbacks {
 			if fb.Comment != "" {
@@ -312,21 +626,39 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 	}
 
 	llmReq := ai.TrackAnalysisRequest{
-		Title:           track,
-		Artist:          artist,
-		Album:           album,
-		Lyrics:          ai.CleanLyrics(lyrics),
-		LangSource:      "auto",
-		LangTarget:      "zh-CN",
-		FeedbackContext: feedbackCtx,
+		Title:             track,
+		Artist:            artist,
+		Album:             album,
+		Lyrics:            ai.CleanLyrics(lyrics),
+		LangSource:        "auto",
+		LangTarget:        "zh-CN",
+		FeedbackContext:   feedbackCtx,
+		RequestedProvider: selection.RequestedProvider,
+		RequestedModel:    selection.RequestedModel,
 	}
 
-	llm, err := s.getLLMProvider(modelType)
+	llm, err := s.getLLMProvider(selection)
 	if err != nil {
+		log.Error(
+			ctx,
+			"获取流式分析模型失败",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Error(err),
+		)
 		return nil, false, err
 	}
 	ch, err := llm.AnalyzeTrackStream(ctx, llmReq)
 	if err != nil {
+		log.Error(
+			ctx,
+			"启动歌曲流式解析失败",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Error(err),
+		)
 		return nil, false, err
 	}
 
@@ -334,63 +666,82 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 	out := make(chan string, 10)
 	// 使用一个新的 context，避免主请求取消导致流中断
 	// 但实际上 SSE 应该随主请求结束而结束，这里的 out 发送应该监听 ctx.Done()
-	go func() {
-		defer close(out)
-		var fullContent strings.Builder
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case chunk, ok := <-ch:
-				if !ok {
-					// 流自然结束，执行存入数据库逻辑
-					go func(content string) {
-						if content == "" {
-							return
-						}
-						raw := ai.TrimCodeFence(content)
-						var llmResp ai.TrackAnalysisResult
-						if err := json.Unmarshal([]byte(raw), &llmResp); err != nil {
-							log.Error(context.Background(), "流式结果解析 JSON 失败，无法存入缓存", zap.Error(err))
-							return
-						}
-						// 修复：将字面量 \n 转换为实际换行符，避免前端显示异常
-						llmResp.LyricsTranslation = strings.ReplaceAll(llmResp.LyricsTranslation, "\\n", "\n")
-
-						// 保存搜索到的结果
-						newInsight := &model.TrackInsight{
-							TrackID: lookup.TrackID,
-							Artist:  artist,
-							Album:   album,
-							Track:   track,
-							// LyricsOriginal:    lyrics, // 移除
-							LyricsTranslation: llmResp.LyricsTranslation,
-							AnalysisBySection: llmResp.AnalysisBySection,
-							AnalysisSummary:   llmResp.AnalysisSummary,
-							BackgroundInfo:    llmResp.BackgroundInfo,
-							EraContext:        llmResp.EraContext,
-							LLMProvider:       llmResp.LLMProvider,
-							LangSource:        llmReq.LangSource,
-							LangTarget:        llmReq.LangTarget,
-							LastUsedAt:        time.Now(),
-						}
-
-						// 检查是否已存在记录，存在则更新
-						if existing, eErr := model.GetTrackInsightByLookup(context.Background(), lookup); eErr == nil {
-							newInsight.ID = existing.ID
-							_ = model.UpdateTrackInsight(context.Background(), newInsight)
-						} else {
-							_ = model.CreateTrackInsight(context.Background(), newInsight)
-						}
-					}(fullContent.String())
+	telemetry.GoSafe(
+		ctx, "insight.stream.forward_result", func(asyncCtx context.Context) {
+			defer close(out)
+			var fullContent strings.Builder
+			for {
+				select {
+				case <-asyncCtx.Done():
 					return
-				}
-				out <- chunk
-				fullContent.WriteString(chunk)
-			}
-		}
-	}()
+				case chunk, ok := <-ch:
+					if !ok {
+						// 流自然结束，执行存入数据库逻辑
+						content := fullContent.String()
+						telemetry.GoSafeDetached(
+							asyncCtx, "insight.stream.persist_result", func(persistCtx context.Context) {
+								if content == "" {
+									return
+								}
+								raw := ai.TrimCodeFence(content)
+								var llmResp ai.TrackAnalysisResult
+								if err := json.Unmarshal([]byte(raw), &llmResp); err != nil {
+									log.Error(persistCtx, "流式结果解析 JSON 失败，无法存入缓存", zap.Error(err))
+									return
+								}
+								// 修复：将字面量 \n 转换为实际换行符，避免前端显示异常
+								llmResp.LyricsTranslation = strings.ReplaceAll(llmResp.LyricsTranslation, "\\n", "\n")
 
+								// 保存搜索到的结果
+								newInsight := &model.TrackInsight{
+									TrackID: lookup.TrackID,
+									Artist:  artist,
+									Album:   album,
+									Track:   track,
+									// LyricsOriginal:    lyrics, // 移除
+									LyricsTranslation: llmResp.LyricsTranslation,
+									AnalysisBySection: llmResp.AnalysisBySection,
+									AnalysisSummary:   llmResp.AnalysisSummary,
+									BackgroundInfo:    llmResp.BackgroundInfo,
+									EraContext:        llmResp.EraContext,
+									LLMProvider:       llmResp.LLMProvider,
+									LangSource:        llmReq.LangSource,
+									LangTarget:        llmReq.LangTarget,
+									LastUsedAt:        time.Now(),
+								}
+
+								// 检查是否已存在记录，存在则更新
+								if existing, eErr := model.GetTrackInsightByLookup(persistCtx, lookup); eErr == nil {
+									newInsight.ID = existing.ID
+									_ = model.UpdateTrackInsight(persistCtx, newInsight)
+								} else {
+									_ = model.CreateTrackInsight(persistCtx, newInsight)
+								}
+								log.Info(
+									persistCtx,
+									"歌曲流式解析结果已落库",
+									zap.String("artist", artist),
+									zap.String("album", album),
+									zap.String("track", track),
+								)
+							},
+						)
+						return
+					}
+					out <- chunk
+					fullContent.WriteString(chunk)
+				}
+			}
+		},
+	)
+
+	log.Info(
+		ctx,
+		"歌曲流式解析开始输出",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+	)
 	return out, false, nil
 }
 
@@ -411,6 +762,12 @@ func (s *serviceImpl) RecordFeedback(
 	if err := model.CreateTrackInsightFeedback(ctx, feedback); err != nil {
 		return err
 	}
+	log.Info(
+		ctx,
+		"已记录歌曲解析反馈",
+		zap.Int64("insight_id", insightID),
+		zap.Int("score", score),
+	)
 
 	// 简单累加统计，避免每次都跑聚合
 	insight, err := getInsightByID(ctx, insightID)
@@ -439,9 +796,9 @@ func (s *serviceImpl) getOrFetchLyrics(
 	if trackObj != nil {
 		lookup.TrackID = trackObj.ID
 	}
-	lyrics, err := model.GetTrackLyricsByLookup(ctx, lookup)
-	if err == nil && lyrics.LyricsOriginal != "" {
-		return lyrics.LyricsOriginal, nil
+	lyricsRecord, err := model.GetTrackLyricsByLookup(ctx, lookup)
+	if err == nil && lyricsRecord.LyricsOriginal != "" {
+		return lyricsRecord.LyricsOriginal, nil
 	}
 
 	// 2. 如果没有，遍历 provider 获取
@@ -480,7 +837,7 @@ func (s *serviceImpl) getOrFetchLyrics(
 	// 3. 保存到歌词表
 	// 简单的语言检测逻辑（实际可换为库）
 	langCode := detectLanguage(lyricsText)
-	synced := strings.Contains(lyricsText, "[") && strings.Contains(lyricsText, "]")
+	synced := lyrics.IsSyncedLRC(lyricsText)
 
 	newLyrics := &model.TrackLyrics{
 		TrackID:        lookup.TrackID,
@@ -512,10 +869,10 @@ func detectLanguage(text string) string {
 }
 
 // GetAllInsights 分页获取所有解析记录
-func (s *serviceImpl) GetAllInsights(ctx context.Context, limit, offset int, keyword string) (
-	[]*model.TrackInsight, int64, error,
-) {
-	return model.GetAllTrackInsights(ctx, limit, offset, keyword)
+func (s *serviceImpl) GetAllInsights(
+	ctx context.Context, limit, offset int, keyword string, targetType common.AnalysisTargetType,
+) ([]*model.InsightListItem, int64, error) {
+	return model.GetAllInsightSummaries(ctx, targetType, limit, offset, keyword)
 }
 
 // GetInsightByID 按 ID 直接获取解析记录，避免上层回扫分页结果。
@@ -533,10 +890,80 @@ func (s *serviceImpl) ToggleInsightStatus(ctx context.Context, id int64) error {
 	return model.UpdateTrackInsight(ctx, insight)
 }
 
-// GetTrackCallLogs 获取某曲目的 LLM 调用流水
-func (s *serviceImpl) GetTrackCallLogs(ctx context.Context, artist, track string) ([]*model.LLMCallLog, error) {
-	trackInfo := artist + " - " + track
-	return model.GetLLMCallLogsByTrack(ctx, trackInfo, 50) // 获取最近50条
+// GetTrackCallLogs 获取某曲目的 LLM 调用流水。
+func (s *serviceImpl) GetTrackCallLogs(ctx context.Context, artist, album, track string) ([]*model.LLMCallLog, error) {
+	primaryLogs, err := model.GetLLMCallLogsByTrack(ctx, artist, album, track, 50)
+	if err != nil {
+		return nil, err
+	}
+
+	legacyLogs, err := model.GetLLMCallLogsByTrackInfo(
+		ctx,
+		common.AnalysisTargetTypeTrack,
+		artist+" - "+track,
+		50,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeCallLogs(50, primaryLogs, legacyLogs), nil
+}
+
+// GetAlbumCallLogs 获取某专辑的 LLM 调用流水。
+func (s *serviceImpl) GetAlbumCallLogs(ctx context.Context, albumID int64) ([]*model.LLMCallLog, error) {
+	primaryLogs, err := model.GetLLMCallLogsByAlbumID(ctx, albumID, 50)
+	if err != nil {
+		return nil, err
+	}
+
+	albumDetail, err := model.GetAlbumWithTracks(ctx, albumID)
+	if err != nil {
+		return nil, err
+	}
+
+	legacyLogs, err := model.GetLLMCallLogsByTrackInfo(
+		ctx,
+		common.AnalysisTargetTypeAlbum,
+		albumDetail.Artist+" - "+albumDetail.Name,
+		50,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeCallLogs(50, primaryLogs, legacyLogs), nil
+}
+
+func mergeCallLogs(limit int, groups ...[]*model.LLMCallLog) []*model.LLMCallLog {
+	seen := make(map[int64]struct{})
+	if limit <= 0 {
+		limit = 50
+	}
+	merged := make([]*model.LLMCallLog, 0, limit)
+
+	for _, group := range groups {
+		for _, logItem := range group {
+			if logItem == nil {
+				continue
+			}
+			if _, ok := seen[logItem.ID]; ok {
+				continue
+			}
+			seen[logItem.ID] = struct{}{}
+			merged = append(merged, logItem)
+		}
+	}
+
+	sort.Slice(
+		merged, func(i, j int) bool {
+			return merged[i].CreatedAt.After(merged[j].CreatedAt)
+		},
+	)
+	if len(merged) > limit {
+		merged = merged[:limit]
+	}
+	return merged
 }
 
 // DeleteInsight 删除解析记录
@@ -574,15 +1001,181 @@ func (s *serviceImpl) GetLyrics(
 
 	lyricsData, lookupErr := model.GetTrackLyricsByLookup(ctx, lookup)
 	if lookupErr == nil {
+		normalizedSynced := lyrics.IsSyncedLRC(lyricsData.LyricsOriginal)
+		if lyricsData.Synced != normalizedSynced {
+			lyricsData.Synced = normalizedSynced
+			if err := model.UpdateTrackLyrics(ctx, lyricsData); err != nil {
+				log.Warn(ctx, "修正歌词同步标记失败", zap.Error(err))
+			}
+		}
+		log.Info(
+			ctx,
+			"获取歌词完成",
+			zap.String("artist", artist),
+			zap.String("album", album),
+			zap.String("track", track),
+			zap.Bool("cache_hit", true),
+		)
 		return lyricsData, nil
 	}
 
+	log.Info(
+		ctx,
+		"获取歌词完成",
+		zap.String("artist", artist),
+		zap.String("album", album),
+		zap.String("track", track),
+		zap.Bool("cache_hit", false),
+	)
 	return &model.TrackLyrics{
 		TrackID:        lookup.TrackID,
 		Artist:         artist,
 		Album:          album,
 		Track:          track,
 		LyricsOriginal: lyricsText,
-		Synced:         strings.Contains(lyricsText, "[") && strings.Contains(lyricsText, "]"),
+		Synced:         lyrics.IsSyncedLRC(lyricsText),
 	}, nil
+}
+
+func (s *serviceImpl) buildAlbumTrackContexts(
+	ctx context.Context, detail *model.AlbumDetail,
+) ([]ai.AlbumTrackContext, []int64, int, error) {
+	tracksByID := make(map[int64]*model.Track, len(detail.Tracks))
+	for _, track := range detail.Tracks {
+		tracksByID[track.ID] = track
+	}
+
+	totalTracks := 0
+	trackContexts := make([]ai.AlbumTrackContext, 0, len(detail.TrackAlbums))
+	selectedInsightIDs := make([]int64, 0, len(detail.TrackAlbums))
+
+	for _, trackAlbum := range detail.TrackAlbums {
+		if trackAlbum.TrackID <= 0 {
+			continue
+		}
+		totalTracks++
+
+		trackObj := tracksByID[trackAlbum.TrackID]
+		title := trackAlbum.Track
+		artist := detail.Artist
+		albumName := detail.Name
+		if trackObj != nil {
+			if strings.TrimSpace(trackObj.Track) != "" {
+				title = trackObj.Track
+			}
+			if strings.TrimSpace(trackObj.Artist) != "" {
+				artist = trackObj.Artist
+			}
+			if strings.TrimSpace(trackObj.Album) != "" {
+				albumName = trackObj.Album
+			}
+		}
+
+		insights, err := model.GetTrackInsightsByLookup(
+			ctx,
+			model.TrackInsightLookup{
+				TrackID: trackAlbum.TrackID,
+				Artist:  artist,
+				Album:   albumName,
+				Track:   title,
+			},
+		)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		selectedInsight, totalScore, err := selectBestTrackInsight(ctx, insights)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if selectedInsight == nil {
+			continue
+		}
+
+		sections := make(map[string]string)
+		for key, value := range selectedInsight.AnalysisBySection {
+			if key == "appreciate_analysis" {
+				continue
+			}
+			if trimmed := truncatePromptText(value, 700); trimmed != "" {
+				sections[key] = trimmed
+			}
+		}
+
+		trackContexts = append(
+			trackContexts, ai.AlbumTrackContext{
+				TrackID:          trackAlbum.TrackID,
+				DiscNumber:       trackAlbum.DiscNumber,
+				TrackNumber:      trackAlbum.TrackNumber,
+				Title:            title,
+				InsightID:        selectedInsight.ID,
+				InsightScore:     totalScore,
+				AnalysisSummary:  truncatePromptText(selectedInsight.AnalysisSummary, 1000),
+				BackgroundInfo:   truncatePromptText(selectedInsight.BackgroundInfo, 700),
+				EraContext:       truncatePromptText(selectedInsight.EraContext, 700),
+				AnalysisSections: sections,
+			},
+		)
+		selectedInsightIDs = append(selectedInsightIDs, selectedInsight.ID)
+	}
+
+	return trackContexts, selectedInsightIDs, totalTracks, nil
+}
+
+func selectBestTrackInsight(
+	ctx context.Context, insights []*model.TrackInsight,
+) (*model.TrackInsight, int, error) {
+	if len(insights) == 0 {
+		return nil, 0, nil
+	}
+
+	ids := make([]int64, 0, len(insights))
+	for _, insight := range insights {
+		ids = append(ids, insight.ID)
+	}
+
+	scoreMap, err := model.GetInsightsTotalScores(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	selected := pickBestTrackInsightWithScores(insights, scoreMap)
+	if selected == nil {
+		return nil, 0, nil
+	}
+	return selected, scoreMap[selected.ID], nil
+}
+
+func pickBestTrackInsightWithScores(
+	insights []*model.TrackInsight, scoreMap map[int64]int,
+) *model.TrackInsight {
+	if len(insights) == 0 {
+		return nil
+	}
+
+	sort.SliceStable(
+		insights, func(i, j int) bool {
+			leftScore := scoreMap[insights[i].ID]
+			rightScore := scoreMap[insights[j].ID]
+			if leftScore != rightScore {
+				return leftScore > rightScore
+			}
+			return insights[i].CreatedAt.After(insights[j].CreatedAt)
+		},
+	)
+
+	return insights[0]
+}
+
+func truncatePromptText(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if text == "" || limit <= 0 {
+		return ""
+	}
+
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:limit])) + "..."
 }

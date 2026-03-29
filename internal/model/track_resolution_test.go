@@ -90,6 +90,9 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				total_discs INTEGER DEFAULT 1,
 				disc_infos TEXT,
 				sync_status INTEGER DEFAULT 0,
+				cover_art_url TEXT,
+				cover_art_mime TEXT,
+				cover_art_object_key TEXT,
 				created_at DATETIME,
 				updated_at DATETIME
 			)
@@ -310,6 +313,13 @@ func TestIncrementTrackPlayCountLowConfidenceOnlyIncrementsResolvedTrack(t *test
 	require.Equal(t, 5, track.PlayCount)
 	require.Equal(t, 2, track.Version)
 	require.Equal(t, "1997-05-21", track.ReleaseDate)
+
+	var changes []LibraryChangeLog
+	require.NoError(t, db.Order("id ASC").Find(&changes).Error)
+	require.Len(t, changes, 1)
+	require.Equal(t, LibraryEntityTrack, changes[0].EntityType)
+	require.Equal(t, int64(10), changes[0].EntityID)
+	require.Equal(t, LibraryOpUpsert, changes[0].Operation)
 }
 
 func TestIncrementTrackPlayCountHighConfidenceCreatesTrackAndAlbumLink(t *testing.T) {

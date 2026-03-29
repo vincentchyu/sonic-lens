@@ -40,6 +40,9 @@ func newTrackAlbumTestDB(t *testing.T, name string) *gorm.DB {
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				name TEXT NOT NULL,
 				artist TEXT NOT NULL,
+				cover_art_url TEXT,
+				cover_art_mime TEXT,
+				cover_art_object_key TEXT,
 				sync_status INTEGER DEFAULT 0
 			)
 		`,

@@ -96,17 +96,25 @@ func (r *RoonTrackInfoWrapper) GetDiscNumber() int8 {
 type RoonPlayerController struct{}
 
 func (r *RoonPlayerController) IsRunning(ctx context.Context) bool {
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerRoon, "is_running")
+	defer span.End()
+
 	// todo
-	playing, err := exec.GetMediaControlNowPlaying(ctx)
+	playing, err := exec.GetMediaControlNowPlaying(spanCtx)
 	if err != nil {
+		markPlayerSpanError(span, err)
 		return false
 	}
 	return playing.BundleIdentifier == exec.MRMediaNowPlayingAppRoon
 }
 
 func (r *RoonPlayerController) GetState(ctx context.Context) (string, error) {
-	playing, err := exec.GetMediaControlNowPlaying(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerRoon, "get_state")
+	defer span.End()
+
+	playing, err := exec.GetMediaControlNowPlaying(spanCtx)
 	if err != nil {
+		markPlayerSpanError(span, err)
 		return "", err
 	}
 	if playing.Playing {
@@ -116,8 +124,12 @@ func (r *RoonPlayerController) GetState(ctx context.Context) (string, error) {
 }
 
 func (r *RoonPlayerController) GetNowPlayingTrackInfo(ctx context.Context) common.PlayerInfoHandler {
-	playing, err := exec.GetMediaControlNowPlaying(ctx)
+	spanCtx, span := startPlayerControllerSpan(ctx, common.PlayerRoon, "get_now_playing")
+	defer span.End()
+
+	playing, err := exec.GetMediaControlNowPlaying(spanCtx)
 	if err != nil {
+		markPlayerSpanError(span, err)
 		return nil
 	}
 	return &RoonTrackInfoWrapper{playing, BaseWrapper{}}

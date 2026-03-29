@@ -2,23 +2,90 @@ package lyrics
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"net/http"
 
-	"github.com/vincentchyu/sonic-lens/core/musixmatch"
+	mxm "github.com/milindmadhukar/go-musixmatch"
+	"github.com/milindmadhukar/go-musixmatch/params"
+
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
-type MusixmatchProvider struct{}
+var (
+	client    = telemetry.WrapHTTPClient(http.DefaultClient)
+	mxmClient *mxm.Client
+)
 
-func NewMusixmatchProvider() *MusixmatchProvider {
-	return &MusixmatchProvider{}
+func InitMxmClient(apiKey string) {
+	mxmClient = mxm.New(apiKey, client)
 }
 
-func (p *MusixmatchProvider) GetName() string {
-	return "Musixmatch"
+// HasClient 用于判断 Musixmatch Client 是否已初始化
+func HasClient() bool {
+	return mxmClient != nil
 }
 
-func (p *MusixmatchProvider) GetLyrics(ctx context.Context, artist, album, track string) (string, error) {
-	if !musixmatch.HasClient() {
-		return "", nil // 或者返回一个特定的错误，表示客户端未初始化
+func SearchArtist(artist string) {
+	artists, err := mxmClient.SearchArtist(context.Background(), params.QueryArtist(artist))
+	if err != nil {
+		log.Fatal(err)
 	}
-	return musixmatch.GetLyrics(ctx, artist, track)
+
+	fmt.Println(artists)
+}
+
+// GetLyrics 获取指定艺术家与曲目的歌词文本
+// 这里简单封装 matcher.lyrics.get 接口，返回 lyrics_body 字段
+func GetLyrics(ctx context.Context, artist, track string) (string, error) {
+	if mxmClient == nil {
+		return "", fmt.Errorf("musixmatch client 未初始化")
+	}
+	lyrics, err := mxmClient.GetMatcherLyrics(
+		ctx,
+		params.QueryTrack(track),
+		params.QueryArtist(artist),
+	)
+	if err != nil {
+		return "", err
+	}
+	return lyrics.Body, nil
+}
+
+func GetMatcherLyrics(artist, track string) error {
+	lyrics, err := mxmClient.GetMatcherLyrics(
+		context.Background(), params.QueryTrack(track),
+		params.QueryArtist(artist),
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Println(lyrics)
+	return nil
+}
+
+type MxmProvider struct {
+	mxmClient *mxm.Client
+}
+
+func NewMxmProvider() *MxmProvider {
+	return &MxmProvider{
+		mxmClient,
+	}
+}
+
+func (p *MxmProvider) GetName() string {
+	return "LrcAPI"
+}
+
+func (p *MxmProvider) GetLyrics(ctx context.Context, artist, album, track string) (string, error) {
+	lyrics, err := p.mxmClient.GetMatcherLyrics(
+		ctx,
+		params.QueryTrack(track),
+		params.QueryArtist(artist),
+	)
+	if err != nil {
+		return "", err
+	}
+	return lyrics.Body, nil
 }
