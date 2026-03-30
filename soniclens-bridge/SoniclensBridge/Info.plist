@@ -16,8 +16,24 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.vincentchyu.soniclens-bridge.phone</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>soniclens</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_soniclens._tcp</string>
@@ -26,6 +42,8 @@
 	<string>用于发现并连接 SonicLens 服务端</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>用于将分享图片保存到系统照片</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 </dict>

@@ -26,6 +26,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
+	artistprofilelogic "github.com/vincentchyu/sonic-lens/internal/logic/artistprofile"
 	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
@@ -79,6 +80,7 @@ func setupRouter(name string) *gin.Engine {
 	r.StaticFile("/static/logo_all_black.svg", "./static/logo_all_black.svg")
 
 	artworkService := artworklogic.NewService()
+	artistProfileService := artistprofilelogic.NewService()
 	r.GET(
 		"/api/artwork/resolve", redisCache(10*time.Minute), func(c *gin.Context) {
 			albumID := parseInt64Query(c, "album_id")
@@ -284,7 +286,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取某张专辑已有的 AI 解析结果 (仅查询)
 	r.GET(
-		"/api/album-insight", redisCache(1*time.Minute), func(c *gin.Context) {
+		"/api/album-insight", func(c *gin.Context) {
 			if insightService == nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 专辑解析服务未初始化"})
 				return
@@ -461,12 +463,17 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 				return
 			}
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery(
+					"analysis_target_type", string(common.AnalysisTargetTypeTrack),
+				),
+			)
 
-			if err := insightService.ToggleInsightStatus(c.Request.Context(), insightID); err != nil {
+			if err := insightService.ToggleInsightStatus(c.Request.Context(), targetType, insightID); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "analysis_target_type": targetType})
 		},
 	)
 
@@ -483,9 +490,18 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 				return
 			}
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery(
+					"analysis_target_type", string(common.AnalysisTargetTypeTrack),
+				),
+			)
 
-			insight, err := insightService.GetInsightByID(c.Request.Context(), insightID)
+			insight, err := insightService.GetInsightDetail(c.Request.Context(), targetType, insightID)
 			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
+					return
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -506,12 +522,21 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 				return
 			}
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery(
+					"analysis_target_type", string(common.AnalysisTargetTypeTrack),
+				),
+			)
 
-			if err := insightService.DeleteInsight(c.Request.Context(), insightID); err != nil {
+			if err := insightService.DeleteInsight(c.Request.Context(), targetType, insightID); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
+					return
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "analysis_target_type": targetType})
 		},
 	)
 
@@ -530,8 +555,13 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 				return
 			}
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery(
+					"analysis_target_type", string(common.AnalysisTargetTypeTrack),
+				),
+			)
 
-			target, err := insightService.GetInsightByID(c.Request.Context(), insightID)
+			logs, err := insightService.GetInsightCallLogs(c.Request.Context(), targetType, insightID)
 			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
@@ -540,17 +570,7 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			if target == nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "解析记录不存在"})
-				return
-			}
-
-			logs, err := insightService.GetTrackCallLogs(c.Request.Context(), target.Artist, target.Album, target.Track)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"logs": logs})
+			c.JSON(http.StatusOK, gin.H{"logs": logs, "analysis_target_type": targetType})
 		},
 	)
 
@@ -791,6 +811,33 @@ func setupRouter(name string) *gin.Engine {
 			report, err := pendingAlbumService.DeepMaintainPendingAlbumWorkItem(c.Request.Context(), workItemID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "report": report})
+		},
+	)
+
+	r.POST(
+		"/api/pending-albums/work-items/:id/manual-maintenance", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+
+			var req pendingalbumlogic.ManualPendingAlbumInput
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "params error"})
+				return
+			}
+
+			report, err := pendingAlbumService.ManualMaintainPendingAlbumWorkItem(
+				c.Request.Context(),
+				workItemID,
+				req,
+			)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"status": "ok", "report": report})
@@ -1039,9 +1086,95 @@ func setupRouter(name string) *gin.Engine {
 			c.JSON(http.StatusOK, artists)
 		},
 	)
+
+	// 获取艺术家资料列表
+	r.GET(
+		"/api/artist-profiles", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+			result, err := artistProfileService.ListProfiles(ctx, limit, offset, c.Query("keyword"))
+			if err != nil {
+				log.Error(ctx, "获取艺术家资料列表失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取艺术家资料列表失败"})
+				return
+			}
+
+			c.JSON(http.StatusOK, result)
+		},
+	)
+
+	// 获取热门艺术家候选，用作资料源选择
+	r.GET(
+		"/api/artist-profiles/top-artists", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+			items, err := artistProfileService.ListTopArtistSources(ctx, limit)
+			if err != nil {
+				log.Error(ctx, "获取热门艺术家候选失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取热门艺术家候选失败"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"items": items})
+		},
+	)
+
+	// 上传艺术家头像并写入资料表
+	r.POST(
+		"/api/artist-profiles/avatar", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			var req struct {
+				ArtistName string `json:"artist_name"`
+				Data       string `json:"data"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+				return
+			}
+
+			profile, err := artistProfileService.UploadAvatar(ctx, req.ArtistName, req.Data)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if strings.Contains(err.Error(), "required") ||
+					strings.Contains(err.Error(), "invalid") ||
+					strings.Contains(err.Error(), "unsupported") ||
+					strings.Contains(err.Error(), "decode") {
+					status = http.StatusBadRequest
+				}
+				log.Error(
+					ctx,
+					"上传艺术家头像失败",
+					zap.String("artist_name", strings.TrimSpace(req.ArtistName)),
+					zap.Error(err),
+				)
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(
+				http.StatusOK,
+				gin.H{
+					"profile": artistprofilelogic.ListItem{
+						ID:                  profile.ID,
+						ArtistName:          profile.ArtistName,
+						NormalizedArtistKey: profile.NormalizedArtistKey,
+						AvatarURL:           profile.AvatarURL,
+						AvatarMime:          profile.AvatarMime,
+						AvatarObjectKey:     profile.AvatarObjectKey,
+						CreatedAt:           profile.CreatedAt.Format("2006-01-02 15:04:05"),
+						UpdatedAt:           profile.UpdatedAt.Format("2006-01-02 15:04:05"),
+					},
+				},
+			)
+		},
+	)
 	// 获取专辑详情（含歌曲列表）
 	r.GET(
-		"/api/albums/:id", redisCache(2*time.Minute), func(c *gin.Context) {
+		"/api/albums/:id", func(c *gin.Context) {
+			// "/api/albums/:id", redisCache(2*time.Minute), func(c *gin.Context) {
 			idStr := c.Param("id")
 			albumID, err := strconv.ParseInt(idStr, 10, 64)
 			if err != nil || albumID <= 0 {
@@ -1244,6 +1377,33 @@ func setupRouter(name string) *gin.Engine {
 			}
 
 			c.JSON(http.StatusOK, albums)
+		},
+	)
+
+	// 获取热门曲目数据（按播放次数）
+	r.GET(
+		"/api/dashboard/top-tracks", func(c *gin.Context) {
+			ctx := c.Request.Context()
+
+			daysStr := c.DefaultQuery("days", "30")
+			days, err := strconv.Atoi(daysStr)
+			if err != nil {
+				days = 30
+			}
+
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+			if limit > 50 {
+				limit = 50
+			}
+
+			tracks, err := trackService.GetTopTracksByPlayCount(ctx, days, limit)
+			if err != nil {
+				log.Error(ctx, "获取热门曲目失败", zap.Error(err), zap.Int("days", days), zap.Int("limit", limit))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get top tracks"})
+				return
+			}
+
+			c.JSON(http.StatusOK, tracks)
 		},
 	)
 
@@ -1632,7 +1792,7 @@ func sanitizeAlbumInsightsForClient(insights []*model.AlbumInsight, hideDebugDat
 type aiRouteService interface {
 	GetAvailableAIPlatforms() []ai.PlatformOption
 	GetPlatformModels(ctx context.Context, platform common.AIModelPlatform) ([]ai.ModelOption, error)
-	GetOrCreateInsight(
+	GetOrCreateTrackInsight(
 		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 		provider, model, legacyModelType string,
 	) ([]*model.TrackInsight, bool, error)
@@ -1643,6 +1803,11 @@ type aiRouteService interface {
 		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 		provider, model, legacyModelType string,
 	) (<-chan string, bool, error)
+	CreateInsightJob(
+		ctx context.Context, req insight.CreateInsightJobRequest,
+	) (*model.InsightJob, bool, error)
+	GetInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error)
+	UpdateInsightJobLiveActivityToken(ctx context.Context, jobID, token string) (*model.InsightJob, error)
 }
 
 // registerAIRoutes 注册 AI 模型目录与解析相关路由，便于复用和单测注入。
@@ -1686,7 +1851,114 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 		},
 	)
 
-	// 获取 / 生成某首歌的歌词解析结果
+	r.POST(
+		"/api/insight-jobs", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			var req struct {
+				TargetType     string `json:"target_type"`
+				Artist         string `json:"artist"`
+				Album          string `json:"album"`
+				Track          string `json:"track"`
+				TrackNumber    int8   `json:"track_number"`
+				DiscNumber     int8   `json:"disc_number"`
+				AlbumID        int64  `json:"album_id"`
+				Provider       string `json:"provider"`
+				Model          string `json:"model"`
+				ModelType      string `json:"modelType"`
+				ClientPlatform string `json:"client_platform"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+				return
+			}
+
+			job, existing, err := insightService.CreateInsightJob(
+				c.Request.Context(),
+				insight.CreateInsightJobRequest{
+					TargetType:      common.ParseAnalysisTargetType(req.TargetType),
+					Artist:          req.Artist,
+					Album:           req.Album,
+					Track:           req.Track,
+					TrackNumber:     req.TrackNumber,
+					DiscNumber:      req.DiscNumber,
+					AlbumID:         req.AlbumID,
+					Provider:        req.Provider,
+					Model:           req.Model,
+					LegacyModelType: req.ModelType,
+					ClientPlatform:  req.ClientPlatform,
+				},
+			)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if isAISelectionBadRequest(err) {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"job": job, "existing": existing})
+		},
+	)
+
+	r.GET(
+		"/api/insight-jobs/:id", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			job, err := insightService.GetInsightJob(c.Request.Context(), c.Param("id"))
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"job": job})
+		},
+	)
+
+	r.POST(
+		"/api/insight-jobs/:id/live-activity-token", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			var req struct {
+				Token string `json:"token"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+				return
+			}
+
+			job, err := insightService.UpdateInsightJobLiveActivityToken(c.Request.Context(), c.Param("id"), req.Token)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				if isAISelectionBadRequest(err) || strings.Contains(err.Error(), "不能为空") {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"job": job})
+		},
+	)
+
+	// 获取 / 生成某首歌的歌词解析结果 old
 	r.POST(
 		"/api/track-insight", func(c *gin.Context) {
 			if insightService == nil {
@@ -1714,7 +1986,7 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 			}
 
 			ctx := c.Request.Context()
-			insights, cached, err := insightService.GetOrCreateInsight(
+			insights, cached, err := insightService.GetOrCreateTrackInsight(
 				ctx, req.Artist, req.Album, req.Track, req.TrackNumber, req.DiscNumber, true, req.Provider, req.Model,
 				req.ModelType,
 			)
@@ -1743,7 +2015,7 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 		},
 	)
 
-	// 获取 / 生成某张专辑的聚合解析结果
+	// 获取 / 生成某张专辑的聚合解析结果  old
 	r.POST(
 		"/api/album-insight", func(c *gin.Context) {
 			if insightService == nil {
@@ -1797,7 +2069,7 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 		},
 	)
 
-	// 流式获取歌词解析结果 (SSE)
+	// 流式获取歌词解析结果 (SSE)  old
 	r.GET(
 		"/api/track-insight-stream", func(c *gin.Context) {
 			if insightService == nil {

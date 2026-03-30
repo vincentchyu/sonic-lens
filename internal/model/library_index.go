@@ -14,6 +14,7 @@ type AlbumIndexRow struct {
 	CoverArtURL       string    `json:"cover_art_url"`
 	CoverArtMime      string    `json:"cover_art_mime"`
 	CoverArtObjectKey string    `json:"cover_art_object_key"`
+	HasInsight        bool      `json:"has_insight"`
 	PlayCount         int       `json:"play_count"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
@@ -53,6 +54,12 @@ func GetAlbumIndexRows(ctx context.Context, since time.Time) ([]*AlbumIndexRow, 
 		Select(
 			`a.id, a.name, a.artist, a.release_date,
 a.cover_art_url, a.cover_art_mime, a.cover_art_object_key,
+EXISTS(
+    SELECT 1
+    FROM album_insight AS ai
+    WHERE ai.is_disabled = false
+      AND (ai.album_id = a.id OR ((ai.album_id = 0 OR ai.album_id IS NULL) AND ai.artist = a.artist AND ai.album = a.name))
+) AS has_insight,
 COALESCE(SUM(t.play_count), 0) AS play_count,
 a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at`,
 		).
@@ -82,6 +89,12 @@ func GetAlbumIndexRowsByIDs(ctx context.Context, ids []int64) ([]*AlbumIndexRow,
 		Select(
 			`a.id, a.name, a.artist, a.release_date,
 a.cover_art_url, a.cover_art_mime, a.cover_art_object_key,
+EXISTS(
+    SELECT 1
+    FROM album_insight AS ai
+    WHERE ai.is_disabled = false
+      AND (ai.album_id = a.id OR ((ai.album_id = 0 OR ai.album_id IS NULL) AND ai.artist = a.artist AND ai.album = a.name))
+) AS has_insight,
 COALESCE(SUM(t.play_count), 0) AS play_count,
 a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at`,
 		).

@@ -23,11 +23,19 @@ struct TopArtist: Codable, Identifiable {
     let artist: String
     let playCount: Int?
     let trackCount: Int?
+    let rank: Int?
+    let avatarURL: String?
+    let avatarMime: String?
+    let avatarObjectKey: String?
 
     enum CodingKeys: String, CodingKey {
         case artist
         case playCount = "play_count"
         case trackCount = "track_count"
+        case rank
+        case avatarURL = "avatar_url"
+        case avatarMime = "avatar_mime"
+        case avatarObjectKey = "avatar_object_key"
     }
 }
 
@@ -36,6 +44,9 @@ struct TopAlbum: Codable, Identifiable {
     let album: String
     let artist: String
     let playCount: Int
+    let coverArtURL: String?
+    let coverArtMime: String?
+    let coverArtObjectKey: String?
 
     var id: Int64 { albumID }
 
@@ -44,6 +55,48 @@ struct TopAlbum: Codable, Identifiable {
         case album
         case artist
         case playCount = "play_count"
+        case coverArtURL = "cover_art_url"
+        case coverArtMime = "cover_art_mime"
+        case coverArtObjectKey = "cover_art_object_key"
+    }
+}
+
+struct TopTrack: Codable, Identifiable, Hashable {
+    let trackID: Int64
+    let track: String
+    let album: String
+    let artist: String
+    let playCount: Int
+    let rank: Int
+    let coverArtURL: String?
+    let coverArtMime: String?
+    let coverArtObjectKey: String?
+
+    var id: String { "\(trackID)-\(artist)-\(album)-\(track)" }
+
+    enum CodingKeys: String, CodingKey {
+        case trackID = "track_id"
+        case track
+        case album
+        case artist
+        case playCount = "play_count"
+        case rank
+        case coverArtURL = "cover_art_url"
+        case coverArtMime = "cover_art_mime"
+        case coverArtObjectKey = "cover_art_object_key"
+    }
+
+    var bridgeTrack: Track {
+        Track(
+            id: trackID,
+            artist: artist,
+            album: album,
+            track: track,
+            playCount: playCount,
+            trackNumber: nil,
+            discNumber: nil,
+            duration: nil
+        )
     }
 }
 
@@ -52,6 +105,7 @@ struct TopGenre: Codable, Identifiable {
     let trackGenreCount: Int64
     let genreNameZh: String
     let genreCount: Int64
+    let rank: Int?
 
     var id: String { trackGenreName }
 
@@ -60,6 +114,7 @@ struct TopGenre: Codable, Identifiable {
         case trackGenreCount = "track_genre_count"
         case genreNameZh = "genre_name_zh"
         case genreCount = "genre_count"
+        case rank
     }
 }
 

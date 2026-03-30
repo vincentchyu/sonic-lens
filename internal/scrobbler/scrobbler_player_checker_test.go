@@ -2,11 +2,16 @@ package scrobbler
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/common"
@@ -52,13 +57,17 @@ func (s *stubTrackService) HandleTrackPlaybackThreshold(
 }
 
 type stubPlayerController struct {
-	running  bool
-	state    string
-	favorite bool
+	running       bool
+	state         string
+	favorite      bool
+	favoriteCalls int
 }
 
-func (s *stubPlayerController) IsRunning(ctx context.Context) bool           { return s.running }
-func (s *stubPlayerController) IsFavorite(ctx context.Context) bool          { return s.favorite }
+func (s *stubPlayerController) IsRunning(ctx context.Context) bool { return s.running }
+func (s *stubPlayerController) IsFavorite(ctx context.Context) bool {
+	s.favoriteCalls++
+	return s.favorite
+}
 func (s *stubPlayerController) GetState(ctx context.Context) (string, error) { return s.state, nil }
 func (s *stubPlayerController) GetNowPlayingTrackInfo(ctx context.Context) common.PlayerInfoHandler {
 	return nil
@@ -247,6 +256,72 @@ func TestProcessPlayingTrackRetriesArtworkAfterFailure(t *testing.T) {
 	require.True(t, checker.currentArtResolved)
 }
 
+func TestProcessPlayingTrackCachesControllerFavoriteWithinTTL(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying, favorite: true}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	info := &stubPlayerInfo{
+		title:       "Track",
+		album:       "Album",
+		artist:      "Artist",
+		position:    10,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+	checker.processPlayingTrack(context.Background(), info)
+	require.Equal(t, 1, controller.favoriteCalls)
+
+	checker.controllerFavoriteCheckedAt = time.Now().Add(-controllerFavoriteRefreshInterval - time.Second)
+	checker.processPlayingTrack(context.Background(), info)
+	require.Equal(t, 2, controller.favoriteCalls)
+}
+
+func TestProcessPlayingTrackPassesTrackTraceContextToThresholdInput(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		thresholdResult: tracklogic.PlaybackThresholdResult{Scrobbled: true},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying, favorite: true}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	info := &stubPlayerInfo{
+		title:       "Track Trace",
+		album:       "Album",
+		artist:      "Artist",
+		position:    70,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+
+	require.NotEmpty(t, service.lastThreshold.TraceID)
+	require.NotEmpty(t, service.lastThreshold.RootSpanID)
+	require.Equal(t, checker.currentTrackSpan.SpanContext().TraceID().String(), service.lastThreshold.TraceID)
+	require.Equal(t, checker.currentTrackSpan.SpanContext().SpanID().String(), service.lastThreshold.RootSpanID)
+	require.Equal(t, checker.currentTrackSpan.SpanContext().IsSampled(), service.lastThreshold.TraceSampled)
+}
+
 func TestHandleStopEventClearsAtomicPlayingWhenNoOtherPlayer(t *testing.T) {
 	corelog.Logger = zap.NewNop()
 
@@ -261,4 +336,278 @@ func TestHandleStopEventClearsAtomicPlayingWhenNoOtherPlayer(t *testing.T) {
 	checker.handleStopEvent(context.Background())
 
 	require.False(t, playing.Load())
+}
+
+func TestProcessPlayingTrackAddsThresholdSpanAndEvent(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		thresholdResult: tracklogic.PlaybackThresholdResult{Scrobbled: true},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	info := &stubPlayerInfo{
+		title:       "Threshold Track",
+		album:       "Album",
+		artist:      "Artist",
+		position:    70,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+	checker.handleStopEvent(context.Background())
+
+	spans := waitForCheckerEndedSpans(t, recorder, 4)
+	require.Contains(t, spanNamesWithoutTrackPlayback(spans), "player.handle_playback_threshold")
+	rootSpan := findSpanByNameAndTrackTitle(
+		t, spans, string(common.PlayerAppleMusic)+"_TrackPlayback", "Threshold Track",
+	)
+	require.Contains(t, spanEventNames(rootSpan), "scrobble_threshold_reached")
+}
+
+func TestProcessPlayingTrackAddsFavoriteSpanOnlyWhenFavoriteChanges(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	info := &stubPlayerInfo{
+		title:       "Track Favorite",
+		album:       "Album",
+		artist:      "Artist",
+		position:    10,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+	checker.processPlayingTrack(context.Background(), info)
+
+	service.probeResult.TrackFavoriteProjection = tracklogic.TrackFavoriteProjection{
+		AppleMusic:      true,
+		AppleMusicState: common.TrackFavoriteStateFavorited,
+		FavoriteState:   common.TrackFavoriteStateFavorited,
+	}
+	checker.processPlayingTrack(context.Background(), info)
+	checker.handleStopEvent(context.Background())
+
+	spans := waitForCheckerEndedSpans(t, recorder, 4)
+	require.Equal(
+		t,
+		[]string{
+			"player.resolve_now_playing",
+			"player.sync_favorite_state",
+			"player.sync_favorite_state",
+		},
+		spanNamesWithoutTrackPlayback(spans),
+	)
+	rootSpan := findSpanByNameAndTrackTitle(
+		t, spans, string(common.PlayerAppleMusic)+"_TrackPlayback", "Track Favorite",
+	)
+	require.Equal(
+		t,
+		[]string{"track_started", "favorite_state_changed", "player_stopped"},
+		spanEventNames(rootSpan),
+	)
+}
+
+func TestProcessPlayingTrackCreatesTrackPlaybackSpanBySession(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	firstTrack := &stubPlayerInfo{
+		title:       "Track A",
+		album:       "Album",
+		artist:      "Artist",
+		position:    10,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+	secondTrack := &stubPlayerInfo{
+		title:       "Track B",
+		album:       "Album",
+		artist:      "Artist",
+		position:    12,
+		duration:    100,
+		trackNumber: 2,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), firstTrack)
+	firstSpan := checker.currentTrackSpan
+	require.NotNil(t, firstSpan)
+
+	checker.processPlayingTrack(context.Background(), firstTrack)
+	require.Same(t, firstSpan, checker.currentTrackSpan)
+
+	checker.processPlayingTrack(context.Background(), secondTrack)
+	spans := waitForCheckerEndedSpans(t, recorder, 5)
+	require.GreaterOrEqual(t, len(spans), 5)
+	rootSpan := findSpanByNameAndTrackTitle(
+		t, spans, string(common.PlayerAppleMusic)+"_TrackPlayback", "Track A",
+	)
+	require.NotNil(t, rootSpan)
+	require.Equal(t, map[string]string{
+		"player.source":             string(common.PlayerAppleMusic),
+		"track.title":               "Track A",
+		"track.artist":              "Artist",
+		"track.album":               "Album",
+		"track.album_artist":        "Artist",
+		"track.metadata_confidence": "medium",
+	}, spanStringAttributes(rootSpan))
+	require.Equal(t, map[string]int64{
+		"track.track_number": 1,
+		"track.disc_number":  1,
+		"track.duration_sec": 100,
+	}, spanInt64Attributes(rootSpan))
+	require.ElementsMatch(
+		t,
+		[]string{
+			"player.resolve_now_playing",
+			"player.sync_favorite_state",
+			"player.resolve_now_playing",
+			"player.sync_favorite_state",
+		},
+		spanNamesWithoutTrackPlayback(spans),
+	)
+	require.Equal(t, []string{"track_started"}, spanEventNames(rootSpan))
+	require.Equal(t, "Track B", checker.previousTrack)
+	require.NotSame(t, firstSpan, checker.currentTrackSpan)
+
+	checker.handleStopEvent(context.Background())
+	spans = waitForCheckerEndedSpans(t, recorder, 6)
+	require.GreaterOrEqual(t, len(spans), 6)
+	require.Nil(t, checker.currentTrackSpan)
+	require.Nil(t, checker.currentTrackCtx)
+
+	checker.processPlayingTrack(context.Background(), secondTrack)
+	spans = waitForCheckerEndedSpans(t, recorder, 8)
+	require.GreaterOrEqual(t, len(spans), 8)
+	stoppedRootSpan := findSpanByNameAndTrackTitle(
+		t, spans, string(common.PlayerAppleMusic)+"_TrackPlayback", "Track B",
+	)
+	require.NotNil(t, stoppedRootSpan)
+	require.Contains(t, spanEventNames(stoppedRootSpan), "player_stopped")
+	require.NotNil(t, checker.currentTrackSpan)
+	require.Equal(t, "Track B", checker.currentTrackSpanKey)
+	require.Equal(t, 3, service.nowPlayingCalls)
+}
+
+func waitForCheckerEndedSpans(
+	t *testing.T,
+	recorder *tracetest.SpanRecorder,
+	want int,
+) []sdktrace.ReadOnlySpan {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		spans := recorder.Ended()
+		if len(spans) >= want {
+			return spans
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for %d ended spans", want)
+	return nil
+}
+
+func findSpanByNameAndTrackTitle(
+	t *testing.T,
+	spans []sdktrace.ReadOnlySpan,
+	name string,
+	trackTitle string,
+) sdktrace.ReadOnlySpan {
+	t.Helper()
+
+	for _, span := range spans {
+		if span.Name() != name {
+			continue
+		}
+		if spanStringAttributes(span)["track.title"] == trackTitle {
+			return span
+		}
+	}
+	t.Fatalf("span %s with track.title=%s not found", name, trackTitle)
+	return nil
+}
+
+func spanNamesWithoutTrackPlayback(spans []sdktrace.ReadOnlySpan) []string {
+	names := make([]string, 0, len(spans))
+	for _, span := range spans {
+		if strings.HasSuffix(span.Name(), "_TrackPlayback") {
+			continue
+		}
+		names = append(names, span.Name())
+	}
+	return names
+}
+
+func spanEventNames(span sdktrace.ReadOnlySpan) []string {
+	events := span.Events()
+	names := make([]string, 0, len(events))
+	for _, event := range events {
+		names = append(names, event.Name)
+	}
+	return names
+}
+
+func spanStringAttributes(span sdktrace.ReadOnlySpan) map[string]string {
+	attrs := make(map[string]string)
+	for _, attr := range span.Attributes() {
+		switch string(attr.Key) {
+		case "player.source", "track.title", "track.artist", "track.album", "track.album_artist",
+			"track.metadata_confidence":
+			attrs[string(attr.Key)] = attr.Value.AsString()
+		}
+	}
+	return attrs
+}
+
+func spanInt64Attributes(span sdktrace.ReadOnlySpan) map[string]int64 {
+	attrs := make(map[string]int64)
+	for _, attr := range span.Attributes() {
+		switch string(attr.Key) {
+		case "track.track_number", "track.disc_number", "track.duration_sec":
+			attrs[string(attr.Key)] = attr.Value.AsInt64()
+		}
+	}
+	return attrs
 }

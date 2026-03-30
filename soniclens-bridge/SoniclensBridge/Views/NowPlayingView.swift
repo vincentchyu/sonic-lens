@@ -1,5 +1,8 @@
 import SwiftUI
 import NukeUI
+#if os(iOS)
+import UIKit
+#endif
 
 enum MacNowPlayingTab: String, CaseIterable {
     case lyrics = "歌词"
@@ -8,6 +11,7 @@ enum MacNowPlayingTab: String, CaseIterable {
 
 struct NowPlayingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = PlayerViewModel()
@@ -36,6 +40,7 @@ struct NowPlayingView: View {
                     favoriteStatus: favoriteStatus,
                     lyricsFollowMode: $lyricsFollowMode,
                     selectedTab: $selectedTab,
+                    statusBannerText: viewModel.playbackState.bannerText,
                     onFavorite: {
                         guard favoriteStatus.allowsFavoriteAction else { return }
                         Task {
@@ -93,14 +98,14 @@ struct NowPlayingView: View {
         .onChange(of: trackIdentity) { _, _ in
             Task { await refreshNowPlaying(forcePaletteRefresh: true) }
         }
-        .onChange(of: store.nowPlaying?.artwork) { _, artwork in
+        .onChange(of: playbackStore.nowPlaying?.artwork) { _, artwork in
             Task { await updatePalette(for: artwork) }
         }
-        .onChange(of: store.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
+        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
+            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
         }
-        .onChange(of: store.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: store.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
+            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
         }
         .onDisappear {
             viewModel.stopProgress()
@@ -113,7 +118,7 @@ struct NowPlayingView: View {
     }
 
     private var currentNowPlaying: NowPlaying {
-        store.nowPlaying ?? nowPlaying
+        playbackStore.nowPlaying ?? nowPlaying
     }
 
     private var trackIdentity: String {
@@ -198,14 +203,21 @@ struct NowPlayingTopBar: View {
     let favoriteStatus: NowPlayingFavoriteStatus
     @Binding var lyricsFollowMode: Bool
     @Binding var selectedTab: MacNowPlayingTab
+    let statusBannerText: String?
     let onFavorite: () -> Void
     let onClose: () -> Void
 
     var body: some View {
         HStack {
-            Text("正在播放")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                Text("正在播放")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                if let statusBannerText {
+                    PlaybackStatusBanner(text: statusBannerText)
+                }
+            }
 
             Spacer()
             HStack(spacing: 10) {
@@ -761,6 +773,8 @@ struct NowPlayingLiquidBackground: View {
     let isWindowFullscreen: Bool
 
     var body: some View {
+        let simplified = performanceModeEnabled || automaticallySimplified
+
         GeometryReader { geo in
             ZStack {
                 LinearGradient(
@@ -769,25 +783,34 @@ struct NowPlayingLiquidBackground: View {
                     endPoint: .bottomTrailing
                 )
 
-                if !performanceModeEnabled {
+                if !simplified {
                     liquidBlob(
                         color: palette.blobA.opacity(isWindowFullscreen ? 0.45 : 0.55),
-                        size: max(geo.size.width * (isWindowFullscreen ? 0.50 : 0.54), 320),
+                        size: max(geo.size.width * (isWindowFullscreen ? 0.46 : 0.50), 300),
                         offsetFrom: CGSize(width: -geo.size.width * 0.20, height: -geo.size.height * 0.18),
                         offsetTo: CGSize(width: -geo.size.width * 0.10, height: -geo.size.height * 0.08),
                         duration: isWindowFullscreen ? 28 : 22,
-                        blurRadius: isWindowFullscreen ? 42 : 54
+                        blurRadius: isWindowFullscreen ? 34 : 42
                     )
                     if !isWindowFullscreen {
                         liquidBlob(
                             color: palette.blobB.opacity(0.48),
-                            size: max(geo.size.width * 0.46, 300),
+                            size: max(geo.size.width * 0.40, 260),
                             offsetFrom: CGSize(width: geo.size.width * 0.34, height: geo.size.height * 0.24),
                             offsetTo: CGSize(width: geo.size.width * 0.18, height: geo.size.height * 0.30),
                             duration: 26,
-                            blurRadius: 54
+                            blurRadius: 40
                         )
                     }
+                } else {
+                    liquidBlob(
+                        color: palette.blobA.opacity(0.28),
+                        size: max(geo.size.width * 0.38, 220),
+                        offsetFrom: CGSize(width: -geo.size.width * 0.16, height: -geo.size.height * 0.12),
+                        offsetTo: CGSize(width: -geo.size.width * 0.10, height: -geo.size.height * 0.06),
+                        duration: 18,
+                        blurRadius: 24
+                    )
                 }
 
                 LinearGradient(
@@ -797,6 +820,14 @@ struct NowPlayingLiquidBackground: View {
                 )
             }
         }
+    }
+
+    private var automaticallySimplified: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
     }
 
     @ViewBuilder
@@ -850,25 +881,54 @@ struct LiquidPalette {
     }
 }
 
-enum ArtworkPaletteExtractor {
-    private static var cache: [String: LiquidPalette] = [:]
+actor ArtworkPaletteStore {
+    static let shared = ArtworkPaletteStore()
 
-    static func palette(for artworkURL: String) async -> LiquidPalette? {
+    private var cache: [String: LiquidPalette] = [:]
+    private var inFlight: [String: Task<LiquidPalette?, Never>] = [:]
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.requestCachePolicy = .returnCacheDataElseLoad
+        config.urlCache = URLCache.shared
+        config.timeoutIntervalForRequest = 5
+        config.timeoutIntervalForResource = 8
+        return URLSession(configuration: config)
+    }()
+
+    func palette(for artworkURL: String) async -> LiquidPalette? {
         if let cached = cache[artworkURL] {
             return cached
         }
 
-        guard let url = URL(string: artworkURL) else { return nil }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = PlatformImage(data: data), let average = image.averageSRGBColor() else {
+        if let running = inFlight[artworkURL] {
+            return await running.value
+        }
+
+        let task = Task<LiquidPalette?, Never> { [session] in
+            guard let url = URL(string: artworkURL) else { return nil }
+            do {
+                let (data, _) = try await session.data(from: url)
+                guard let image = PlatformImage(data: data), let average = image.averageSRGBColor() else {
+                    return nil
+                }
+                return LiquidPalette.from(averageColor: average)
+            } catch {
                 return nil
             }
-            let extracted = LiquidPalette.from(averageColor: average)
-            cache[artworkURL] = extracted
-            return extracted
-        } catch {
-            return nil
         }
+        inFlight[artworkURL] = task
+
+        let resolved = await task.value
+        inFlight.removeValue(forKey: artworkURL)
+        if let resolved {
+            cache[artworkURL] = resolved
+        }
+        return resolved
+    }
+}
+
+enum ArtworkPaletteExtractor {
+    static func palette(for artworkURL: String) async -> LiquidPalette? {
+        await ArtworkPaletteStore.shared.palette(for: artworkURL)
     }
 }

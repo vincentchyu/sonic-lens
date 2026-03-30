@@ -18,11 +18,22 @@ struct ConnectionView: View {
                     ContentHeader(title: "连接 音眸轨迹")
 
                     ConnectionStatusView(status: store.connectionStatus)
+                    if store.connectionStatus.phase.isInFlight {
+                        HStack {
+                            Button("取消连接") {
+                                store.cancelConnection()
+                            }
+                            .buttonStyle(.bordered)
+                            Spacer()
+                        }
+                        .padding(.top, -12)
+                    }
 
                     if !store.recentServers.isEmpty {
                         GroupBox("最近连接") {
                             VStack(alignment: .leading, spacing: 8) {
                                 ForEach(store.recentServers) { server in
+                                    let isConnecting = store.isConnecting(to: server)
                                     Button(action: {
                                         logger.info("点击最近连接服务端 \(server.displayName, privacy: .public)")
                                         Task { await store.connect(server) }
@@ -31,11 +42,20 @@ struct ConnectionView: View {
                                             Text(server.displayName)
                                                 .font(.subheadline)
                                             Spacer()
-                                            Image(systemName: "chevron.right")
-                                                .foregroundColor(.secondary)
+                                            if isConnecting {
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                                Text(store.connectionStatus.phase.inlineStatusTitle)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            } else {
+                                                Image(systemName: "chevron.right")
+                                                    .foregroundColor(.secondary)
+                                            }
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .disabled(store.isConnecting && !isConnecting)
                                 }
                             }
                             .padding(.top, 6)
@@ -66,18 +86,32 @@ struct ConnectionView: View {
                                     .foregroundColor(.secondary)
                             } else {
                                 ForEach(discovery.candidates) { candidate in
+                                    let server = candidate.toConfig()
+                                    let isConnecting = store.isConnecting(to: server)
                                     Button(action: {
                                         logger.info("点击自动发现服务端 \(candidate.name, privacy: .public)")
-                                        Task { await store.connect(candidate.toConfig()) }
+                                        Task { await store.connect(server) }
                                     }) {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(candidate.name)
-                                            Text("\(candidate.host):\(candidate.port)")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
+                                        HStack(alignment: .center, spacing: 12) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(candidate.name)
+                                                Text(candidate.detailText)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(2)
+                                            }
+                                            Spacer()
+                                            if isConnecting {
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                                Text(store.connectionStatus.phase.inlineStatusTitle)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .disabled(store.isConnecting && !isConnecting)
                                 }
                             }
 
@@ -116,6 +150,7 @@ struct ConnectionView: View {
                                 Task { await store.connect(server) }
                             }
                             .buttonStyle(.borderedProminent)
+                            .disabled(store.isConnecting || manualHost.isEmpty || Int(manualPort) == nil)
                         }
                         .padding(.top, 6)
                     }
@@ -144,39 +179,40 @@ struct ConnectionStatusView: View {
     let status: ConnectionStatus
 
     var body: some View {
-        HStack {
-            Text(statusText)
-                .font(.subheadline)
-                .foregroundColor(statusColor)
-            Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if status.phase.isInFlight {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(status.message)
+                    .font(.subheadline)
+                    .foregroundColor(statusColor)
+                Spacer()
+            }
+            if let detail = status.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(status.phase.isInFlight ? 2 : 1)
+            }
         }
         .padding(10)
         .background(Color.gray.opacity(0.12))
         .cornerRadius(10)
     }
 
-    private var statusText: String {
-        switch status {
-        case .disconnected:
-            return "未连接"
-        case .connecting:
-            return "连接中..."
-        case .connected:
-            return "已连接"
-        case .failed(let message):
-            return "连接失败：\(message)"
-        }
-    }
-
     private var statusColor: Color {
-        switch status {
+        switch status.phase {
         case .connected:
             return .green
-        case .connecting:
+        case .resolving, .healthCheck, .establishingRealtime:
             return .orange
         case .failed:
             return .red
-        case .disconnected:
+        case .cancelled:
+            return .secondary
+        case .idle:
             return .secondary
         }
     }

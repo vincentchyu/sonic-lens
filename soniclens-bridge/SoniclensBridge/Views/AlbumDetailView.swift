@@ -8,6 +8,8 @@ func albumDetailDestination(albumID: Int64, selectedTab: AlbumDetailTab = .info)
 
 struct AlbumDetailView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(FavoriteStore.self) private var favoriteStore
+    @EnvironmentObject private var insightCoordinator: InsightAnalysisCoordinator
     @StateObject private var viewModel: AlbumDetailViewModel
 
     let albumID: Int64
@@ -78,8 +80,14 @@ struct AlbumDetailView: View {
         }
         .task(id: albumID) {
             if let server = store.currentServer {
-                await viewModel.load(using: server, albumID: albumID, favoriteKeys: store.favoriteKeys)
+                await viewModel.load(using: server, albumID: albumID, favoriteKeys: favoriteStore.favoriteKeys)
+                await viewModel.syncInsightJob(insightCoordinator.activeJob, using: server, albumID: albumID, forceRefresh: true)
+                await insightCoordinator.reconcileIfNeeded(using: server)
             }
+        }
+        .task(id: insightJobTaskToken) {
+            guard let server = store.currentServer else { return }
+            await viewModel.syncInsightJob(matchingInsightJob, using: server, albumID: albumID)
         }
         .onChange(of: viewModel.selectedAIPlatform) { _, newValue in
             guard viewModel.isModelPickerPresented, let server = store.currentServer, !newValue.isEmpty else { return }
@@ -221,8 +229,24 @@ struct AlbumDetailView: View {
         guard let server = store.currentServer else { return }
         selectedTab = .insights
         Task {
-            await viewModel.confirmAlbumInsightGeneration(using: server, albumID: albumID)
+            await viewModel.confirmAlbumInsightGeneration(
+                using: server,
+                coordinator: insightCoordinator,
+                albumID: albumID
+            )
         }
+    }
+
+    private var matchingInsightJob: InsightAnalysisJob? {
+        guard let activeJob = insightCoordinator.activeJob, activeJob.matches(albumID: albumID) else {
+            return nil
+        }
+        return activeJob
+    }
+
+    private var insightJobTaskToken: String {
+        guard let job = matchingInsightJob else { return "none" }
+        return "\(job.id)::\(job.phase.rawValue)::\(job.updatedAt ?? "")"
     }
 
     private func openSharePreview(scene: ShareScene) {
@@ -500,7 +524,7 @@ private struct AlbumDetailTabContainer: View {
     }
 }
 
-enum AlbumDetailTab {
+enum AlbumDetailTab: String, Hashable {
     case info
     case insights
 }
@@ -549,6 +573,116 @@ private struct AlbumDetailContentView: View {
     }
 }
 
+struct AlbumInsightPrimaryContentView: View {
+    let insight: AlbumInsight?
+    let compact: Bool
+    var emptyTitle: String = "暂无专辑音眸"
+    var emptySubtitle: String = "当前专辑还没有可展示的音眸内容。"
+
+    var body: some View {
+        Group {
+            if let insight, insight.hasDisplayContent {
+                AlbumInsightRichContentView(insight: insight, compact: compact)
+            } else {
+                DetailSectionCard(title: "内容状态", compact: compact) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(emptyTitle)
+                            .font(compact ? .subheadline.weight(.semibold) : .headline.weight(.semibold))
+                        Text(emptySubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+}
+
+private struct AlbumInsightRichContentView: View {
+    let insight: AlbumInsight
+    let compact: Bool
+
+    private var extraSectionBlocks: [InsightSectionBlock] {
+        insight.analysisBySection.values.keys
+            .filter { !AlbumInsightSectionCatalog.orderedKeys.contains($0) }
+            .sorted()
+            .compactMap { key in
+                guard let value = insight.analysisBySection.values[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !value.isEmpty else {
+                    return nil
+                }
+                return InsightSectionBlock(id: key, title: AlbumInsightSectionCatalog.titleMap[key] ?? key, content: value)
+            }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 14 : 18) {
+            if let providerLine = insight.providerLine {
+                Text(providerLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let summary = trimmed(insight.analysisSummary) {
+                AlbumInsightTextSectionCard(
+                    title: "专辑总评",
+                    text: summary,
+                    compact: compact
+                )
+            }
+
+            DetailSectionCard(title: "音眸分析", compact: compact) {
+                VStack(alignment: .leading, spacing: compact ? 10 : 12) {
+                    ForEach(AlbumInsightSectionCatalog.orderedKeys, id: \.self) { key in
+                        AlbumInsightSectionCard(
+                            title: AlbumInsightSectionCatalog.titleMap[key] ?? key,
+                            text: insight.analysisBySection.values[key],
+                            compact: compact
+                        )
+                    }
+                }
+            }
+
+            if !extraSectionBlocks.isEmpty {
+                DetailSectionCard(title: "扩展分区", compact: compact) {
+                    VStack(alignment: .leading, spacing: compact ? 10 : 12) {
+                        ForEach(extraSectionBlocks) { block in
+                            AlbumInsightSectionCard(
+                                title: block.title,
+                                text: block.content,
+                                compact: compact
+                            )
+                        }
+                    }
+                }
+            }
+
+            if let backgroundInfo = trimmed(insight.backgroundInfo) {
+                AlbumInsightTextSectionCard(
+                    title: "背景信息",
+                    text: backgroundInfo,
+                    compact: compact
+                )
+            }
+
+            if let eraContext = trimmed(insight.eraContext) {
+                AlbumInsightTextSectionCard(
+                    title: "时代语境",
+                    text: eraContext,
+                    compact: compact
+                )
+            }
+        }
+    }
+
+    private func trimmed(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 private struct AlbumInsightContentView: View {
     let detail: AlbumDetail
     let resolvedArtworkURL: String?
@@ -568,24 +702,10 @@ private struct AlbumInsightContentView: View {
         case .loadingModels:
             return "正在加载可用模型，请稍候。"
         case .generating:
-            return "专辑音眸通常需要数分钟，请保持应用前台并确保网络稳定。"
+            return "专辑音眸通常需要数分钟，切到桌面后可通过灵动岛继续关注状态。"
         default:
             return nil
         }
-    }
-
-    private var extraSectionBlocks: [InsightSectionBlock] {
-        guard let insight else { return [] }
-        return insight.analysisBySection.values.keys
-            .filter { !AlbumInsightSectionCatalog.orderedKeys.contains($0) }
-            .sorted()
-            .compactMap { key in
-                guard let value = insight.analysisBySection.values[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !value.isEmpty else {
-                    return nil
-                }
-                return InsightSectionBlock(id: key, title: AlbumInsightSectionCatalog.titleMap[key] ?? key, content: value)
-            }
     }
 
     var body: some View {
@@ -638,81 +758,13 @@ private struct AlbumInsightContentView: View {
                 }
             }
 
-            if let insight, insight.hasDisplayContent {
-                if let providerLine = insight.providerLine {
-                    Text(providerLine)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let summary = trimmed(insight.analysisSummary) {
-                    AlbumInsightTextSectionCard(
-                        title: "专辑总评",
-                        text: summary,
-                        compact: isCompact
-                    )
-                }
-
-                DetailSectionCard(title: "音眸分析", compact: isCompact) {
-                    VStack(alignment: .leading, spacing: isCompact ? 10 : 12) {
-                        ForEach(AlbumInsightSectionCatalog.orderedKeys, id: \.self) { key in
-                            AlbumInsightSectionCard(
-                                title: AlbumInsightSectionCatalog.titleMap[key] ?? key,
-                                text: insight.analysisBySection.values[key],
-                                compact: isCompact
-                            )
-                        }
-                    }
-                }
-
-                if !extraSectionBlocks.isEmpty {
-                    DetailSectionCard(title: "扩展分区", compact: isCompact) {
-                        VStack(alignment: .leading, spacing: isCompact ? 10 : 12) {
-                            ForEach(extraSectionBlocks) { block in
-                                AlbumInsightSectionCard(
-                                    title: block.title,
-                                    text: block.content,
-                                    compact: isCompact
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if let backgroundInfo = trimmed(insight.backgroundInfo) {
-                    AlbumInsightTextSectionCard(
-                        title: "背景信息",
-                        text: backgroundInfo,
-                        compact: isCompact
-                    )
-                }
-
-                if let eraContext = trimmed(insight.eraContext) {
-                    AlbumInsightTextSectionCard(
-                        title: "时代语境",
-                        text: eraContext,
-                        compact: isCompact
-                    )
-                }
-            } else {
-                DetailSectionCard(title: "内容状态", compact: isCompact) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("暂无专辑音眸")
-                            .font(isCompact ? .subheadline.weight(.semibold) : .headline.weight(.semibold))
-                        Text("当前专辑还没有可展示的音眸内容，可在此直接触发生成。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+            AlbumInsightPrimaryContentView(
+                insight: insight,
+                compact: isCompact,
+                emptyTitle: "暂无专辑音眸",
+                emptySubtitle: "当前专辑还没有可展示的音眸内容，可在此直接触发生成。"
+            )
         }
-    }
-
-    private func trimmed(_ text: String?) -> String? {
-        guard let text else { return nil }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

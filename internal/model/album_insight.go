@@ -44,7 +44,17 @@ func (AlbumInsight) TableName() string {
 }
 
 func CreateAlbumInsight(ctx context.Context, insight *AlbumInsight) error {
-	return GetDB().WithContext(ctx).Create(insight).Error
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			if err := tx.Create(insight).Error; err != nil {
+				return err
+			}
+			if insight.AlbumID > 0 {
+				return appendLibraryChangeTx(tx, LibraryEntityAlbum, insight.AlbumID, LibraryOpUpsert)
+			}
+			return nil
+		},
+	)
 }
 
 func GetAlbumInsightByLookup(ctx context.Context, lookup AlbumInsightLookup) (*AlbumInsight, error) {
@@ -98,6 +108,62 @@ func GetAlbumInsightsByLookup(ctx context.Context, lookup AlbumInsightLookup) ([
 	return insights, nil
 }
 
+// GetAlbumInsightByID 按主键获取单条专辑解析记录，避免上层直接查询 album_insight 表。
+func GetAlbumInsightByID(ctx context.Context, id int64) (*AlbumInsight, error) {
+	var insight AlbumInsight
+	err := GetDB().WithContext(ctx).First(&insight, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &insight, nil
+}
+
 func UpdateAlbumInsight(ctx context.Context, insight *AlbumInsight) error {
 	return GetDB().WithContext(ctx).Save(insight).Error
+}
+
+// UpdateAlbumInsightDisabled 更新专辑解析的禁用状态，并同步刷新专辑资料库索引。
+func UpdateAlbumInsightDisabled(ctx context.Context, id int64, disabled bool) (*AlbumInsight, error) {
+	var updated AlbumInsight
+	err := InTx(
+		ctx, func(tx *gorm.DB) error {
+			if err := tx.First(&updated, id).Error; err != nil {
+				return err
+			}
+			if updated.IsDisabled == disabled {
+				return nil
+			}
+			updated.IsDisabled = disabled
+			if err := tx.Save(&updated).Error; err != nil {
+				return err
+			}
+			if updated.AlbumID > 0 {
+				return appendLibraryChangeTx(tx, LibraryEntityAlbum, updated.AlbumID, LibraryOpUpsert)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &updated, nil
+}
+
+// DeleteAlbumInsight 删除专辑解析记录。
+func DeleteAlbumInsight(ctx context.Context, id uint64) error {
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			var insight AlbumInsight
+			if err := tx.First(&insight, id).Error; err != nil {
+				return err
+			}
+			if err := tx.Delete(&insight).Error; err != nil {
+				return err
+			}
+			if insight.AlbumID > 0 {
+				return appendLibraryChangeTx(tx, LibraryEntityAlbum, insight.AlbumID, LibraryOpUpsert)
+			}
+			return nil
+		},
+	)
 }

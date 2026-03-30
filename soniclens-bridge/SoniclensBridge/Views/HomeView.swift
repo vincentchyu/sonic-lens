@@ -23,77 +23,166 @@ struct HomeContentView: View {
     @Binding var selectedRecentTrack: Track?
     @Binding var selectedAlbumID: Int64?
     @Binding var rankingSearchText: String
+    @State private var layoutModes = HomeLayoutModes()
 
     var body: some View {
-        ZStack {
-            AmbientBackgroundView(
-                gradient: LinearGradient(
-                    colors: [SonicTheme.background, SonicTheme.background],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                orbs: [
-                    AmbientOrb(color: SonicTheme.primary.opacity(0.35), size: 520, blur: 120, opacity: 0.7, offsetFrom: CGSize(width: -200, height: -260), offsetTo: CGSize(width: -120, height: -180), duration: 18),
-                    AmbientOrb(color: SonicTheme.primary.opacity(0.25), size: 420, blur: 130, opacity: 0.7, offsetFrom: CGSize(width: 260, height: 120), offsetTo: CGSize(width: 200, height: 220), duration: 22),
-                    AmbientOrb(color: SonicTheme.primary.opacity(0.18), size: 360, blur: 140, opacity: 0.6, offsetFrom: CGSize(width: 120, height: -40), offsetTo: CGSize(width: 80, height: 40), duration: 26)
-                ]
-            )
+        GeometryReader { proxy in
+            let contentWidth = max(proxy.size.width - 64, 0)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    if let message = viewModel.errorMessage {
-                        ErrorBanner(message: message)
-                    }
+            ZStack {
+                AmbientBackgroundView(
+                    gradient: LinearGradient(
+                        colors: [SonicTheme.background, SonicTheme.background],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    orbs: [
+                        AmbientOrb(color: SonicTheme.primary.opacity(0.35), size: 520, blur: 120, opacity: 0.7, offsetFrom: CGSize(width: -200, height: -260), offsetTo: CGSize(width: -120, height: -180), duration: 18),
+                        AmbientOrb(color: SonicTheme.primary.opacity(0.25), size: 420, blur: 130, opacity: 0.7, offsetFrom: CGSize(width: 260, height: 120), offsetTo: CGSize(width: 200, height: 220), duration: 22),
+                        AmbientOrb(color: SonicTheme.primary.opacity(0.18), size: 360, blur: 140, opacity: 0.6, offsetFrom: CGSize(width: 120, height: -40), offsetTo: CGSize(width: 80, height: 40), duration: 26)
+                    ],
+                    renderingStyle: .staticHome
+                )
 
-                    HomeHeroSection()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 28) {
+                        if let message = viewModel.errorMessage {
+                            ErrorBanner(message: message)
+                        }
 
-                    DashboardStatsSection(stats: viewModel.stats)
+                        let hotPresentation = viewModel.hotModulePresentation
+                        let trendSnapshot = viewModel.trendSnapshot
+                        let selectedAccent = hotPresentation.primaryAccentKey
 
-                    DashboardTrendSection(
-                        points: viewModel.trendPoints,
-                        hourlyData: viewModel.hourlyData,
-                        subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
-                        heatmapLayout: .fixedWidthScrollable(cellWidth: 8),
-                        axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
-                    )
-                    .equatable()
-                    .frame(maxWidth: .infinity)
+                        HomeHeroSection()
 
-                    HStack(alignment: .top, spacing: 16) {
-                        TopGenresCard(topGenres: viewModel.topGenres)
-                            .frame(maxWidth: .infinity)
-                        TopArtistsCard(topArtists: viewModel.topArtistsByPlays)
-                            .frame(maxWidth: .infinity)
-                    }
+                        VStack(alignment: .leading, spacing: 14) {
+                            if layoutModes.wideInsights {
+                                WideListeningInsightsSection(
+                                    points: trendSnapshot.points,
+                                    hourlyData: trendSnapshot.hourlyData,
+                                    trendSubtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                                    summaryText: hotPresentation.combinedSummaryText,
+                                    footnoteText: hotPresentation.profileFootnoteText,
+                                    genres: Array(hotPresentation.genres.prefix(3)),
+                                    sources: Array(hotPresentation.sources.prefix(3)),
+                                    accentKey: selectedAccent
+                                )
+                                .frame(minWidth: 1120, maxWidth: .infinity, alignment: .topLeading)
+                            } else {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    DashboardTrendSection(
+                                        points: trendSnapshot.points,
+                                        hourlyData: trendSnapshot.hourlyData,
+                                        subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                                        heatmapLayout: .fixedWidthScrollable(cellWidth: 8),
+                                        axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
+                                    )
+                                    .equatable()
+                                    .frame(maxWidth: .infinity)
 
-                    TopAlbumsCard(topAlbums: viewModel.topAlbums, onAlbumTap: { albumID in
-                        selectedAlbumID = albumID
-                    })
-                        .frame(maxWidth: .infinity)
+                                    ListeningProfileCard(
+                                        summaryText: hotPresentation.combinedSummaryText,
+                                        footnoteText: hotPresentation.profileFootnoteText,
+                                        genres: Array(hotPresentation.genres.prefix(3)),
+                                        sources: Array(hotPresentation.sources.prefix(3)),
+                                        accentKey: selectedAccent,
+                                        layoutStyle: .split
+                                    )
+                                }
+                            }
 
-                    HStack(alignment: .top, spacing: 16) {
+                            if layoutModes.wideRankings {
+                                Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                                    GridRow {
+                                        AlbumShelfCard(
+                                            items: Array(hotPresentation.albums.prefix(5)),
+                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                            style: .featureGrid,
+                                            collectionCount: hotPresentation.totalAlbumsCount,
+                                            accentKey: selectedAccent,
+                                            onAlbumTap: { albumID in
+                                                selectedAlbumID = albumID
+                                            }
+                                        )
+                                        .frame(minWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
+
+                                        ArtistLadderCard(
+                                            items: Array(hotPresentation.artists.prefix(6)),
+                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                            collectionCount: hotPresentation.totalArtistsCount,
+                                            accentKey: selectedAccent
+                                        )
+                                        .frame(minWidth: 160, maxWidth: .infinity, maxHeight: .infinity)
+
+                                        TrackShelfCard(
+                                            items: Array(hotPresentation.tracks.prefix(5)),
+                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                            style: .featureGrid,
+                                            totalTracksCount: hotPresentation.totalTracksCount,
+                                            accentKey: selectedAccent,
+                                            onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                        )
+                                        .frame(minWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
+                                    }
+                                }
+                            } else {
+                                VStack(spacing: 16) {
+                                    AlbumShelfCard(
+                                        items: Array(hotPresentation.albums.prefix(5)),
+                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                        style: .featureGrid,
+                                        collectionCount: hotPresentation.totalAlbumsCount,
+                                        accentKey: selectedAccent,
+                                        onAlbumTap: { albumID in
+                                            selectedAlbumID = albumID
+                                        }
+                                    )
+
+                                    ArtistLadderCard(
+                                        items: Array(hotPresentation.artists.prefix(6)),
+                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                        collectionCount: hotPresentation.totalArtistsCount,
+                                        accentKey: selectedAccent
+                                    )
+
+                                    TrackShelfCard(
+                                        items: Array(hotPresentation.tracks.prefix(5)),
+                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                        style: .featureGrid,
+                                        totalTracksCount: hotPresentation.totalTracksCount,
+                                        accentKey: selectedAccent,
+                                        onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                    )
+                                }
+                            }
+                        }
+
                         RecentPlaysSection(
                             items: viewModel.recentPlays,
+                            totalPlaysCount: hotPresentation.totalPlaysCount,
                             onTrackTap: { track in
                                 selectedRecentTrack = track
                             }
                         )
-                        .frame(maxWidth: .infinity)
-                        RankingsCard(
-                            topArtistsByPlays: viewModel.topArtistsByPlays,
-                            topTracks: viewModel.topTracks,
-                            onTrackTap: { track in
-                                selectedRecentTrack = track
-                            }
-                        )
-                        .frame(maxWidth: .infinity)
                     }
+                    .padding(.horizontal, 32)
+                    .padding(.top, 28)
+                    .padding(.bottom, 48)
                 }
-                .padding(.horizontal, 32)
-                .padding(.top, 28)
-                .padding(.bottom, 48)
             }
         }
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear {
+                        layoutModes.update(for: max(proxy.size.width - 64, 0), force: true)
+                    }
+                    .onChange(of: proxy.size.width) { _, newValue in
+                        layoutModes.update(for: max(newValue - 64, 0))
+                    }
+            }
+        )
         .overlay {
             if viewModel.isLoading && viewModel.stats == nil {
                 LoadingOverlay()
@@ -117,31 +206,82 @@ struct HomeContentView: View {
     }
 }
 
+private struct HomeLayoutModes {
+    var wideInsights = false
+    var wideRankings = false
+    private var didInitialize = false
+
+    mutating func update(for width: CGFloat, force: Bool = false) {
+        if force || !didInitialize {
+            wideInsights = width >= 1120
+            wideRankings = width >= 960
+            didInitialize = true
+            return
+        }
+
+        // 使用滞回区间，避免 sidebar 动画期间反复跨过临界值时不断拆解/合并布局。
+        if wideInsights {
+            if width < 980 {
+                wideInsights = false
+            }
+        } else if width > 1120 {
+            wideInsights = true
+        }
+
+        if wideRankings {
+            if width < 840 {
+                wideRankings = false
+            }
+        } else if width > 960 {
+            wideRankings = true
+        }
+    }
+}
+
 struct HomeHeroSection: View {
     var body: some View {
         GlassPanel(cornerRadius: 22, padding: 0) {
             ZStack(alignment: .bottomLeading) {
-                LinearGradient(
-                    colors: [
-                        SonicTheme.primary.opacity(0.8),
-                        SonicTheme.primary.opacity(0.35),
-                        SonicTheme.secondaryAccent.opacity(0.35)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            SonicTheme.dynamicColor(light: .sonicRGBA(0.99, 0.98, 0.95, 1), dark: .sonicRGBA(0.10, 0.10, 0.12, 1)),
+                            SonicTheme.dynamicColor(light: .sonicRGBA(0.96, 0.95, 0.91, 1), dark: .sonicRGBA(0.07, 0.08, 0.10, 1))
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    RadialGradient(
+                        colors: [
+                            TrendHeatmapView.levelFour.opacity(0.14),
+                            Color.clear
+                        ],
+                        center: .topLeading,
+                        startRadius: 0,
+                        endRadius: 280
+                    )
+                    RadialGradient(
+                        colors: [
+                            SonicTheme.primary.opacity(0.035),
+                            Color.clear
+                        ],
+                        center: .bottomTrailing,
+                        startRadius: 0,
+                        endRadius: 220
+                    )
+                }
                 .cornerRadius(22)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("SonicLens Bridge for Mac")
                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                       .foregroundStyle(Color.white.opacity(0.84))
+                       .foregroundStyle(TrendHeatmapView.levelFour)
                     Text("声之透镜 · 深度解析 · 聆听之印记")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(SonicTheme.textPrimary)
                     Text("音乐不仅是流动的空气，更是我们生命中不曾停歇的数字资产")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.82))
+                        .foregroundStyle(SonicTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(22)
@@ -200,7 +340,7 @@ struct HomeStatCard: View {
 struct DashboardTrendSection: View, Equatable {
     let points: [TrendPoint]
     let hourlyData: [HourlyData]
-    var title: String = "最近 90 天播放热力图"
+    var title: String = "聆听趋势"
     var subtitle: String = "按日期展开 24 小时播放分布，深色表示更高频的聆听时段"
     var heatmapHeight: CGFloat = 276
     var heatmapLayout: TrendHeatmapLayout = .fitted(minCellWidth: 2)
@@ -221,51 +361,94 @@ struct DashboardTrendSection: View, Equatable {
         lhs.actionTitle == rhs.actionTitle
     }
 
-    private var totalPlays: Int {
-        points.map(\.count).reduce(0, +)
+    var body: some View {
+        GlassPanel(cornerRadius: 18, padding: 0) {
+            DashboardTrendSectionBody(
+                points: points,
+                hourlyData: hourlyData,
+                title: title,
+                subtitle: subtitle,
+                heatmapHeight: heatmapHeight,
+                heatmapLayout: heatmapLayout,
+                axisLabelStyle: axisLabelStyle,
+                actionPlacement: actionPlacement,
+                actionTitle: actionTitle,
+                onAction: onAction
+            )
+        }
+    }
+}
+
+private struct DashboardTrendSectionBody: View, Equatable {
+    let points: [TrendPoint]
+    let hourlyData: [HourlyData]
+    let title: String
+    let subtitle: String
+    let heatmapHeight: CGFloat
+    let heatmapLayout: TrendHeatmapLayout
+    let axisLabelStyle: TrendAxisLabelStyle
+    let actionPlacement: TrendActionPlacement
+    let actionTitle: String?
+    let onAction: (() -> Void)?
+    private let metricsSnapshot: TrendMetricsSnapshot
+    private let heatmapRenderModel: TrendHeatmapView.RenderModel
+
+    init(
+        points: [TrendPoint],
+        hourlyData: [HourlyData],
+        title: String,
+        subtitle: String,
+        heatmapHeight: CGFloat,
+        heatmapLayout: TrendHeatmapLayout,
+        axisLabelStyle: TrendAxisLabelStyle,
+        actionPlacement: TrendActionPlacement,
+        actionTitle: String?,
+        onAction: (() -> Void)?
+    ) {
+        self.points = points
+        self.hourlyData = hourlyData
+        self.title = title
+        self.subtitle = subtitle
+        self.heatmapHeight = heatmapHeight
+        self.heatmapLayout = heatmapLayout
+        self.axisLabelStyle = axisLabelStyle
+        self.actionPlacement = actionPlacement
+        self.actionTitle = actionTitle
+        self.onAction = onAction
+        self.metricsSnapshot = TrendMetricsSnapshot(points: points, hourlyData: hourlyData)
+        self.heatmapRenderModel = TrendHeatmapView.RenderModel(hourlyData: hourlyData, axisLabelStyle: axisLabelStyle)
     }
 
-    private var averageDailyPlays: Int {
-        guard !points.isEmpty else { return 0 }
-        return totalPlays / points.count
-    }
-
-    private var peakDay: TrendPoint? {
-        points.max(by: { lhs, rhs in
-            if lhs.count == rhs.count {
-                return lhs.date < rhs.date
-            }
-            return lhs.count < rhs.count
-        })
+    static func == (lhs: DashboardTrendSectionBody, rhs: DashboardTrendSectionBody) -> Bool {
+        lhs.points == rhs.points &&
+        lhs.hourlyData == rhs.hourlyData &&
+        lhs.title == rhs.title &&
+        lhs.subtitle == rhs.subtitle &&
+        lhs.heatmapHeight == rhs.heatmapHeight &&
+        lhs.heatmapLayout == rhs.heatmapLayout &&
+        lhs.axisLabelStyle == rhs.axisLabelStyle &&
+        lhs.actionPlacement == rhs.actionPlacement &&
+        lhs.actionTitle == rhs.actionTitle
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // SectionHeader(title: "趋势")
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                headerContent
 
-            GlassPanel(cornerRadius: 18, padding: 0) {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        headerContent
-
-                        if !points.isEmpty {
-                            metricsContent
-                        }
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
-
-                    TrendHeatmapView(
-                        hourlyData: hourlyData,
-                        layout: heatmapLayout,
-                        axisLabelStyle: axisLabelStyle
-                    )
-                        .frame(height: heatmapHeight)
-                        .padding(.horizontal, 18)
-                        .padding(.bottom, 18)
-                }.padding(.bottom, 6)   // 👈 就加这一行
+                if !points.isEmpty {
+                    metricsContent
+                }
             }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+
+            TrendHeatmapView(renderModel: heatmapRenderModel, layout: heatmapLayout, axisLabelStyle: axisLabelStyle)
+            .frame(height: heatmapHeight)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 18)
         }
+        .padding(.bottom, 6)
     }
 
     private var headerContent: some View {
@@ -274,7 +457,7 @@ struct DashboardTrendSection: View, Equatable {
                 headerText
                 Spacer(minLength: 12)
                 HStack(spacing: 10) {
-                    TrendLegendView(maxCount: hourlyData.flatMap { $0.hourly.values }.max() ?? 0)
+                    TrendLegendView(maxCount: metricsSnapshot.maxHourlyCount)
                     if actionPlacement == .header {
                         headerAction
                     }
@@ -283,7 +466,7 @@ struct DashboardTrendSection: View, Equatable {
 
             VStack(alignment: .leading, spacing: 12) {
                 headerText
-                TrendLegendView(maxCount: hourlyData.flatMap { $0.hourly.values }.max() ?? 0)
+                TrendLegendView(maxCount: metricsSnapshot.maxHourlyCount)
                 if actionPlacement == .header {
                     headerAction
                 }
@@ -294,11 +477,12 @@ struct DashboardTrendSection: View, Equatable {
     private var metricsContent: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
-                TrendMetricPill(title: "总播放", value: "\(totalPlays)")
-                TrendMetricPill(title: "日均", value: "\(averageDailyPlays)")
+                TrendMetricPill(title: "总播放", value: "\(metricsSnapshot.totalPlays)")
+                TrendMetricPill(title: "日均", value: "\(metricsSnapshot.averageDailyPlays)")
                 TrendMetricPill(
                     title: "峰值",
-                    value: peakDay.map { "\($0.count) · \(TrendHeatmapView.compactDateLabel(for: $0.date))" } ?? "--"
+                    value: metricsSnapshot.peakDay.map { "\($0.count) · \(TrendHeatmapView.compactDateLabel(for: $0.date))" } ?? "--",
+                    valueColor: .orange
                 )
                 if actionPlacement == .metricsTrailing {
                     headerAction
@@ -308,11 +492,12 @@ struct DashboardTrendSection: View, Equatable {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    TrendMetricPill(title: "总播放", value: "\(totalPlays)")
-                    TrendMetricPill(title: "日均", value: "\(averageDailyPlays)")
+                    TrendMetricPill(title: "总播放", value: "\(metricsSnapshot.totalPlays)")
+                    TrendMetricPill(title: "日均", value: "\(metricsSnapshot.averageDailyPlays)")
                     TrendMetricPill(
                         title: "峰值",
-                        value: peakDay.map { "\($0.count) · \(TrendHeatmapView.compactDateLabel(for: $0.date))" } ?? "--"
+                        value: metricsSnapshot.peakDay.map { "\($0.count) · \(TrendHeatmapView.compactDateLabel(for: $0.date))" } ?? "--",
+                        valueColor: .orange
                     )
                 }
                 if actionPlacement == .metricsTrailing {
@@ -325,9 +510,23 @@ struct DashboardTrendSection: View, Equatable {
 
     private var headerText: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(SonicTheme.textPrimary)
+            HStack(spacing: 8) {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                TrendHeatmapView.levelTwo.opacity(0.92),
+                                TrendHeatmapView.levelFour.opacity(0.82)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 18, height: 6)
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(SonicTheme.textPrimary)
+            }
             Text(subtitle)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(SonicTheme.textSecondary)
@@ -349,6 +548,74 @@ struct DashboardTrendSection: View, Equatable {
                     )
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct TrendMetricsSnapshot: Equatable {
+    let totalPlays: Int
+    let averageDailyPlays: Int
+    let peakDay: TrendPoint?
+    let maxHourlyCount: Int
+
+    init(points: [TrendPoint], hourlyData: [HourlyData]) {
+        let totalPlays = points.map(\.count).reduce(0, +)
+        self.totalPlays = totalPlays
+        self.averageDailyPlays = points.isEmpty ? 0 : totalPlays / points.count
+        self.peakDay = points.max(by: { lhs, rhs in
+            if lhs.count == rhs.count {
+                return lhs.date < rhs.date
+            }
+            return lhs.count < rhs.count
+        })
+        self.maxHourlyCount = hourlyData.reduce(0) { partialResult, day in
+            max(partialResult, day.hourly.values.max() ?? 0)
+        }
+    }
+}
+
+private struct WideListeningInsightsSection: View {
+    let points: [TrendPoint]
+    let hourlyData: [HourlyData]
+    let trendSubtitle: String
+    let summaryText: String
+    let footnoteText: String
+    let genres: [HomeHotGenrePresentationItem]
+    let sources: [HomeHotSourcePresentationItem]
+    let accentKey: HomeHotAccentKey?
+
+    var body: some View {
+        GlassPanel(cornerRadius: 18, padding: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                DashboardTrendSectionBody(
+                    points: points,
+                    hourlyData: hourlyData,
+                    title: "聆听趋势",
+                    subtitle: trendSubtitle,
+                    heatmapHeight: 276,
+                    heatmapLayout: .fixedWidthScrollable(cellWidth: 8),
+                    axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42),
+                    actionPlacement: .header,
+                    actionTitle: nil,
+                    onAction: nil
+                )
+                .frame(minWidth: 720, maxWidth: .infinity, alignment: .topLeading)
+
+                Rectangle()
+                    .fill(SonicTheme.glassBorder.opacity(0.9))
+                    .frame(width: 1)
+                    .padding(.vertical, 18)
+
+                ListeningProfileSummarySidebar(
+                    summaryText: summaryText,
+                    footnoteText: footnoteText,
+                    genres: genres,
+                    sources: sources,
+                    accentKey: accentKey
+                )
+                .padding(18)
+                .frame(width: 380, alignment: .topLeading)
+            }
         }
     }
 }
@@ -460,6 +727,16 @@ struct TrendHeatmapView: View, Equatable {
         self.model = RenderModel(hourlyData: hourlyData, axisLabelStyle: axisLabelStyle)
     }
 
+    fileprivate init(
+        renderModel: RenderModel,
+        layout: TrendHeatmapLayout = .fitted(minCellWidth: 2),
+        axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries
+    ) {
+        self.layout = layout
+        self.axisLabelStyle = axisLabelStyle
+        self.model = renderModel
+    }
+
     private var xAxisHeight: CGFloat {
         axisLabelStyle.axisHeight
     }
@@ -506,20 +783,13 @@ struct TrendHeatmapView: View, Equatable {
                     let resolvedCellWidth = max(cellWidth, 2)
                     let resolvedCellHeight = resolvedCellWidth
                     let contentWidth = CGFloat(dayCount) * resolvedCellWidth + CGFloat(dayCount - 1) * cellSpacing
-                    let fixedDayColumns = Array(model.dayColumns.reversed())
-                    let fixedAxisLabels = Self.makeAxisLabels(
-                        for: fixedDayColumns.map(\.date),
-                        axisLabelStyle: axisLabelStyle
-                    )
                     let maxScrollDistance = max(contentWidth + gridInset * 2 - availableWidth, 0)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         heatmapColumns(
                             cellWidth: resolvedCellWidth,
                             cellHeight: resolvedCellHeight,
-                            contentWidth: contentWidth,
-                            dayColumns: fixedDayColumns,
-                            axisLabels: fixedAxisLabels
+                            contentWidth: contentWidth
                         )
                         .background(
                             GeometryReader { proxy in
@@ -758,32 +1028,32 @@ struct TrendHeatmapView: View, Equatable {
     }
 
     static let emptyCell = SonicTheme.dynamicColor(
-        light: .sonicRGBA(0.93, 0.95, 0.93, 1),
-        dark: .sonicRGBA(0.09, 0.12, 0.10, 1)
+        light: .sonicRGBA(0.98, 0.96, 0.91, 1),
+        dark: .sonicRGBA(0.12, 0.10, 0.08, 1)
     )
     static let levelOne = SonicTheme.dynamicColor(
-        light: .sonicRGBA(0.61, 0.85, 0.64, 1),
-        dark: .sonicRGBA(0.10, 0.33, 0.18, 1)
+        light: .sonicRGBA(0.96, 0.89, 0.70, 1),
+        dark: .sonicRGBA(0.34, 0.24, 0.14, 1)
     )
     static let levelTwo = SonicTheme.dynamicColor(
-        light: .sonicRGBA(0.27, 0.72, 0.37, 1),
-        dark: .sonicRGBA(0.15, 0.53, 0.27, 1)
+        light: .sonicRGBA(0.90, 0.75, 0.42, 1),
+        dark: .sonicRGBA(0.48, 0.35, 0.16, 1)
     )
     static let levelThree = SonicTheme.dynamicColor(
-        light: .sonicRGBA(0.15, 0.57, 0.22, 1),
-        dark: .sonicRGBA(0.23, 0.72, 0.35, 1)
+        light: .sonicRGBA(0.84, 0.62, 0.24, 1),
+        dark: .sonicRGBA(0.64, 0.47, 0.18, 1)
     )
     static let levelFour = SonicTheme.dynamicColor(
-        light: .sonicRGBA(0.08, 0.43, 0.16, 1),
-        dark: .sonicRGBA(0.34, 0.86, 0.46, 1)
+        light: .sonicRGBA(0.74, 0.49, 0.12, 1),
+        dark: .sonicRGBA(0.82, 0.63, 0.26, 1)
     )
     private static let gridBackground = SonicTheme.dynamicColor(
-        light: .sonicWhite(1, alpha: 0.7),
-        dark: .sonicWhite(0.08, alpha: 0.88)
+        light: .sonicRGBA(0.99, 0.97, 0.93, 0.82),
+        dark: .sonicRGBA(0.10, 0.08, 0.06, 0.92)
     )
     private static let gridBorder = SonicTheme.dynamicColor(
-        light: .sonicWhite(0, alpha: 0.08),
-        dark: .sonicWhite(1, alpha: 0.08)
+        light: .sonicRGBA(0.76, 0.56, 0.22, 0.10),
+        dark: .sonicRGBA(0.88, 0.70, 0.34, 0.14)
     )
 
     private static let dayFormatter: DateFormatter = {
@@ -810,7 +1080,7 @@ struct TrendHeatmapView: View, Equatable {
         let axisLabels: [AxisLabel]
 
         init(hourlyData: [HourlyData], axisLabelStyle: TrendAxisLabelStyle) {
-            let sortedData = hourlyData.sorted { $0.date < $1.date }
+            let sortedData = hourlyData.sorted { $0.date > $1.date }
             var maxCount = 1
             let dayColumns = sortedData.map { day in
                 let counts = TrendHeatmapView.hours.map { hour -> Int in
@@ -874,7 +1144,7 @@ private struct TrendHeatmapCanvas: View, Equatable {
                 }
             }
         }
-        .accessibilityLabel("播放热力图")
+        .accessibilityLabel("聆听趋势")
     }
 }
 
@@ -907,6 +1177,19 @@ struct TrendLegendView: View {
                 .foregroundStyle(SonicTheme.textSecondary)
                 .frame(width: 24, alignment: .leading)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(SonicTheme.dynamicColor(
+                    light: .sonicWhite(1, alpha: 0.72),
+                    dark: .sonicWhite(0.08, alpha: 0.72)
+                ))
+        )
+        .overlay(
+            Capsule()
+                .stroke(SonicTheme.glassBorder, lineWidth: 1)
+        )
     }
 
     private func color(for level: Int) -> Color {
@@ -923,28 +1206,30 @@ struct TrendLegendView: View {
 struct TrendMetricPill: View {
     let title: String
     let value: String
+    var titleColor: Color = SonicTheme.textSecondary
+    var valueColor: Color = SonicTheme.textPrimary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(SonicTheme.textSecondary)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(titleColor)
             Text(value)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(SonicTheme.textPrimary)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(valueColor)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(SonicTheme.dynamicColor(
-                    light: .sonicWhite(1, alpha: 0.76),
-                    dark: .sonicWhite(0.1, alpha: 0.76)
+                    light: .sonicRGBA(0.97, 0.98, 0.99, 0.92),
+                    dark: .sonicRGBA(0.09, 0.12, 0.16, 0.88)
                 ))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(SonicTheme.glassBorder, lineWidth: 1)
+                .stroke(TrendHeatmapView.levelTwo.opacity(0.18), lineWidth: 1)
         )
     }
 }
@@ -1119,58 +1404,144 @@ struct RankingsCard: View {
 
 struct RecentPlaysSection: View {
     let items: [RecentPlayRecord]
+    let totalPlaysCount: Int64?
     let onTrackTap: (Track) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "最近播放")
+        GlassPanel(cornerRadius: 20, padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HotModuleSectionHeader(
+                    title: "最近播放",
+                    subtitle: "按时间倒序展示最近 10 次播放记录。",
+                    metricTag: totalPlaysCount.map { "总：\(compactCount($0))" }
+                )
 
-            VStack(spacing: 8) {
-                ForEach(items.prefix(10)) { item in
-                    GlassPanel(cornerRadius: 16, padding: 12) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.track)
-                                    .font(.subheadline)
-                                    .foregroundColor(SonicTheme.textPrimary)
-                                    .lineLimit(1)
-                                    .help(item.track)
-                                Text("\(item.artist) · \(item.album)")
-                                    .font(.caption)
-                                    .foregroundColor(SonicTheme.textSecondary)
-                                    .lineLimit(1)
-                                    .help("\(item.artist) · \(item.album)")
-                            }
-                            Spacer()
-                            Text(formatPlayTime(item.playTime))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                if items.isEmpty {
+                    HotModuleEmptyState(
+                        title: "还没有最近播放",
+                        message: "等播放记录同步进来，这里会变成一条更轻的播放流。"
+                    )
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(items.prefix(10).enumerated()), id: \.element.id) { index, item in
+                            recentPlayRow(
+                                item: item,
+                                rank: index + 1,
+                                isLast: index == min(items.count, 10) - 1
+                            )
                         }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onTrackTap(Track(
-                            id: 0,
-                            artist: item.artist,
-                            album: item.album,
-                            track: item.track,
-                            playCount: 0,
-                            trackNumber: nil,
-                            discNumber: nil,
-                            duration: nil
-                        ))
-                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(SonicTheme.dynamicColor(light: .sonicWhite(1, alpha: 0.55), dark: .sonicWhite(1, alpha: 0.04)))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(SonicTheme.glassBorder, lineWidth: 1)
+                    )
                 }
             }
         }
     }
 
+    @ViewBuilder
+    private func recentPlayRow(item: RecentPlayRecord, rank: Int, isLast: Bool) -> some View {
+        Button {
+            onTrackTap(Track(
+                id: 0,
+                artist: item.artist,
+                album: item.album,
+                track: item.track,
+                playCount: 0,
+                trackNumber: nil,
+                discNumber: nil,
+                duration: nil
+            ))
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(SonicTheme.primary.opacity(0.10))
+                        .frame(width: 34, height: 34)
+                    Text("\(rank)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SonicTheme.primary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.track)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(SonicTheme.textPrimary)
+                        .lineLimit(1)
+                        .help(item.track)
+
+                    Text("\(item.artist) · \(item.album)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                        .lineLimit(1)
+                        .help("\(item.artist) · \(item.album)")
+                }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(formatPlayTime(item.playTime))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SonicTheme.textPrimary)
+                        .lineLimit(1)
+
+                    Text("最近播放")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(rank == 1 ? SonicTheme.primary.opacity(0.06) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
+            if isLast == false {
+                Rectangle()
+                    .fill(SonicTheme.glassBorder)
+                    .frame(height: 1)
+                    .padding(.leading, 60)
+            }
+        }
+    }
+
     private func formatPlayTime(_ timeString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        guard let date = isoFormatter.date(from: timeString) else { return timeString }
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return displayFormatter.string(from: date)
+        guard let date = Self.isoFormatter.date(from: timeString) else {
+            return timeString
+        }
+        return Self.playTimeDisplayFormatter.string(from: date)
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let playTimeDisplayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+}
+
+private func compactCount(_ value: Int64) -> String {
+    switch value {
+    case 1_000_000...:
+        return String(format: "%.1fm", Double(value) / 1_000_000)
+    case 1_000...:
+        return String(format: "%.1fk", Double(value) / 1_000)
+    default:
+        return "\(value)"
     }
 }

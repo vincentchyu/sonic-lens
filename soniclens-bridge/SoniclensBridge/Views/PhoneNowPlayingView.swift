@@ -13,6 +13,7 @@ private enum PhoneImmersiveMode {
 
 struct PhoneNowPlayingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @StateObject private var viewModel = PlayerViewModel()
@@ -29,10 +30,10 @@ struct PhoneNowPlayingView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                liquidBackground
-                content(geo: geo)
-            }
+        ZStack {
+            liquidBackground
+            content(geo: geo)
+        }
         }
         .ignoresSafeArea()
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -49,14 +50,14 @@ struct PhoneNowPlayingView: View {
                 lyricsFollowMode = true
             }
         }
-        .onChange(of: store.nowPlaying?.artwork) { _, artwork in
+        .onChange(of: playbackStore.nowPlaying?.artwork) { _, artwork in
             Task { await updatePalette(for: artwork) }
         }
-        .onChange(of: store.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
+        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
+            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
         }
-        .onChange(of: store.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: store.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
+            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
         }
         .onDisappear {
             viewModel.stopProgress()
@@ -64,7 +65,7 @@ struct PhoneNowPlayingView: View {
     }
 
     private var currentNowPlaying: NowPlaying {
-        store.nowPlaying ?? nowPlaying
+        playbackStore.nowPlaying ?? nowPlaying
     }
 
     private var trackIdentity: String {
@@ -91,7 +92,7 @@ struct PhoneNowPlayingView: View {
         let expandedLyricsHeight = max(geo.size.height - topInset - 220, 420)
 
         VStack(spacing: 18) {
-            PhoneNowPlayingTopBar()
+            PhoneNowPlayingTopBar(statusBannerText: viewModel.playbackState.bannerText)
                 .padding(.top, topInset)
 
             if immersiveMode == .artworkFocused {
@@ -403,11 +404,23 @@ struct PhoneNowPlayingView: View {
 }
 
 private struct PhoneNowPlayingTopBar: View {
+    let statusBannerText: String?
+
     var body: some View {
-        ZStack {
-            Text("正在播放")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
+        HStack {
+            Spacer(minLength: 0)
+
+            HStack(spacing: 10) {
+                Text("正在播放")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                if let statusBannerText {
+                    PlaybackStatusBanner(text: statusBannerText)
+                }
+            }
+
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
     }

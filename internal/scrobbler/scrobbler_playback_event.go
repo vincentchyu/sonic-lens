@@ -22,6 +22,9 @@ type playingTrackSnapshot struct {
 	coverArtObjectKey        string
 	controllerFavoriteKnown  bool
 	controllerFavorite       bool
+	traceID                  string
+	rootSpanID               string
+	traceSampled             bool
 }
 
 func (s playingTrackSnapshot) toPlaybackEventInput(
@@ -45,5 +48,8 @@ func (s playingTrackSnapshot) toPlaybackEventInput(
 		CoverArtURL:             s.coverArtURL,
 		CoverArtMime:            s.coverArtMime,
 		CoverArtObjectKey:       s.coverArtObjectKey,
+		TraceID:                 s.traceID,
+		RootSpanID:              s.rootSpanID,
+		TraceSampled:            s.traceSampled,
 	}
 }

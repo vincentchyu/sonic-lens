@@ -259,6 +259,10 @@ struct AlbumListView: View {
                     }
                 )
 
+                if let loadingStatus = viewModel.albumLoadingStatusText {
+                    LibraryCollectionLoadingHint(text: loadingStatus)
+                }
+
                 if viewModel.albums.isEmpty {
                     EmptyStateView(
                         title: "未找到专辑",
@@ -415,6 +419,8 @@ private struct LibraryMetaLabel: View {
 
 struct TrackListView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
+    @Environment(FavoriteStore.self) private var favoriteStore
     @ObservedObject var viewModel: LibraryViewModel
     private let externalSort: LibrarySort
     private let externalFilter: TrackFilter
@@ -449,8 +455,8 @@ struct TrackListView: View {
     }
 
     var body: some View {
-        let nowPlaying = store.nowPlaying
-        let favoriteKeys = store.favoriteKeys
+        let nowPlaying = playbackStore.nowPlaying
+        let favoriteKeys = favoriteStore.favoriteKeys
 
         GeometryReader { proxy in
             let columns = TrackColumnLayout(totalWidth: proxy.size.width - 40)
@@ -481,6 +487,10 @@ struct TrackListView: View {
                                 }
                             }
                         )
+                    }
+
+                    if let loadingStatus = viewModel.trackLoadingStatusText {
+                        LibraryCollectionLoadingHint(text: loadingStatus)
                     }
 
                     if viewModel.tracks.isEmpty {
@@ -638,6 +648,24 @@ struct TrackListView: View {
             guard committedQuery != committedText else { return }
             committedQuery = committedText
         }
+    }
+}
+
+struct LibraryCollectionLoadingHint: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(SonicTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassCard(cornerRadius: 12, isSimplified: true)
     }
 }
 

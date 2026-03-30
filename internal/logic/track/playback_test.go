@@ -73,8 +73,10 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 
 	insertCalled := false
 	processCalled := false
+	var insertedRecord model.TrackPlayRecord
 	modelInsertTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord) error {
 		insertCalled = true
+		insertedRecord = *record
 		record.ID = 42
 		return nil
 	}
@@ -97,6 +99,9 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 		MusicBrainzID:     "mbid",
 		PlayerSource:      common.PlayerAppleMusic,
 		PlaybackStartedAt: time.Unix(1700000000, 0),
+		TraceID:           "0123456789abcdef0123456789abcdef",
+		RootSpanID:        "89abcdef01234567",
+		TraceSampled:      true,
 		Metadata: model.TrackMetadata{
 			TrackNumber: 8,
 			DiscNumber:  2,
@@ -110,6 +115,9 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	require.Equal(t, "Album Artist", capturedReq.AlbumArtist)
 	require.Equal(t, "Track", capturedReq.Track)
 	require.Equal(t, int64(1700000000), capturedReq.Timestamp)
+	require.Equal(t, "0123456789abcdef0123456789abcdef", insertedRecord.TraceID)
+	require.Equal(t, "89abcdef01234567", insertedRecord.RootSpanID)
+	require.True(t, insertedRecord.TraceSampled)
 }
 
 func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
@@ -238,4 +246,260 @@ func TestProbeAndSyncTrackFavoriteSkipsUnsafeLookup(t *testing.T) {
 	require.False(t, result.LastFM)
 	require.Equal(t, common.TrackFavoriteStateNotFavorited, result.FavoriteState)
 	require.Equal(t, common.TrackMetadataConfidenceLow, result.Confidence)
+}
+
+func TestProbeAndSyncTrackFavoriteReusesProjectionCacheWhenProbeUnchanged(t *testing.T) {
+	originalGetTrack := modelGetTrackByIdentity
+	originalIsFavorite := lastfmIsFavorite
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
+	originalVersion := favoriteProjectionVersion.Load()
+	favoriteProjectionVersion.Store(0)
+	t.Cleanup(func() {
+		modelGetTrackByIdentity = originalGetTrack
+		lastfmIsFavorite = originalIsFavorite
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
+		favoriteProjectionVersion.Store(originalVersion)
+	})
+
+	trackLookups := 0
+	pendingLookups := 0
+	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
+		trackLookups++
+		return &model.Track{
+			Artist:      artist,
+			Album:       album,
+			Track:       track,
+			TrackNumber: trackNumber,
+			DiscNumber:  discNumber,
+		}, nil
+	}
+	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
+		return false, nil
+	}
+	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
+		pendingLookups++
+		return &model.TrackFavoritePendingSnapshot{}, nil
+	}
+
+	service := &TrackServiceImpl{}
+	input := PlaybackEventInput{
+		Artist:                  "Artist",
+		Album:                   "Album",
+		Track:                   "Track",
+		TrackNumber:             1,
+		DiscNumber:              1,
+		PlayerSource:            common.PlayerAppleMusic,
+		TrackChanged:            true,
+		ControllerFavoriteKnown: true,
+		ControllerFavorite:      false,
+		Metadata: model.TrackMetadata{
+			Confidence:  common.TrackMetadataConfidenceHigh,
+			TrackNumber: 1,
+			DiscNumber:  1,
+		},
+	}
+
+	first := service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	input.TrackChanged = false
+	second := service.ProbeAndSyncTrackFavorite(context.Background(), input)
+
+	require.Equal(t, first.TrackFavoriteProjection, second.TrackFavoriteProjection)
+	require.Equal(t, 2, trackLookups)
+	require.Equal(t, 1, pendingLookups)
+}
+
+func TestProbeAndSyncTrackFavoriteInvalidatesProjectionCacheOnVersionChange(t *testing.T) {
+	originalGetTrack := modelGetTrackByIdentity
+	originalIsFavorite := lastfmIsFavorite
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
+	originalVersion := favoriteProjectionVersion.Load()
+	favoriteProjectionVersion.Store(0)
+	t.Cleanup(func() {
+		modelGetTrackByIdentity = originalGetTrack
+		lastfmIsFavorite = originalIsFavorite
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
+		favoriteProjectionVersion.Store(originalVersion)
+	})
+
+	trackLookups := 0
+	pendingLookups := 0
+	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
+		trackLookups++
+		return &model.Track{
+			Artist:      artist,
+			Album:       album,
+			Track:       track,
+			TrackNumber: trackNumber,
+			DiscNumber:  discNumber,
+		}, nil
+	}
+	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
+		return false, nil
+	}
+	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
+		pendingLookups++
+		return &model.TrackFavoritePendingSnapshot{}, nil
+	}
+
+	service := &TrackServiceImpl{}
+	input := PlaybackEventInput{
+		Artist:                  "Artist",
+		Album:                   "Album",
+		Track:                   "Track",
+		TrackNumber:             1,
+		DiscNumber:              1,
+		PlayerSource:            common.PlayerAppleMusic,
+		TrackChanged:            true,
+		ControllerFavoriteKnown: true,
+		ControllerFavorite:      false,
+		Metadata: model.TrackMetadata{
+			Confidence:  common.TrackMetadataConfidenceHigh,
+			TrackNumber: 1,
+			DiscNumber:  1,
+		},
+	}
+
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	input.TrackChanged = false
+	favoriteProjectionVersion.Add(1)
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+
+	require.Equal(t, 3, trackLookups)
+	require.Equal(t, 2, pendingLookups)
+}
+
+func TestProbeAndSyncTrackFavoriteUsesLastfmHotCacheAndBackoff(t *testing.T) {
+	originalGetTrack := modelGetTrackByIdentity
+	originalIsFavorite := lastfmIsFavorite
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
+	originalNow := timeNow
+	originalVersion := favoriteProjectionVersion.Load()
+	favoriteProjectionVersion.Store(0)
+	now := time.Date(2026, 3, 29, 16, 0, 0, 0, time.UTC)
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() {
+		modelGetTrackByIdentity = originalGetTrack
+		lastfmIsFavorite = originalIsFavorite
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
+		timeNow = originalNow
+		favoriteProjectionVersion.Store(originalVersion)
+	})
+
+	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
+		return &model.Track{
+			Artist:      artist,
+			Album:       album,
+			Track:       track,
+			TrackNumber: trackNumber,
+			DiscNumber:  discNumber,
+		}, nil
+	}
+	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
+		return &model.TrackFavoritePendingSnapshot{}, nil
+	}
+
+	lastfmCalls := 0
+	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
+		lastfmCalls++
+		return false, nil
+	}
+
+	service := NewTrackService().(*TrackServiceImpl)
+	input := PlaybackEventInput{
+		Artist:                  "Artist",
+		Album:                   "Album",
+		Track:                   "Track",
+		TrackNumber:             1,
+		DiscNumber:              1,
+		PlayerSource:            common.PlayerAppleMusic,
+		TrackChanged:            true,
+		ControllerFavoriteKnown: true,
+		ControllerFavorite:      false,
+		Metadata: model.TrackMetadata{
+			Confidence:  common.TrackMetadataConfidenceHigh,
+			TrackNumber: 1,
+			DiscNumber:  1,
+		},
+	}
+
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	input.TrackChanged = false
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	require.Equal(t, 1, lastfmCalls)
+
+	now = now.Add(16 * time.Second)
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	require.Equal(t, 2, lastfmCalls)
+
+	now = now.Add(20 * time.Second)
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	require.Equal(t, 2, lastfmCalls)
+
+	now = now.Add(11 * time.Second)
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	require.Equal(t, 3, lastfmCalls)
+}
+
+func TestProbeAndSyncTrackFavoriteInvalidatesLastfmHotCacheOnVersionChange(t *testing.T) {
+	originalGetTrack := modelGetTrackByIdentity
+	originalIsFavorite := lastfmIsFavorite
+	originalGetPending := modelGetPendingTrackFavoriteSnapshot
+	originalNow := timeNow
+	originalVersion := favoriteProjectionVersion.Load()
+	favoriteProjectionVersion.Store(0)
+	now := time.Date(2026, 3, 29, 16, 0, 0, 0, time.UTC)
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() {
+		modelGetTrackByIdentity = originalGetTrack
+		lastfmIsFavorite = originalIsFavorite
+		modelGetPendingTrackFavoriteSnapshot = originalGetPending
+		timeNow = originalNow
+		favoriteProjectionVersion.Store(originalVersion)
+	})
+
+	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
+		return &model.Track{
+			Artist:      artist,
+			Album:       album,
+			Track:       track,
+			TrackNumber: trackNumber,
+			DiscNumber:  discNumber,
+		}, nil
+	}
+	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
+		return &model.TrackFavoritePendingSnapshot{}, nil
+	}
+
+	lastfmCalls := 0
+	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
+		lastfmCalls++
+		return false, nil
+	}
+
+	service := NewTrackService().(*TrackServiceImpl)
+	input := PlaybackEventInput{
+		Artist:                  "Artist",
+		Album:                   "Album",
+		Track:                   "Track",
+		TrackNumber:             1,
+		DiscNumber:              1,
+		PlayerSource:            common.PlayerAppleMusic,
+		TrackChanged:            true,
+		ControllerFavoriteKnown: true,
+		ControllerFavorite:      false,
+		Metadata: model.TrackMetadata{
+			Confidence:  common.TrackMetadataConfidenceHigh,
+			TrackNumber: 1,
+			DiscNumber:  1,
+		},
+	}
+
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	input.TrackChanged = false
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	require.Equal(t, 1, lastfmCalls)
+
+	favoriteProjectionVersion.Add(1)
+	service.ProbeAndSyncTrackFavorite(context.Background(), input)
+	require.Equal(t, 2, lastfmCalls)
 }

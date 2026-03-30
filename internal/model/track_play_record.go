@@ -94,6 +94,9 @@ type TrackPlayRecord struct {
 	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint" json:"track_number"`
 	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1" json:"disc_number"`
 	Source               string                         `gorm:"column:source;type:varchar(100);not null;index:idx_track_play_records_source" json:"source"`
+	TraceID              string                         `gorm:"column:trace_id;type:varchar(32);index:idx_track_play_records_trace_id" json:"trace_id"`                                                       // 关联当前播放链路的 TraceID，便于从播放流水反查观测链路
+	RootSpanID           string                         `gorm:"column:root_span_id;type:varchar(16)" json:"root_span_id"`                                                                                     // 当前播放根 span 的 SpanID，便于从播放流水定位单首歌根节点
+	TraceSampled         bool                           `gorm:"column:trace_sampled;type:tinyint(1);not null;default:0" json:"trace_sampled"`                                                                 // 记录该次播放链路是否命中采样，避免库里有 trace_id 但观测平台无样本时误判
 	ResolvedTrackID      int64                          `gorm:"column:resolved_track_id;type:bigint;default:0;index:idx_track_play_records_resolved_track_id" json:"resolved_track_id"`                       // 本次播放最终归因到的 track.id，0 表示未归因
 	ResolutionStatus     string                         `gorm:"column:resolution_status;type:varchar(32);not null;default:'pending';index:idx_track_play_records_resolution_status" json:"resolution_status"` // 归因状态：pending/resolved/unresolved/ambiguous
 	ResolutionConfidence common.TrackMetadataConfidence `gorm:"column:resolution_confidence;type:tinyint;default:0" json:"resolution_confidence"`                                                             // 归因置信度，取值对应 common.TrackMetadataConfidence*
@@ -583,6 +586,57 @@ func ReplayTrackPlayRecords(params ReplayTrackPlayRecordsParams) (*ReplayTrackPl
 	return report, nil
 }
 
+// ApplyTrackPlayRecordToResolvedTrackTx 将指定播放流水显式绑定到目标曲目，并同步资料库应用状态。
+func ApplyTrackPlayRecordToResolvedTrackTx(
+	tx *gorm.DB, recordID, trackID int64, confidence common.TrackMetadataConfidence,
+) (bool, error) {
+	if tx == nil || recordID <= 0 || trackID <= 0 {
+		return false, nil
+	}
+
+	record, err := getTrackPlayRecordByIDTx(tx, recordID)
+	if err != nil {
+		return false, err
+	}
+	trackObj, err := GetTrackByIDTx(tx, trackID)
+	if err != nil {
+		return false, err
+	}
+
+	albumID := getAlbumIDByTrackInfoTx(
+		tx,
+		trackObj.Artist,
+		trackObj.Album,
+		trackObj.Track,
+		trackObj.TrackNumber,
+		trackObj.DiscNumber,
+	)
+	if albumID <= 0 {
+		return false, gorm.ErrRecordNotFound
+	}
+
+	appliedNow := false
+	if !record.LibraryApplied {
+		if err := incrementExistingTrackPlayCountTx(tx, trackID); err != nil {
+			return false, err
+		}
+		appliedNow = true
+	}
+
+	fields := map[string]interface{}{
+		"resolution_status":     TrackPlayRecordResolutionResolved,
+		"resolution_confidence": confidence,
+		"library_applied":       true,
+	}
+	for key, value := range buildTrackPlayRecordResolvedFields(record, trackObj, albumID) {
+		fields[key] = value
+	}
+	if err := tx.Model(&TrackPlayRecord{}).Where("id = ?", recordID).Updates(fields).Error; err != nil {
+		return false, err
+	}
+	return appliedNow, nil
+}
+
 // GetTrackPlayRecordByID 根据主键获取播放流水。
 func GetTrackPlayRecordByID(ctx context.Context, recordID int64) (*TrackPlayRecord, error) {
 	return getTrackPlayRecordByIDTx(GetDB().WithContext(ctx), recordID)
@@ -746,10 +800,25 @@ func GetPlayCountsBySource(ctx context.Context) (map[string]int64, error) {
 }
 
 type TopAlbum struct {
-	AlbumID   int64  `json:"album_id"`
-	Album     string `json:"album"`
-	Artist    string `json:"artist"`
-	PlayCount int    `json:"play_count"`
+	AlbumID           int64  `json:"album_id"`
+	Album             string `json:"album"`
+	Artist            string `json:"artist"`
+	PlayCount         int    `json:"play_count"`
+	CoverArtURL       string `json:"cover_art_url"`
+	CoverArtMime      string `json:"cover_art_mime"`
+	CoverArtObjectKey string `json:"cover_art_object_key"`
+}
+
+type TopTrack struct {
+	TrackID           int64  `json:"track_id"`
+	Track             string `json:"track"`
+	Album             string `json:"album"`
+	Artist            string `json:"artist"`
+	PlayCount         int    `json:"play_count"`
+	Rank              int    `json:"rank"`
+	CoverArtURL       string `json:"cover_art_url"`
+	CoverArtMime      string `json:"cover_art_mime"`
+	CoverArtObjectKey string `json:"cover_art_object_key"`
 }
 
 // GetTopAlbumsByPlayCount 获取按播放次数统计的热门专辑
@@ -801,13 +870,21 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 
 		result = append(
 			result, &TopAlbum{
-				AlbumID:   albumID,
-				Album:     row.Album,
-				Artist:    row.Artist,
-				PlayCount: row.PlayCount,
+				AlbumID:           albumID,
+				Album:             row.Album,
+				Artist:            row.Artist,
+				PlayCount:         row.PlayCount,
+				CoverArtURL:       albumObj.CoverArtURL,
+				CoverArtMime:      albumObj.CoverArtMime,
+				CoverArtObjectKey: albumObj.CoverArtObjectKey,
 			},
 		)
 	}
 
 	return result, nil
+}
+
+// GetTopTracksByPlayCount 获取指定时间窗口内的热门曲目，并携带可复用的专辑封面信息。
+func GetTopTracksByPlayCount(ctx context.Context, days int, limit int) ([]*TopTrack, error) {
+	return GetTopTracksByPlayCountFromStat(ctx, days, limit)
 }

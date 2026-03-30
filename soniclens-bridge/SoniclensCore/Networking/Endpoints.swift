@@ -5,9 +5,10 @@ enum APIPath {
     static let dashboardTrend = "/api/dashboard/trend"
     static let topArtistsPlays = "/api/dashboard/top-artists/plays"
     static let topArtistsTracks = "/api/dashboard/top-artists/tracks"
+    static let playCountsBySource = "/api/dashboard/play-counts-by-source"
     static let topAlbums = "/api/dashboard/top-albums"
+    static let topTracks = "/api/dashboard/top-tracks"
     static let topGenres = "/api/dashboard/top-genres"
-    static let topTracks = "/api/track-play-counts"
     static let topTracksPeriod = "/api/track-play-counts/period"
     static let recentPlays = "/api/recent-plays"
 
@@ -16,6 +17,7 @@ enum APIPath {
     static let librarySync = "/api/library/sync"
     static let insights = "/api/insights/all"
     static func insightDetail(id: Int64) -> String { "/api/insights/\(id)" }
+    static func insightLogs(id: Int64) -> String { "/api/insights/\(id)/logs" }
     static let unscrobbled = "/api/unscrobbled-records"
     static let unscrobbledCount = "/api/unscrobbled-records/count"
 
@@ -25,6 +27,9 @@ enum APIPath {
     static let trackInsight = "/api/track-insight"
     static let albumInsight = "/api/album-insight"
     static let trackInsightStream = "/api/track-insight-stream"
+    static let insightJobs = "/api/insight-jobs"
+    static func insightJob(id: String) -> String { "/api/insight-jobs/\(id)" }
+    static func insightJobLiveActivityToken(id: String) -> String { "/api/insight-jobs/\(id)/live-activity-token" }
     static let favorite = "/api/favorite"
     static let artworkResolve = "/api/artwork/resolve"
 

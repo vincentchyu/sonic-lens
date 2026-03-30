@@ -23,6 +23,12 @@ var (
 	lastfmTrackUpdateNowPlaying = lastfm.TrackUpdateNowPlaying
 	lastfmIsFavorite            = lastfm.IsFavorite
 	artworkEnsureAlbumCover     = artworklogic.EnsureAlbumCover
+	timeNow                     = time.Now
+)
+
+const (
+	lastfmFavoritePositiveProbeInterval = 15 * time.Second
+	lastfmFavoriteNegativeProbeMax      = 2 * time.Minute
 )
 
 // PlaybackEventInput 表示播放事件编排所需的标准化输入。
@@ -44,6 +50,9 @@ type PlaybackEventInput struct {
 	CoverArtURL             string
 	CoverArtMime            string
 	CoverArtObjectKey       string
+	TraceID                 string
+	RootSpanID              string
+	TraceSampled            bool
 }
 
 // TrackFavoriteProbeResult 表示喜欢状态探测后的结果。
@@ -88,24 +97,29 @@ func (s *TrackServiceImpl) ProbeAndSyncTrackFavorite(
 	result := TrackFavoriteProbeResult{
 		Confidence: input.Metadata.Confidence,
 	}
-	projection, err := s.buildFavoriteProjection(
-		ctx,
-		FavoriteProjectionInput{
-			Artist:      input.Artist,
-			Album:       input.Album,
-			Track:       input.Track,
-			TrackNumber: input.TrackNumber,
-			DiscNumber:  input.DiscNumber,
-			Metadata:    input.Metadata,
-		},
-	)
-	if err != nil {
-		log.Warn(ctx, "构建收藏态投影视图失败", zap.Error(err))
-	} else {
-		result.TrackFavoriteProjection = projection
+	projectionInput := FavoriteProjectionInput{
+		Artist:      input.Artist,
+		Album:       input.Album,
+		Track:       input.Track,
+		TrackNumber: input.TrackNumber,
+		DiscNumber:  input.DiscNumber,
+		Metadata:    input.Metadata,
 	}
+	trackKey := s.buildLikeTrackKey(input)
+	cacheVersion := favoriteProjectionVersion.Load()
 
 	if !s.canSafelyLookupCurrentTrack(input.Metadata) {
+		if projection, ok := s.getCachedFavoriteProjection(trackKey, cacheVersion, favoriteProbeState{}); ok {
+			result.TrackFavoriteProjection = projection
+			return result
+		}
+		projection, err := s.buildFavoriteProjection(ctx, projectionInput)
+		if err != nil {
+			log.Warn(ctx, "构建收藏态投影视图失败", zap.Error(err))
+		} else {
+			result.TrackFavoriteProjection = projection
+			s.updateFavoriteProjectionCache(trackKey, cacheVersion, favoriteProbeState{}, projection)
+		}
 		log.Debug(
 			ctx,
 			"当前元数据置信度不足，跳过收藏探测",
@@ -118,7 +132,6 @@ func (s *TrackServiceImpl) ProbeAndSyncTrackFavorite(
 		return result
 	}
 
-	trackKey := s.buildLikeTrackKey(input)
 	probe := favoriteProbeState{}
 
 	if input.ControllerFavoriteKnown {
@@ -126,15 +139,31 @@ func (s *TrackServiceImpl) ProbeAndSyncTrackFavorite(
 		probe.appleLiked = input.ControllerFavorite
 	}
 
-	lastFmFavorite, lastFmErr := lastfmIsFavorite(ctx, input.Artist, input.Track)
-	if lastFmErr != nil {
-		log.Warn(ctx, "ProbeAndSyncTrackFavorite lastfm favorite err", zap.Error(lastFmErr))
-	} else {
+	lastFmFavorite, lastFmKnown := s.probeLastfmFavorite(ctx, input)
+	if lastFmKnown {
 		probe.lastKnown = true
 		probe.lastLiked = lastFmFavorite
 	}
 
-	if !s.shouldSyncLikeWrite(trackKey, input.TrackChanged, probe) {
+	probeChanged := s.shouldSyncLikeWrite(trackKey, input.TrackChanged, probe)
+	if !probeChanged {
+		if projection, ok := s.getCachedFavoriteProjection(trackKey, cacheVersion, probe); ok {
+			result.TrackFavoriteProjection = projection
+			return result
+		}
+	}
+
+	projection, err := s.buildFavoriteProjection(ctx, projectionInput)
+	if err != nil {
+		log.Warn(ctx, "构建收藏态投影视图失败", zap.Error(err))
+	} else {
+		result.TrackFavoriteProjection = projection
+	}
+
+	if !probeChanged {
+		if projection.FavoriteState != "" {
+			s.updateFavoriteProjectionCache(trackKey, cacheVersion, probe, projection)
+		}
 		return result
 	}
 
@@ -181,6 +210,15 @@ func (s *TrackServiceImpl) ProbeAndSyncTrackFavorite(
 		return nil
 	}); err != nil {
 		log.Warn(ctx, "ProbeAndSyncTrackFavorite sync favorite err", zap.Error(err))
+	}
+
+	if result.TrackFavoriteProjection.FavoriteState != "" {
+		s.updateFavoriteProjectionCache(
+			trackKey,
+			favoriteProjectionVersion.Load(),
+			probe,
+			result.TrackFavoriteProjection,
+		)
 	}
 
 	log.Info(
@@ -264,6 +302,9 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		TrackNumber:   input.TrackNumber,
 		DiscNumber:    input.DiscNumber,
 		Source:        string(input.PlayerSource),
+		TraceID:       input.TraceID,
+		RootSpanID:    input.RootSpanID,
+		TraceSampled:  input.TraceSampled,
 	}
 
 	_, err := lastfmPushTrackScrobble(ctx, req)
@@ -380,6 +421,150 @@ func (s *TrackServiceImpl) shouldSyncLikeWrite(
 	s.lastLikeProbe = next
 
 	return changed
+}
+
+func (s *TrackServiceImpl) getCachedFavoriteProjection(
+	trackKey string,
+	version uint64,
+	probe favoriteProbeState,
+) (TrackFavoriteProjection, bool) {
+	s.favoriteProjectionMu.Lock()
+	defer s.favoriteProjectionMu.Unlock()
+
+	cache := s.favoriteProjectionCache
+	if !cache.valid || cache.key != trackKey || cache.version != version {
+		return TrackFavoriteProjection{}, false
+	}
+	if cache.probe != probe {
+		return TrackFavoriteProjection{}, false
+	}
+	return cache.projection, true
+}
+
+func (s *TrackServiceImpl) updateFavoriteProjectionCache(
+	trackKey string,
+	version uint64,
+	probe favoriteProbeState,
+	projection TrackFavoriteProjection,
+) {
+	s.favoriteProjectionMu.Lock()
+	defer s.favoriteProjectionMu.Unlock()
+
+	s.favoriteProjectionCache = cachedFavoriteProjection{
+		key:        trackKey,
+		probe:      probe,
+		projection: projection,
+		version:    version,
+		valid:      true,
+	}
+}
+
+func (s *TrackServiceImpl) probeLastfmFavorite(
+	ctx context.Context,
+	input PlaybackEventInput,
+) (bool, bool) {
+	cacheKey := s.buildLastfmFavoriteCacheKey(input.Artist, input.Track)
+	cacheVersion := favoriteProjectionVersion.Load()
+	now := timeNow()
+
+	if favorited, ok := s.getCachedLastfmFavorite(cacheKey, cacheVersion, input.TrackChanged, now); ok {
+		return favorited, true
+	}
+
+	favorited, err := lastfmIsFavorite(ctx, input.Artist, input.Track)
+	if err != nil {
+		log.Warn(ctx, "ProbeAndSyncTrackFavorite lastfm favorite err", zap.Error(err))
+		if cached, ok := s.getLastfmFavoriteSnapshot(cacheKey, cacheVersion); ok {
+			return cached, true
+		}
+		return false, false
+	}
+
+	s.updateLastfmFavoriteCache(cacheKey, cacheVersion, favorited, now)
+	return favorited, true
+}
+
+func (s *TrackServiceImpl) getCachedLastfmFavorite(
+	cacheKey string,
+	version uint64,
+	trackChanged bool,
+	now time.Time,
+) (bool, bool) {
+	s.lastfmFavoriteMu.Lock()
+	defer s.lastfmFavoriteMu.Unlock()
+
+	if trackChanged {
+		return false, false
+	}
+	if s.lastfmFavoriteCache == nil {
+		return false, false
+	}
+	cached, ok := s.lastfmFavoriteCache[cacheKey]
+	if !ok || cached.version != version || now.After(cached.nextProbeAt) {
+		return false, false
+	}
+	return cached.favorited, true
+}
+
+func (s *TrackServiceImpl) getLastfmFavoriteSnapshot(cacheKey string, version uint64) (bool, bool) {
+	s.lastfmFavoriteMu.Lock()
+	defer s.lastfmFavoriteMu.Unlock()
+
+	if s.lastfmFavoriteCache == nil {
+		return false, false
+	}
+	cached, ok := s.lastfmFavoriteCache[cacheKey]
+	if !ok || cached.version != version {
+		return false, false
+	}
+	return cached.favorited, true
+}
+
+func (s *TrackServiceImpl) updateLastfmFavoriteCache(
+	cacheKey string,
+	version uint64,
+	favorited bool,
+	now time.Time,
+) {
+	s.lastfmFavoriteMu.Lock()
+	defer s.lastfmFavoriteMu.Unlock()
+
+	if s.lastfmFavoriteCache == nil {
+		s.lastfmFavoriteCache = make(map[string]cachedLastfmFavorite)
+	}
+	cached := s.lastfmFavoriteCache[cacheKey]
+	if cached.version != version {
+		cached = cachedLastfmFavorite{}
+	}
+	if favorited {
+		cached.negativeStreak = 0
+		cached.nextProbeAt = now.Add(lastfmFavoritePositiveProbeInterval)
+	} else {
+		cached.negativeStreak++
+		cached.nextProbeAt = now.Add(lastfmFavoriteNegativeProbeInterval(cached.negativeStreak))
+	}
+	cached.favorited = favorited
+	cached.version = version
+	s.lastfmFavoriteCache[cacheKey] = cached
+}
+
+func (s *TrackServiceImpl) buildLastfmFavoriteCacheKey(artist, track string) string {
+	return strings.ToLower(strings.TrimSpace(artist)) + "|" + strings.ToLower(strings.TrimSpace(track))
+}
+
+func lastfmFavoriteNegativeProbeInterval(streak int) time.Duration {
+	if streak <= 1 {
+		return lastfmFavoritePositiveProbeInterval
+	}
+
+	interval := lastfmFavoritePositiveProbeInterval
+	for i := 1; i < streak; i++ {
+		interval *= 2
+		if interval >= lastfmFavoriteNegativeProbeMax {
+			return lastfmFavoriteNegativeProbeMax
+		}
+	}
+	return interval
 }
 
 func (s *TrackServiceImpl) withLikeWriteLock(ctx context.Context, lockKey string, fn func() error) error {

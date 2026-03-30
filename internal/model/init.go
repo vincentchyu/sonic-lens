@@ -63,16 +63,24 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			return err
 		}
 		if err = GlobalDBForSqlLite.AutoMigrate(
-			&DashboardStat{}, &PlaySourceStat{}, &TopArtistStat{}, &TopAlbumStat{}, &TopGenreStat{}, &PlayTrendDailyStat{}, &PlayTrendHourlyStat{}, &TrackRankStat{},
+			&DashboardStat{}, &PlaySourceStat{}, &TopArtistStat{}, &ArtistProfile{}, &TopAlbumStat{}, &TopGenreStat{},
+			&PlayTrendDailyStat{}, &PlayTrendHourlyStat{}, &TrackRankStat{},
 		); err != nil {
 			return err
 		}
+		/*if err = ensureDefaultArtistProfiles(context.Background()); err != nil {
+			return err
+		}*/
 		// Auto migrate the schema for AI insight related tables
 		if err = GlobalDBForSqlLite.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}); err != nil {
 			return err
 		}
 		// Auto migrate the schema for LLM call log table
 		if err = GlobalDBForSqlLite.AutoMigrate(&LLMCallLog{}); err != nil {
+			return err
+		}
+		// Auto migrate the schema for insight job table
+		if err = GlobalDBForSqlLite.AutoMigrate(&InsightJob{}); err != nil {
 			return err
 		}
 		// Auto migrate MusicBrainz related tables
@@ -97,10 +105,22 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err = ensureTrackIdentitySchema(context.Background()); err != nil {
 			return err
 		}
+		if err = ensureTrackPlayRecordTraceSchema(context.Background()); err != nil {
+			return err
+		}
 		if err = ensureAlbumCoverSchema(context.Background()); err != nil {
 			return err
 		}
 		if err = ensureLLMCallLogSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = EnsureArtistProfileSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureInsightJobSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = EnsureDashboardStatSchema(context.Background()); err != nil {
 			return err
 		}
 		if config.ConfigObj.IsDev {
@@ -121,16 +141,23 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 				return err
 			}
 			if err = GlobalDBForMysql.AutoMigrate(
-				&DashboardStat{}, &PlaySourceStat{}, &TopArtistStat{}, &TopAlbumStat{}, &TopGenreStat{}, &PlayTrendDailyStat{}, &PlayTrendHourlyStat{}, &TrackRankStat{},
+				&DashboardStat{}, &PlaySourceStat{}, &TopArtistStat{}, &ArtistProfile{}, &TopAlbumStat{},
+				&TopGenreStat{}, &PlayTrendDailyStat{}, &PlayTrendHourlyStat{}, &TrackRankStat{},
 			); err != nil {
 				return err
 			}
 			// Auto migrate the schema for AI insight related tables
-			if err = GlobalDBForMysql.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}); err != nil {
+			if err = GlobalDBForMysql.AutoMigrate(
+				&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{},
+			); err != nil {
 				return err
 			}
 			// Auto migrate the schema for LLM call log table
 			if err = GlobalDBForMysql.AutoMigrate(&LLMCallLog{}); err != nil {
+				return err
+			}
+			// Auto migrate the schema for insight job table
+			if err = GlobalDBForMysql.AutoMigrate(&InsightJob{}); err != nil {
 				return err
 			}
 			// Auto migrate MusicBrainz related tables

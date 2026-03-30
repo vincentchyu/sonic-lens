@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlayerView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @StateObject private var viewModel = PlayerViewModel()
     @State private var selectedTab: PlayerTab = .lyrics
     @State private var currentNowPlaying: NowPlaying
@@ -81,6 +82,10 @@ struct PlayerView: View {
                     onRefresh: reloadLyrics
                 )
 
+                if let bannerText = viewModel.playbackState.bannerText {
+                    PlaybackStatusBanner(text: bannerText)
+                }
+
                 Picker("内容", selection: $selectedTab) {
                     Text("歌词").tag(PlayerTab.lyrics)
                     Text("音眸").tag(PlayerTab.insights)
@@ -120,8 +125,8 @@ struct PlayerView: View {
                 viewModel.startProgress(position: currentNowPlaying.position, positionMs: currentNowPlaying.positionMs)
             }
         }
-        .onChange(of: store.nowPlaying?.track) { _, _ in
-            guard let updated = store.nowPlaying else { return }
+        .onChange(of: playbackStore.nowPlaying?.track) { _, _ in
+            guard let updated = playbackStore.nowPlaying else { return }
             currentNowPlaying = updated
             updateFavoriteStatus(from: updated)
             if let server = store.currentServer {
@@ -138,11 +143,11 @@ struct PlayerView: View {
                 }
             }
         }
-        .onChange(of: store.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
+        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
+            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
         }
-        .onChange(of: store.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: store.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
+            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
         }
         .onDisappear {
             viewModel.stopProgress()

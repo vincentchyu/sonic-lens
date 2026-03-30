@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -55,6 +56,42 @@ const (
 const tracerName = "sonic-lens/core/exec"
 
 var execCommand = exec.Command
+
+// MediaControlArtworkData 兼容 media-control 返回的多种封面字段格式。
+type MediaControlArtworkData []byte
+
+// UnmarshalJSON 兼容 base64、data URL 和普通字符串三种封面载荷。
+func (d *MediaControlArtworkData) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*d = nil
+		return nil
+	}
+
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == "" {
+		*d = nil
+		return nil
+	}
+
+	payload := raw
+	if strings.HasPrefix(raw, "data:") {
+		if idx := strings.Index(raw, ","); idx >= 0 && idx < len(raw)-1 {
+			payload = raw[idx+1:]
+		}
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(payload)
+	if err == nil {
+		*d = append((*d)[:0], decoded...)
+		return nil
+	}
+
+	*d = append((*d)[:0], raw...)
+	return nil
+}
 
 type (
 	MataDataHandle interface {
@@ -113,16 +150,16 @@ type (
 		BundleIdentifier      string `json:"bundleIdentifier"`      // 软件标识
 		ContentItemIdentifier string `json:"contentItemIdentifier"` // 疑似歌曲id
 
-		ArtworkData       []byte    `json:"artworkData"`       // 封面数据
-		UniqueIdentifier  int64     `json:"uniqueIdentifier"`  // 唯一标识符
-		RepeatMode        int       `json:"repeatMode"`        // 重复模式
-		QueueIndex        int       `json:"queueIndex"`        // 队列索引
-		ArtworkMimeType   string    `json:"artworkMimeType"`   // 封面类型
-		MediaType         string    `json:"mediaType"`         // 媒体类型
-		Timestamp         time.Time `json:"timestamp"`         // 时间戳
-		ShuffleMode       int       `json:"shuffleMode"`       //	洗牌模式
-		ProcessIdentifier int       `json:"processIdentifier"` // 进程标识符
-		TotalQueueCount   int       `json:"totalQueueCount"`   // 总队列数
+		ArtworkData       MediaControlArtworkData `json:"artworkData"`       // 封面数据
+		UniqueIdentifier  int64                   `json:"uniqueIdentifier"`  // 唯一标识符
+		RepeatMode        int                     `json:"repeatMode"`        // 重复模式
+		QueueIndex        int                     `json:"queueIndex"`        // 队列索引
+		ArtworkMimeType   string                  `json:"artworkMimeType"`   // 封面类型
+		MediaType         string                  `json:"mediaType"`         // 媒体类型
+		Timestamp         time.Time               `json:"timestamp"`         // 时间戳
+		ShuffleMode       int                     `json:"shuffleMode"`       //	洗牌模式
+		ProcessIdentifier int                     `json:"processIdentifier"` // 进程标识符
+		TotalQueueCount   int                     `json:"totalQueueCount"`   // 总队列数
 
 		Position   float64 // 播放位置
 		Url        string  // 歌曲链接
@@ -182,30 +219,10 @@ func (receiver ExiftoolInfo) GetTitle() string {
 }
 
 func (receiver ExiftoolInfo) GetArtists() string {
-	key1, key2 := "Artists", "artists"
-	var val any
-	val, ok := receiver[key1]
-	if ok {
-		return cast.ToString(val)
-	}
-	val, ok = receiver[key2]
-	if ok {
-		return cast.ToString(val)
-	}
-	return ""
+	return receiver.getFirstNonEmptyString("Artists", "Band", "artists", "band", "Artist", "artist")
 }
 func (receiver ExiftoolInfo) GetArtist() string {
-	key1, key2 := "Artist", "artist"
-	var val any
-	val, ok := receiver[key1]
-	if ok {
-		return cast.ToString(val)
-	}
-	val, ok = receiver[key2]
-	if ok {
-		return cast.ToString(val)
-	}
-	return ""
+	return receiver.getFirstNonEmptyString("Artists", "Band", "Artist", "artists", "band", "artist")
 }
 func (receiver ExiftoolInfo) GetAlbum() string {
 	key1, key2, key3 := "Album", "album", "album_"
@@ -221,6 +238,21 @@ func (receiver ExiftoolInfo) GetAlbum() string {
 	val, ok = receiver[key3]
 	if ok {
 		return cast.ToString(val)
+	}
+	return ""
+}
+
+// getFirstNonEmptyString 按优先级返回第一个非空字符串字段。
+func (receiver ExiftoolInfo) getFirstNonEmptyString(keys ...string) string {
+	for _, key := range keys {
+		val, ok := receiver[key]
+		if !ok {
+			continue
+		}
+		str := strings.TrimSpace(cast.ToString(val))
+		if str != "" {
+			return str
+		}
 	}
 	return ""
 }

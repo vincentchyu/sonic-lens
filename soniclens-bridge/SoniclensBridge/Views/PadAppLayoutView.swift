@@ -57,6 +57,7 @@ enum PadSidebarDestination: String, CaseIterable, Hashable {
 
 struct PadAppLayoutView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: PadSidebarDestination = .home
     @State private var showNowPlaying = false
@@ -86,6 +87,7 @@ struct PadAppLayoutView: View {
                         }
 
                         ToolbarItemGroup(placement: .topBarTrailing) {
+                            disconnectToolbarButton
                             performanceMenu
                             toolbarContent
                         }
@@ -100,7 +102,7 @@ struct PadAppLayoutView: View {
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
             Group {
-                if let nowPlaying = store.nowPlaying {
+                if let nowPlaying = playbackStore.nowPlaying {
                     PadNowPlayingView(nowPlaying: nowPlaying) {
                         showNowPlaying = false
                     }
@@ -112,7 +114,7 @@ struct PadAppLayoutView: View {
                         }
                 }
             }
-            .onChange(of: store.nowPlaying != nil) { oldValue, newValue in
+            .onChange(of: playbackStore.nowPlaying != nil) { oldValue, newValue in
                 if !newValue {
                     showNowPlaying = false
                 }
@@ -152,7 +154,7 @@ struct PadAppLayoutView: View {
         switch selection {
         case .home:
             PadHomeView(onOpenNowPlaying: {
-                if store.nowPlaying != nil {
+                if playbackStore.nowPlaying != nil {
                     showNowPlaying = true
                 }
             })
@@ -200,6 +202,19 @@ struct PadAppLayoutView: View {
                 .font(.caption)
         } label: {
             ToolbarPillLabel(title: "性能", systemImage: "gauge.medium")
+        }
+    }
+
+    @ViewBuilder
+    private var disconnectToolbarButton: some View {
+        if store.currentServer != nil {
+            Button {
+                store.disconnect()
+            } label: {
+                ToolbarPillLabel(title: "断开", systemImage: "power")
+            }
+            .buttonStyle(.plain)
+            .help("断开当前服务端")
         }
     }
 }

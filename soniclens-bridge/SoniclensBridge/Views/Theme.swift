@@ -96,31 +96,47 @@ struct GlassPanel<Content: View>: View {
 struct AmbientBackgroundView: View {
     let gradient: LinearGradient
     let orbs: [AmbientOrb]
+    var renderingStyle: AmbientBackgroundRenderingStyle = .standard
 
     @State private var animate = false
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
+        let simplified = performanceModeEnabled || renderingStyle != .standard
+        let animated = !performanceModeEnabled && renderingStyle == .standard
+        let visibleOrbs = renderingStyle == .standard ? Array(orbs.prefix(2)) : Array(orbs.prefix(1))
+
         ZStack {
             gradient
-            if !performanceModeEnabled {
-                ForEach(orbs) { orb in
+            if !visibleOrbs.isEmpty {
+                ForEach(visibleOrbs) { orb in
                     Circle()
                         .fill(orb.color)
-                        .frame(width: orb.size, height: orb.size)
-                        .blur(radius: orb.blur)
-                        .opacity(orb.opacity)
-                        .offset(animate ? orb.offsetTo : orb.offsetFrom)
+                        .frame(
+                            width: orb.size * (simplified ? 0.82 : 0.92),
+                            height: orb.size * (simplified ? 0.82 : 0.92)
+                        )
+                        .blur(radius: orb.blur * (simplified ? 0.46 : 0.72))
+                        .opacity(orb.opacity * (simplified ? 0.55 : 0.82))
+                        .offset(animated && animate ? orb.offsetTo : orb.offsetFrom)
                         .animation(
-                            .easeInOut(duration: orb.duration).repeatForever(autoreverses: true),
+                            animated
+                            ? .easeInOut(duration: orb.duration).repeatForever(autoreverses: true)
+                            : nil,
                             value: animate
                         )
                 }
             }
         }
         .ignoresSafeArea()
-        .onAppear { animate = !performanceModeEnabled }
+        .onAppear { animate = animated }
     }
+}
+
+enum AmbientBackgroundRenderingStyle {
+    case standard
+    case compact
+    case staticHome
 }
 
 struct AmbientOrb: Identifiable {

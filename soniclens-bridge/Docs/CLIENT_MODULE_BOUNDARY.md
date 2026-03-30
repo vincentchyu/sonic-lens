@@ -9,7 +9,7 @@
 | `SoniclensBridgePhoneApp.swift`（iOS / iPhone） | `PhoneRootView` | `PhoneAppLayoutView` |
 
 说明：
-- 三个 `@main App` 都只负责创建 `AppStore` 并注入 `environmentObject`。
+- 三个 `@main App` 都负责创建 `AppStore` 并注入 `environmentObject`，同时把 `PlaybackStore`、`FavoriteStore` 作为 typed environment 下发。
 - iPad / iPhone 不经过 `RootView`，分别走各自 Root 容器。
 
 ## 2. 共享模块（改动会跨端扩散）
@@ -17,6 +17,7 @@
 ### 2.1 共享状态与业务层（SoniclensCore）
 
 - `SoniclensCore/Store/AppStore.swift`
+- `SoniclensCore/Store/AppStore.swift` 持有的 `PlaybackStore` / `FavoriteStore`
 - `SoniclensCore/Store/LibraryIndexStore.swift`
 - `SoniclensCore/Store/LibrarySyncService.swift`
 - `SoniclensCore/Networking/*`（`APIClient`、`NowPlayingService`、`WebSocketClient` 等）
@@ -25,6 +26,7 @@
 
 影响面：
 - 连接态、播放态、收藏、WebSocket 增量同步等核心能力均由此层提供，默认影响 Mac / iPad / iPhone 三端。
+- `AppStore` 现在主要影响连接与容器级逻辑；`PlaybackStore` / `FavoriteStore` 的结构调整会直接改变三端高频 UI 的重绘范围。
 - `Insight` 结构、`analysis_by_section` 兼容解码、标签解析模型同样属于共享层语义，改动默认影响三端音眸展示。
 
 ### 2.2 共享 ViewModel 层
@@ -37,6 +39,8 @@
 
 影响面：
 - 数据加载、分页、筛选、详情拉取策略变更会影响所有引用这些 ViewModel 的页面。
+- `LibraryViewModel` 当前承担资料库 single-flight、页优先加载、统计后补和请求 token 丢弃过期结果；改动这里默认要做三端资料库回归。
+- `PlayerViewModel` 当前承担歌词 / insight 并行拉取与过期任务丢弃；改动这里默认要做播放页联动回归。
 
 ### 2.3 共享 UI 组件与页面
 
@@ -49,6 +53,7 @@
 
 影响面：
 - 样式 token、通用控件、列表行为修改通常会波及多端（至少两个端）。
+- `ConnectionView.swift` 的阶段反馈、取消按钮、Bonjour 候选呈现和断开入口文案属于共享连接体验，一处改动会影响三端连接流程。
 - 音眸区块顺序、标签文本样式、`explain` 视觉优先级等若在共享渲染树中调整，需按 Mac / iPad / iPhone 联动回归。
 - ShareKit 的 payload 结构、音眸 segment 解析、分页导出和保存/分享动作属于共享基础设施；改动时至少按 iPhone 首期入口和后续跨端复用性一起评估。
 - 资料库页的排序/筛选摘要属于页面级反馈，放在标题或控制区附近即可；专辑网格和曲目长列表只接收容器传入的派生值，不要直接订阅高频全局状态。
@@ -95,8 +100,12 @@
 6. 涉及 `#if os(macOS)` 或 `#if os(iOS)` 条件块时，需检查对应 target 是否都可编译。
 7. 改 `InsightDetailView.swift` 或 `LibraryModels.swift` 中的音眸解析/渲染逻辑：必须按三端共享变更处理，默认不允许在端内再复制一套字符串解析。
 8. 改 `TrackDetailView` 的 iPhone 分享入口、`SharePreviewView` 或 `ShareKit/Template/iPhone/*`：优先按 iPhone 私有体验改动处理，但必须确认没有破坏共享 payload / render / action 层接口。
+9. 改 `AppStore` / `PlaybackStore` / `FavoriteStore` 的字段边界时，必须重点回归资料库长列表、播放条、正在播放页和收藏交互，防止重新放大高频广播范围。
+10. 改 `LibraryIndexStore` 或 `LibraryViewModel` 时，除功能回归外，还要确认 favorites / unreported / recent 的本地查询结构没有退回全表扫或整页重载。
+11. 改 `BonjourDiscovery`、`ConnectionView` 或 `AppStore.connect` 时，必须验证“自动发现 -> 点击连接 -> 取消 / 成功 / 断开”整条路径，并确认阶段反馈仍然即时。
 
 ## 5. 本清单维护要求
 
 - 新增 Bridge 页面时，优先判断是“共享组件”还是“端私有容器”。
 - 若新增 `Pad*` / `Phone*` / `Mac*` 或跨端共享模块，需同步更新本清单与 `GEMINI.md` 的 Bridge 约束条目。
+- 资料库、连接链路或正在播放页的性能策略变动时，需同步更新 `Docs/PERFORMANCE_GUARDRAILS.md`。

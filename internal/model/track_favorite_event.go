@@ -303,3 +303,33 @@ func applyTrackFavoriteEventsByIDsTx(
 
 	return result, nil
 }
+
+// ApplyTrackFavoriteEventToResolvedTrackTx 将指定收藏事件显式绑定到目标曲目并应用收藏状态。
+func ApplyTrackFavoriteEventToResolvedTrackTx(
+	tx *gorm.DB, eventID, trackID int64, confidence common.TrackMetadataConfidence,
+) (bool, error) {
+	if tx == nil || eventID <= 0 || trackID <= 0 {
+		return false, nil
+	}
+
+	var event TrackFavoriteEvent
+	if err := tx.First(&event, eventID).Error; err != nil {
+		return false, err
+	}
+	if !event.Applied {
+		if err := applyTrackFavoriteBySourceTx(tx, trackID, event.Source, event.ProviderFavorite); err != nil {
+			return false, err
+		}
+	}
+	if err := updateTrackFavoriteEventResolutionTx(
+		tx,
+		event.ID,
+		trackID,
+		TrackFavoriteEventResolutionResolved,
+		confidence,
+		true,
+	); err != nil {
+		return false, err
+	}
+	return !event.Applied, nil
+}

@@ -139,6 +139,10 @@ final class ShareRenderer {
     }
 
     private func renderSingleImage(from view: AnyView, size: CGSize) throws -> UIImage {
+        if size.height > LongPosterPaginator.singleImageMaxHeight {
+            return try renderTiledSingleImage(from: view, size: size)
+        }
+
         let framed = view
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipped()
@@ -148,6 +152,46 @@ final class ShareRenderer {
             throw ShareRendererError.renderFailed
         }
         return image
+    }
+
+    private func renderTiledSingleImage(from view: AnyView, size: CGSize) throws -> UIImage {
+        let scale = renderScale(for: size.height)
+        let tileHeight = LongPosterPaginator.pagedImageMaxHeight
+        let totalHeight = ceil(size.height)
+        let totalWidth = ceil(size.width)
+
+        var renderedTiles: [(image: UIImage, offsetY: CGFloat)] = []
+        var offsetY: CGFloat = 0
+
+        while offsetY < totalHeight {
+            let currentTileHeight = min(tileHeight, totalHeight - offsetY)
+            let tileView = view
+                .frame(width: totalWidth, height: totalHeight, alignment: .top)
+                .offset(y: -offsetY)
+                .frame(width: totalWidth, height: currentTileHeight, alignment: .top)
+                .clipped()
+
+            let tileRenderer = ImageRenderer(content: tileView)
+            tileRenderer.scale = scale
+            guard let tileImage = tileRenderer.uiImage else {
+                throw ShareRendererError.renderFailed
+            }
+            renderedTiles.append((tileImage, offsetY))
+            offsetY += currentTileHeight
+        }
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        let stitchedRenderer = UIGraphicsImageRenderer(
+            size: CGSize(width: totalWidth, height: totalHeight),
+            format: format
+        )
+
+        return stitchedRenderer.image { _ in
+            for tile in renderedTiles {
+                tile.image.draw(at: CGPoint(x: 0, y: tile.offsetY))
+            }
+        }
     }
 
     private func renderPaginatedImage(

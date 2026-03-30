@@ -5,12 +5,15 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/core/applemusic"
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	artistprofilesvc "github.com/vincentchyu/sonic-lens/internal/logic/artistprofile"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -28,6 +31,7 @@ var (
 	modelGetLastFmFavoriteByIdentity     = model.GetLastFmFavoriteByIdentity
 	modelGetPendingTrackFavoriteSnapshot = model.GetPendingTrackFavoriteSnapshot
 	modelGetTrackPlayRecordByID          = model.GetTrackPlayRecordByID
+	favoriteProjectionVersion            atomic.Uint64
 )
 
 // TrackService 定义曲目相关服务接口
@@ -90,6 +94,8 @@ type TrackService interface {
 	) (TrackFavoriteProjection, error)
 	// GetTopAlbumsByPlayCount 获取按播放次数统计的热门专辑
 	GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*model.TopAlbum, error)
+	// GetTopTracksByPlayCount 获取按播放次数统计的热门曲目
+	GetTopTracksByPlayCount(ctx context.Context, days int, limit int) ([]*model.TopTrack, error)
 	// Genre related methods
 	// GetAlbums 获取专辑列表（分页）
 	GetAlbums(ctx context.Context, limit, offset int, keyword string) ([]*model.Album, error)
@@ -117,11 +123,33 @@ type TrackServiceImpl struct {
 	favoriteProbeMu sync.Mutex
 	lastLikeKey     string
 	lastLikeProbe   favoriteProbeState
+
+	favoriteProjectionMu    sync.Mutex
+	favoriteProjectionCache cachedFavoriteProjection
+	lastfmFavoriteMu        sync.Mutex
+	lastfmFavoriteCache     map[string]cachedLastfmFavorite
+}
+
+type cachedFavoriteProjection struct {
+	key        string
+	probe      favoriteProbeState
+	projection TrackFavoriteProjection
+	version    uint64
+	valid      bool
+}
+
+type cachedLastfmFavorite struct {
+	favorited      bool
+	nextProbeAt    time.Time
+	negativeStreak int
+	version        uint64
 }
 
 // NewTrackService 创建TrackService实例
 func NewTrackService() TrackService {
-	return &TrackServiceImpl{}
+	return &TrackServiceImpl{
+		lastfmFavoriteCache: make(map[string]cachedLastfmFavorite),
+	}
 }
 
 // GetTrackPlayCounts 获取曲目播放统计列表
@@ -204,12 +232,20 @@ func (s *TrackServiceImpl) GetPlayTrendByDays(
 
 // GetTopArtistsByPlayCount 获取按播放次数统计的热门艺术家
 func (s *TrackServiceImpl) GetTopArtistsByPlayCount(ctx context.Context, limit int) ([]map[string]interface{}, error) {
-	return model.GetTopArtistsByPlayCount(ctx, limit)
+	items, err := model.GetTopArtistsByPlayCount(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return artistprofilesvc.NewService().MergeProfilesIntoTopArtists(ctx, items)
 }
 
 // GetTopArtistsByTrackCount 获取按曲目数统计的热门艺术家
 func (s *TrackServiceImpl) GetTopArtistsByTrackCount(ctx context.Context, limit int) ([]map[string]interface{}, error) {
-	return model.GetTopArtistsByTrackCount(ctx, limit)
+	items, err := model.GetTopArtistsByTrackCount(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return artistprofilesvc.NewService().MergeProfilesIntoTopArtists(ctx, items)
 }
 
 // GetTrackPlayCountsByPeriod 获取指定时间段内的曲目播放统计
@@ -229,6 +265,13 @@ func (s *TrackServiceImpl) GetTopAlbumsByPlayCount(ctx context.Context, days int
 	[]*model.TopAlbum, error,
 ) {
 	return model.GetTopAlbumsByPlayCount(ctx, days, limit)
+}
+
+// GetTopTracksByPlayCount 获取按播放次数统计的热门曲目
+func (s *TrackServiceImpl) GetTopTracksByPlayCount(ctx context.Context, days int, limit int) (
+	[]*model.TopTrack, error,
+) {
+	return model.GetTopTracksByPlayCount(ctx, days, limit)
 }
 
 // GetUnscrobbledRecordsWithPagination 分页获取未同步到Last.fm的播放记录
@@ -408,6 +451,7 @@ func (s *TrackServiceImpl) SetTrackFavorite(
 		zap.Bool("apple_music_favorite", projection.AppleMusic),
 		zap.Bool("last_fm_favorite", projection.LastFM),
 	)
+	favoriteProjectionVersion.Add(1)
 	return projection, callErr
 }
 

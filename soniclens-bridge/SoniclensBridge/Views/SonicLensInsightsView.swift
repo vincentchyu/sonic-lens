@@ -81,11 +81,7 @@ struct SonicLensInsightsView: View {
 
     @ViewBuilder
     private func destination(for insight: InsightSummary) -> some View {
-        if insight.isAlbum, let albumID = insight.albumID, albumID > 0 {
-            albumDetailDestination(albumID: albumID, selectedTab: .insights)
-        } else {
-            InsightDetailLoaderView(viewModel: viewModel, summary: insight)
-        }
+        InsightDetailLoaderView(viewModel: viewModel, summary: insight)
     }
 }
 
@@ -142,14 +138,17 @@ struct InsightDetailLoaderView: View {
     @ObservedObject var viewModel: LibraryViewModel
     let summary: InsightSummary
 
-    @State private var detail: Insight?
+    @State private var trackDetail: Insight?
+    @State private var albumDetail: AlbumInsight?
     @State private var isLoading = true
     @State private var errorMessage: String?
 
     var body: some View {
         Group {
-            if let detail {
-                InsightDetailView(insight: detail)
+            if let trackDetail {
+                InsightDetailView(insight: trackDetail)
+            } else if let albumDetail {
+                AlbumInsightDetailView(insight: albumDetail)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -166,12 +165,21 @@ struct InsightDetailLoaderView: View {
                                 .padding(20)
                                 .glassCard(cornerRadius: 14)
                         } else {
-                            InsightPrimaryContentView(
-                                insight: nil,
-                                style: .detail,
-                                emptyTitle: "暂无音眸",
-                                emptySubtitle: "当前曲目还没有可展示的音眸内容。"
-                            )
+                            if summary.isAlbum {
+                                AlbumInsightPrimaryContentView(
+                                    insight: nil,
+                                    compact: false,
+                                    emptyTitle: "暂无专辑音眸",
+                                    emptySubtitle: "当前专辑还没有可展示的音眸内容。"
+                                )
+                            } else {
+                                InsightPrimaryContentView(
+                                    insight: nil,
+                                    style: .detail,
+                                    emptyTitle: "暂无音眸",
+                                    emptySubtitle: "当前曲目还没有可展示的音眸内容。"
+                                )
+                            }
                         }
                     }
                     .padding(32)
@@ -191,8 +199,14 @@ struct InsightDetailLoaderView: View {
         }
         isLoading = true
         errorMessage = nil
+        trackDetail = nil
+        albumDetail = nil
         do {
-            detail = try await viewModel.fetchInsightDetail(using: server, id: summary.id)
+            if summary.isAlbum {
+                albumDetail = try await viewModel.fetchAlbumInsightDetail(using: server, id: summary.id)
+            } else {
+                trackDetail = try await viewModel.fetchTrackInsightDetail(using: server, id: summary.id)
+            }
         } catch {
             errorMessage = "音眸详情加载失败"
         }

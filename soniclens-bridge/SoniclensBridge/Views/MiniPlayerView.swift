@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NowPlayingBarView: View {
-    @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @Binding var isExpanded: Bool
 
@@ -12,7 +12,7 @@ struct NowPlayingBarView: View {
     static let height: CGFloat = 92
 
     var body: some View {
-        let nowPlaying = store.nowPlaying
+        let nowPlaying = playbackStore.nowPlaying
 
         Button(action: {
             guard nowPlaying != nil else { return }
@@ -83,7 +83,7 @@ struct NowPlayingBarView: View {
     }
 
     private var progressValue: Double {
-        guard let nowPlaying = store.nowPlaying,
+        guard let nowPlaying = playbackStore.nowPlaying,
               let duration = nowPlaying.duration,
               duration > 0
         else { return 0 }

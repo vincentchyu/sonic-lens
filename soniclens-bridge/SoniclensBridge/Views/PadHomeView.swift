@@ -3,6 +3,7 @@ import SwiftUI
 #if os(iOS)
 struct PadHomeView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @StateObject private var viewModel = HomeViewModel()
     @State private var selectedRecentTrack: Track?
     @State private var selectedAlbumID: Int64?
@@ -20,73 +21,119 @@ struct PadHomeView: View {
                 orbs: [
                     AmbientOrb(color: SonicTheme.primary.opacity(0.26), size: 520, blur: 140, opacity: 0.7, offsetFrom: CGSize(width: -220, height: -280), offsetTo: CGSize(width: -140, height: -160), duration: 20),
                     AmbientOrb(color: SonicTheme.secondaryAccent.opacity(0.18), size: 420, blur: 150, opacity: 0.7, offsetFrom: CGSize(width: 280, height: 120), offsetTo: CGSize(width: 180, height: 220), duration: 26)
-                ]
+                ],
+                renderingStyle: .staticHome
             )
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                LazyVStack(alignment: .leading, spacing: 24) {
                     if let message = viewModel.errorMessage {
                         ErrorBanner(message: message)
                     }
 
-                    PadHomeHero(nowPlaying: store.nowPlaying, onOpenNowPlaying: onOpenNowPlaying)
+                    PadHomeHero(nowPlaying: playbackStore.nowPlaying, onOpenNowPlaying: onOpenNowPlaying)
 
-                    DashboardStatsSection(stats: viewModel.stats)
+                    let hotPresentation = viewModel.hotModulePresentation
+                    let trendSnapshot = viewModel.trendSnapshot
+                    let selectedAccent = hotPresentation.primaryAccentKey
 
-                    DashboardTrendSection(
-                        points: viewModel.trendPoints,
-                        hourlyData: viewModel.hourlyData,
-                        subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
-                        heatmapLayout: .fixedWidthScrollable(cellWidth: 7),
-                        axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
+                    VStack(alignment: .leading, spacing: 14) {
+                        // HotModuleSectionHeader(
+                        //     title: "听觉版图",
+                        //     subtitle: "在 iPad 上先铺开热门专辑、艺术家和曲目，再把口味与播放渠道压进同一张聆听画像里。",
+                        //     accentKey: selectedAccent
+                        //  )
+
+                        DashboardTrendSection(
+                            points: trendSnapshot.points,
+                            hourlyData: trendSnapshot.hourlyData,
+                            title: "聆听趋势",
+                            subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                            heatmapLayout: .fixedWidthScrollable(cellWidth: 7),
+                            axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
+                        )
+                        .equatable()
+                        .frame(maxWidth: .infinity)
+
+                        ListeningProfileCard(
+                            summaryText: hotPresentation.combinedSummaryText,
+                            footnoteText: hotPresentation.profileFootnoteText,
+                            genres: Array(hotPresentation.genres.prefix(3)),
+                            sources: Array(hotPresentation.sources.prefix(3)),
+                            accentKey: selectedAccent,
+                            layoutStyle: .split
+                        )
+
+                        AdaptiveWidthContainer(minWidth: 900) {
+                            Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                                GridRow {
+                                    VStack(spacing: 16) {
+                                        AlbumShelfCard(
+                                            items: Array(hotPresentation.albums.prefix(6)),
+                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                            style: .rail,
+                                            collectionCount: hotPresentation.totalAlbumsCount,
+                                            accentKey: selectedAccent,
+                                            onAlbumTap: { selectedAlbumID = $0 }
+                                        )
+                                        .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+
+                                        ArtistLadderCard(
+                                            items: Array(hotPresentation.artists.prefix(6)),
+                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                            collectionCount: hotPresentation.totalArtistsCount,
+                                            accentKey: selectedAccent
+                                        )
+                                        .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                                    }
+                                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+
+                                        TrackShelfCard(
+                                            items: Array(hotPresentation.tracks.prefix(6)),
+                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                            style: .rail,
+                                            totalTracksCount: hotPresentation.totalTracksCount,
+                                            accentKey: selectedAccent,
+                                            onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                        )
+                                    .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                            }
+                        } narrowContent: {
+                            VStack(spacing: 16) {
+                                AlbumShelfCard(
+                                    items: Array(hotPresentation.albums.prefix(6)),
+                                    artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                    style: .rail,
+                                    collectionCount: hotPresentation.totalAlbumsCount,
+                                    accentKey: selectedAccent,
+                                    onAlbumTap: { selectedAlbumID = $0 }
+                                )
+
+                                ArtistLadderCard(
+                                    items: Array(hotPresentation.artists.prefix(6)),
+                                    artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                    collectionCount: hotPresentation.totalArtistsCount,
+                                    accentKey: selectedAccent
+                                )
+
+                                TrackShelfCard(
+                                    items: Array(hotPresentation.tracks.prefix(6)),
+                                    artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                    style: .rail,
+                                    totalTracksCount: hotPresentation.totalTracksCount,
+                                    accentKey: selectedAccent,
+                                    onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                )
+                            }
+                        }
+                    }
+
+                    RecentPlaysSection(
+                        items: viewModel.recentPlays,
+                        totalPlaysCount: hotPresentation.totalPlaysCount,
+                        onTrackTap: { selectedRecentTrack = $0 }
                     )
-                    .equatable()
-                    .frame(maxWidth: .infinity)
-
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 16) {
-                            TopGenresCard(topGenres: viewModel.topGenres)
-                                .frame(maxWidth: .infinity)
-                            TopArtistsCard(topArtists: viewModel.topArtistsByPlays)
-                                .frame(maxWidth: .infinity)
-                        }
-
-                        VStack(spacing: 16) {
-                            TopGenresCard(topGenres: viewModel.topGenres)
-                            TopArtistsCard(topArtists: viewModel.topArtistsByPlays)
-                        }
-                    }
-
-                    TopAlbumsCard(topAlbums: viewModel.topAlbums, onAlbumTap: { selectedAlbumID = $0 })
-
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 16) {
-                            RecentPlaysSection(
-                                items: viewModel.recentPlays,
-                                onTrackTap: { selectedRecentTrack = $0 }
-                            )
-                            .frame(maxWidth: .infinity)
-
-                            RankingsCard(
-                                topArtistsByPlays: viewModel.topArtistsByPlays,
-                                topTracks: viewModel.topTracks,
-                                onTrackTap: { selectedRecentTrack = $0 }
-                            )
-                            .frame(maxWidth: .infinity)
-                        }
-
-                        VStack(spacing: 16) {
-                            RecentPlaysSection(
-                                items: viewModel.recentPlays,
-                                onTrackTap: { selectedRecentTrack = $0 }
-                            )
-                            RankingsCard(
-                                topArtistsByPlays: viewModel.topArtistsByPlays,
-                                topTracks: viewModel.topTracks,
-                                onTrackTap: { selectedRecentTrack = $0 }
-                            )
-                        }
-                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
@@ -127,13 +174,13 @@ private struct PadHomeHero: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SonicLens Bridge for iPad")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.88))
+                        .foregroundStyle(TrendHeatmapView.levelFour)
                     Text("声之透镜 · 深度解析 · 聆听之印记")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(SonicTheme.textPrimary)
                     Text("音乐不仅是流动的空气，更是我们生命中不曾停歇的数字资产")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.82))
+                        .foregroundStyle(SonicTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -146,14 +193,14 @@ private struct PadHomeHero: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("正在播放")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.white.opacity(0.72))
+                                    .foregroundStyle(SonicTheme.textSecondary)
                                 Text(nowPlaying.track)
                                     .font(.title3.weight(.semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(SonicTheme.textPrimary)
                                     .lineLimit(1)
                                 Text([nowPlaying.artist, nowPlaying.album].compactMap { $0 }.joined(separator: " · "))
                                     .font(.subheadline)
-                                    .foregroundStyle(Color.white.opacity(0.76))
+                                    .foregroundStyle(SonicTheme.textSecondary)
                                     .lineLimit(1)
                             }
 
@@ -161,30 +208,73 @@ private struct PadHomeHero: View {
 
                             Label("进入沉浸播放中", systemImage: "arrow.up.left.and.arrow.down.right")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(TrendHeatmapView.levelFour)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.14), in: Capsule())
+                                .background(TrendHeatmapView.levelFour.opacity(0.10), in: Capsule())
                         }
                         .padding(18)
-                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
+                        .background(
+                            SonicTheme.dynamicColor(
+                                light: .sonicRGBA(0.99, 0.98, 0.95, 0.82),
+                                dark: .sonicWhite(1, alpha: 0.08)
+                            ),
+                            in: RoundedRectangle(cornerRadius: 22)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [
-                        SonicTheme.primary.opacity(0.86),
-                        SonicTheme.secondaryAccent.opacity(0.52),
-                        Color.black.opacity(0.18)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .background {
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            SonicTheme.dynamicColor(light: .sonicRGBA(0.99, 0.98, 0.95, 1), dark: .sonicRGBA(0.10, 0.10, 0.12, 1)),
+                            SonicTheme.dynamicColor(light: .sonicRGBA(0.96, 0.95, 0.91, 1), dark: .sonicRGBA(0.07, 0.08, 0.10, 1))
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    RadialGradient(
+                        colors: [TrendHeatmapView.levelFour.opacity(0.14), Color.clear],
+                        center: .topLeading,
+                        startRadius: 0,
+                        endRadius: 280
+                    )
+                    RadialGradient(
+                        colors: [SonicTheme.primary.opacity(0.035), Color.clear],
+                        center: .bottomTrailing,
+                        startRadius: 0,
+                        endRadius: 220
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct AdaptiveWidthContainer<Content: View, NarrowContent: View>: View {
+    let minWidth: CGFloat
+    private let content: Content
+    private let narrowContent: NarrowContent
+
+    init(
+        minWidth: CGFloat,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder narrowContent: () -> NarrowContent
+    ) {
+        self.minWidth = minWidth
+        self.content = content()
+        self.narrowContent = narrowContent()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            content
+                .frame(minWidth: minWidth, alignment: .leading)
+            narrowContent
         }
     }
 }

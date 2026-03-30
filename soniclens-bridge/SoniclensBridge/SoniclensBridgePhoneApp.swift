@@ -9,6 +9,9 @@ struct SoniclensBridgePhoneApp: App {
         WindowGroup {
             PhoneRootView()
                 .environmentObject(store)
+                .environment(store.playbackStore)
+                .environment(store.favoriteStore)
+                .environmentObject(store.insightCoordinator)
         }
     }
 }

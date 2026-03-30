@@ -14,7 +14,7 @@ settings:
   base:
     SWIFT_VERSION: 5.9
     DEVELOPMENT_TEAM: ""
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: 1
 
 packages:
@@ -35,6 +35,10 @@ schemes:
     build:
       targets:
         SoniclensBridgePhone: all
+  SoniclensActivities:
+    build:
+      targets:
+        SoniclensActivities: all
 
 
 # Targets
@@ -114,6 +118,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.phone
         INFOPLIST_FILE: SoniclensBridge/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SoniclensBridge/SoniclensBridgePhone.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
@@ -129,6 +134,11 @@ targets:
     dependencies:
       - package: Nuke
         product: NukeUI
+      - target: SoniclensActivities
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
     info:
       path: SoniclensBridge/Info.plist
       properties:
@@ -136,5 +146,42 @@ targets:
         NSLocalNetworkUsageDescription: "用于发现并连接 SonicLens 服务端"
         NSPhotoLibraryAddUsageDescription: "用于将分享图片保存到系统照片"
         NSBonjourServices: ["_soniclens._tcp"]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: "com.vincentchyu.soniclens-bridge.phone"
+            CFBundleURLSchemes: ["soniclens"]
         UILaunchStoryboardName: LaunchScreen
 
+  SoniclensActivities:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.phone.activities
+        INFOPLIST_FILE: SoniclensActivities/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SoniclensActivities/SoniclensActivities.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+    sources:
+      - path: SoniclensActivities
+        excludes:
+          - Info.plist
+      - path: SoniclensCore
+        includes:
+          - Models/LiveActivityArtworkSupport.swift
+          - Models/InsightJobPhase.swift
+          - Models/InsightLiveActivityAttributes.swift
+    info:
+      path: SoniclensActivities/Info.plist
+      properties:
+        CFBundleDisplayName: "SonicLens Activities"
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: "用于在实时活动中显示 SonicLens 共享封面缓存"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

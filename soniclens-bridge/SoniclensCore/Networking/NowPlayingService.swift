@@ -8,6 +8,7 @@ final class NowPlayingService {
 
     var onUpdate: ((NowPlaying?, String?) -> Void)?
     var onLibraryUpdate: ((Int64) -> Void)?
+    var onInsightJobUpdate: ((InsightAnalysisJob) -> Void)?
 
     init(server: ServerConfig) {
         self.server = server
@@ -62,6 +63,13 @@ final class NowPlayingService {
             }
             logger.debug("dispatch library_updated version=\(msg.version, privacy: .public)")
             onLibraryUpdate?(msg.version)
+        } else if envelope.type == "insight_job_updated" {
+            guard let msg = try? JSONDecoders.defaultDecoder().decode(InsightJobUpdatedEnvelope.self, from: data) else {
+                logger.error("decode insight_job_updated message failed")
+                return
+            }
+            logger.debug("dispatch insight_job_updated id=\(msg.data.id, privacy: .public) phase=\(msg.data.phase.rawValue, privacy: .public)")
+            onInsightJobUpdate?(msg.data)
         }
     }
 

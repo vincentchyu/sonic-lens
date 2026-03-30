@@ -12,6 +12,11 @@ case "$1" in
   stop)
     sh "$SCRIPT_DIR/stop_sonic-lens.sh"
     ;;
+  restart)
+    sh "$SCRIPT_DIR/stop_sonic-lens.sh"
+    sh "$SCRIPT_DIR/build_sonic-lens_launchctl.sh"
+    sh "$SCRIPT_DIR/start_sonic-lens.sh"
+    ;;
   *)
     echo "用法: $0 {init|start|stop}"
     exit 1

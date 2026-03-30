@@ -15,6 +15,7 @@
 ### 1.2 关键目录
 - 工程目录：`/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge`
 - Xcode 工程：`/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge/SoniclensBridge.xcodeproj`
+- XcodeGen 真源：`/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge/project.yml`
 - iPad App 入口：`/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge/SoniclensBridge/SoniclensBridgePadApp.swift`
 - macOS App 入口：`/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge/SoniclensBridge/SoniclensBridgeApp.swift`
 
@@ -33,6 +34,10 @@ brew install xcodegen
 cd /Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge
 xcodegen generate
 ```
+
+说明：
+- `SoniclensBridge.xcodeproj` 是生成产物，不是手工维护真源。
+- 如果你修改了 target、scheme、Info.plist 属性、Widget Extension 或 Embed 配置，必须先改 `project.yml`，再执行 `xcodegen generate`。
 
 ### 1.4 iPad 模拟器运行时准备
 如果 `xcodebuild -showdestinations` 看不到 iPad Simulator，通常是没有安装 iOS Simulator runtime。

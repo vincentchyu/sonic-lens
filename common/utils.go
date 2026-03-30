@@ -83,6 +83,8 @@ func ArtistCustomFit(artist string) string {
 	switch artist {
 	case "Omnipotent Youth Society":
 		return "万能青年旅店"
+	case "重塑雕像的权利":
+		return "Re-TROS"
 		// todo add
 	}
 	return artist
@@ -97,6 +99,8 @@ func TrackCustomFit(artist string) string {
 		return "Another Brick in the Wall, Part 2"
 	case "Another Brick In the Wall, Pt. 3":
 		return "Another Brick in the Wall, Part 3"
+	case "蚂蚁蚂蚁":
+		return "蚂蚁 蚂蚁"
 		// todo add
 	}
 	return artist

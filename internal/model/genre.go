@@ -30,6 +30,7 @@ type TopGenre struct {
 	TrackGenreCount int64  `json:"track_genre_count"` // 流派播放次数
 	GenreNameZh     string `json:"genre_name_zh"`     // 流派中文名
 	GenreCount      int64  `json:"genre_count"`       // 流派总播放次数
+	Rank            int    `json:"rank"`              // 排名
 }
 
 // TableName sets the table name for the Genre model
@@ -149,6 +150,10 @@ func GetTopGenresWithDetails(ctx context.Context, limit int) ([]*TopGenre, error
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	for index := range result {
+		result[index].Rank = index + 1
 	}
 
 	return result, nil

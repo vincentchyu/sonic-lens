@@ -8,6 +8,7 @@ struct Album: Codable, Identifiable, Hashable {
     let coverArtURL: String?
     let coverArtMime: String?
     let coverArtObjectKey: String?
+    let hasInsight: Bool
     let genre: String?
     let totalDiscs: Int?
     let playCount: Int?
@@ -22,11 +23,29 @@ struct Album: Codable, Identifiable, Hashable {
         case coverArtURL = "cover_art_url"
         case coverArtMime = "cover_art_mime"
         case coverArtObjectKey = "cover_art_object_key"
+        case hasInsight = "has_insight"
         case genre
         case totalDiscs = "total_discs"
         case playCount = "play_count"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int64.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        artist = try container.decode(String.self, forKey: .artist)
+        releaseDate = try container.decodeIfPresent(String.self, forKey: .releaseDate)
+        coverArtURL = try container.decodeIfPresent(String.self, forKey: .coverArtURL)
+        coverArtMime = try container.decodeIfPresent(String.self, forKey: .coverArtMime)
+        coverArtObjectKey = try container.decodeIfPresent(String.self, forKey: .coverArtObjectKey)
+        hasInsight = try container.decodeIfPresent(Bool.self, forKey: .hasInsight) ?? false
+        genre = try container.decodeIfPresent(String.self, forKey: .genre)
+        totalDiscs = try container.decodeIfPresent(Int.self, forKey: .totalDiscs)
+        playCount = try container.decodeIfPresent(Int.self, forKey: .playCount)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
     }
 
     init(
@@ -37,6 +56,7 @@ struct Album: Codable, Identifiable, Hashable {
         coverArtURL: String? = nil,
         coverArtMime: String? = nil,
         coverArtObjectKey: String? = nil,
+        hasInsight: Bool = false,
         genre: String?,
         totalDiscs: Int?,
         playCount: Int? = nil,
@@ -50,6 +70,7 @@ struct Album: Codable, Identifiable, Hashable {
         self.coverArtURL = coverArtURL
         self.coverArtMime = coverArtMime
         self.coverArtObjectKey = coverArtObjectKey
+        self.hasInsight = hasInsight
         self.genre = genre
         self.totalDiscs = totalDiscs
         self.playCount = playCount

@@ -8,6 +8,7 @@ private enum PadNowPlayingTab: String, CaseIterable {
 
 struct PadNowPlayingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @StateObject private var viewModel = PlayerViewModel()
@@ -38,6 +39,7 @@ struct PadNowPlayingView: View {
                         favoriteStatus: favoriteStatus,
                         lyricsFollowMode: $lyricsFollowMode,
                         selectedTab: $selectedTab,
+                        statusBannerText: viewModel.playbackState.bannerText,
                         onFavorite: toggleFavorite,
                         onClose: onClose
                     )
@@ -109,14 +111,14 @@ struct PadNowPlayingView: View {
         .onChange(of: trackIdentity) { _, _ in
             Task { await refreshNowPlaying(forcePaletteRefresh: true) }
         }
-        .onChange(of: store.nowPlaying?.artwork) { _, artwork in
+        .onChange(of: playbackStore.nowPlaying?.artwork) { _, artwork in
             Task { await updatePalette(for: artwork) }
         }
-        .onChange(of: store.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: store.nowPlaying?.positionMs)
+        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
+            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
         }
-        .onChange(of: store.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: store.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
+            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
         }
         .onDisappear {
             viewModel.stopProgress()
@@ -124,7 +126,7 @@ struct PadNowPlayingView: View {
     }
 
     private var currentNowPlaying: NowPlaying {
-        store.nowPlaying ?? nowPlaying
+        playbackStore.nowPlaying ?? nowPlaying
     }
 
     private var trackIdentity: String {
@@ -197,15 +199,22 @@ private struct PadNowPlayingTopBar: View {
     let favoriteStatus: NowPlayingFavoriteStatus
     @Binding var lyricsFollowMode: Bool
     @Binding var selectedTab: PadNowPlayingTab
+    let statusBannerText: String?
     let onFavorite: () -> Void
     let onClose: () -> Void
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
         HStack(spacing: 14) {
-            Text("正在播放")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                Text("正在播放")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                if let statusBannerText {
+                    PlaybackStatusBanner(text: statusBannerText)
+                }
+            }
 
             Spacer()
 

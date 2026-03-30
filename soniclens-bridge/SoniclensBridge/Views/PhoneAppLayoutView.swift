@@ -42,9 +42,13 @@ enum PhoneTabDestination: String, CaseIterable, Hashable {
 
 struct PhoneAppLayoutView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
+    @EnvironmentObject private var insightCoordinator: InsightAnalysisCoordinator
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: PhoneTabDestination = .home
     @State private var showNowPlaying = false
+    @State private var routedTrack: TrackDetailRoute?
+    @State private var routedAlbum: AlbumDetailRoute?
     @StateObject private var libraryViewModel = LibraryViewModel()
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled = false
     private let tabBarHeight: CGFloat = 49
@@ -59,11 +63,11 @@ struct PhoneAppLayoutView: View {
                     }
 
                     phoneNavigationTab(for: .albums) {
-                        PhoneAlbumLibraryTab(viewModel: libraryViewModel)
+                        PhoneAlbumLibraryTab(viewModel: libraryViewModel, routedAlbum: $routedAlbum)
                     }
 
                     phoneNavigationTab(for: .tracks) {
-                        PhoneTrackLibraryTab(viewModel: libraryViewModel)
+                        PhoneTrackLibraryTab(viewModel: libraryViewModel, routedTrack: $routedTrack)
                     }
 
                     phoneNavigationTab(for: .sonicLens) {
@@ -90,7 +94,7 @@ struct PhoneAppLayoutView: View {
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
             Group {
-                if let nowPlaying = store.nowPlaying {
+                if let nowPlaying = playbackStore.nowPlaying {
                     PhoneNowPlayingView(nowPlaying: nowPlaying) {
                         showNowPlaying = false
                     }
@@ -102,7 +106,7 @@ struct PhoneAppLayoutView: View {
                         }
                 }
             }
-            .onChange(of: store.nowPlaying != nil) { _, newValue in
+            .onChange(of: playbackStore.nowPlaying != nil) { _, newValue in
                 if !newValue {
                     showNowPlaying = false
                 }
@@ -118,7 +122,19 @@ struct PhoneAppLayoutView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, let server = store.currentServer else { return }
-            Task { await libraryViewModel.refresh(using: server) }
+            Task {
+                await libraryViewModel.refresh(using: server)
+                await insightCoordinator.reconcileIfNeeded(using: server)
+            }
+        }
+        .onOpenURL { url in
+            Task {
+                await insightCoordinator.handleDeepLink(url, using: store.currentServer)
+                await applyPendingInsightRoute()
+            }
+        }
+        .task(id: pendingInsightRouteToken) {
+            await applyPendingInsightRoute()
         }
         .onReceive(NotificationCenter.default.publisher(for: .librarySyncDidUpdate)) { _ in
             guard let server = store.currentServer else { return }
@@ -134,18 +150,21 @@ struct PhoneAppLayoutView: View {
         for destination: PhoneTabDestination,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        NavigationStack {
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AppBackground())
-                .toolbar {
+                NavigationStack {
+                    content()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(AppBackground())
+                        .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Text(destination.title)
                             .font(.headline.weight(.semibold))
                     }
 
                     ToolbarItem(placement: .topBarTrailing) {
-                        performanceMenu
+                        HStack(spacing: 12) {
+                            disconnectToolbarButton
+                            performanceMenu
+                        }
                     }
                 }
         }
@@ -165,9 +184,45 @@ struct PhoneAppLayoutView: View {
         }
     }
 
+    @ViewBuilder
+    private var disconnectToolbarButton: some View {
+        if store.currentServer != nil {
+            Button {
+                store.disconnect()
+            } label: {
+                Image(systemName: "power")
+            }
+            .help("断开当前服务端")
+            .accessibilityLabel("断开当前服务端")
+        }
+    }
+
     private func openNowPlaying() {
-        guard store.nowPlaying != nil else { return }
+        guard playbackStore.nowPlaying != nil else { return }
         showNowPlaying = true
+    }
+
+    private var pendingInsightRouteToken: String {
+        guard let route = insightCoordinator.pendingRoute else { return "none" }
+        return "\(route.jobID)::\(route.targetType.rawValue)"
+    }
+
+    @MainActor
+    private func applyPendingInsightRoute() async {
+        guard let route = insightCoordinator.pendingRoute else { return }
+        switch route.targetType {
+        case .track:
+            guard let track = route.track else { return }
+            selection = .tracks
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            routedTrack = TrackDetailRoute(track: track, selectedTab: .insights)
+        case .album:
+            guard let albumID = route.albumID else { return }
+            selection = .albums
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            routedAlbum = AlbumDetailRoute(albumID: albumID, selectedTab: .insights)
+        }
+        insightCoordinator.consumePendingRoute()
     }
 }
 
@@ -179,6 +234,7 @@ private struct PhoneAlbumLibraryTab: View {
     @State private var searchCommitTask: Task<Void, Never>?
 
     @ObservedObject var viewModel: LibraryViewModel
+    @Binding var routedAlbum: AlbumDetailRoute?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -208,6 +264,9 @@ private struct PhoneAlbumLibraryTab: View {
         .onDisappear {
             searchCommitTask?.cancel()
         }
+        .navigationDestination(item: $routedAlbum) { route in
+            albumDetailDestination(albumID: route.albumID, selectedTab: route.selectedTab)
+        }
     }
 
     private func scheduleSearchCommit(_ text: String) {
@@ -235,6 +294,7 @@ private struct PhoneTrackLibraryTab: View {
     @State private var searchCommitTask: Task<Void, Never>?
 
     @ObservedObject var viewModel: LibraryViewModel
+    @Binding var routedTrack: TrackDetailRoute?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -257,6 +317,9 @@ private struct PhoneTrackLibraryTab: View {
                 LibrarySortMenu(title: "排序", selection: $sort, options: LibrarySort.trackOptions)
                 TrackFilterMenu(selection: $filter)
             }
+        }
+        .navigationDestination(item: $routedTrack) { route in
+            trackDetailDestination(track: route.track, selectedTab: route.selectedTab)
         }
         .onChange(of: searchText) { _, value in
             scheduleSearchCommit(value)

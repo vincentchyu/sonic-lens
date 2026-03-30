@@ -23,6 +23,7 @@
 
 Notes:
 - All app entries create and inject a shared `AppStore`.
+- All app entries also inject `PlaybackStore` and `FavoriteStore` as typed environment values for high-frequency UI reads.
 - iPad and iPhone do not route through the macOS `RootView`.
 - App shell differences belong to platform containers, not to shared core modules.
 
@@ -38,7 +39,9 @@ Notes:
 - `Models`
   - API response and client-facing model types
 - `Store`
-  - `AppStore`: global app state
+  - `AppStore`: low-frequency app-wide state, connection orchestration, recent servers, insight coordination
+  - `PlaybackStore`: high-frequency now-playing slice for UI
+  - `FavoriteStore`: high-frequency favorite projection slice for UI
   - `LibraryIndexStore`: local library index access
   - `LibrarySyncService`: incremental library sync orchestration
   - `SnapshotCache`: lightweight UI snapshot cache
@@ -51,7 +54,8 @@ Notes:
 - `TrackDetailViewModel`
 
 Rules:
-- `AppStore` owns cross-screen app state such as server selection, connection, now playing, favorites, and library update notifications.
+- `AppStore` owns cross-screen low-frequency state such as server selection, connection, recent servers, insight coordination, and library update notifications.
+- `PlaybackStore` and `FavoriteStore` own high-frequency UI slices and should be consumed directly by rows, details, and playback surfaces.
 - Page-local `ViewModel` types own loading state, refresh logic, pagination state, and view-facing derived state.
 - Expensive IO and orchestration stay out of SwiftUI `body`.
 
@@ -122,12 +126,19 @@ Rules:
 - Do not regress to remote pagination plus large in-memory filtering/sorting for library pages.
 - Sync, indexing, and cache invalidation logic should stay in shared core/store layers.
 - Library sort/filter/query state stays page-local; dense lists should receive only derived inputs and static container data, not broad high-frequency store updates.
+- Background library refresh is single-flight; page enter, foreground refresh, and WS invalidation should merge rather than fan out.
+- Album and track pages should load the first page before the count; totals are allowed to resolve asynchronously.
+- Stale query results must be discarded with request tokens when sort/filter/query changes quickly.
+- Favorites and unreported filters are expected to rely on local indexed columns, including `is_favorited_effective`, not runtime `OR` scans.
 
 ## Networking
 - REST: JSON over `URLSession`
 - WebSocket: `URLSessionWebSocketTask`
 - Base URL comes from discovery or manual server selection
 - WebSocket reconnect uses retry/backoff logic in the networking layer
+- `APIClient` defaults to a shared `URLSession`
+- Bonjour candidates keep both display host and resolved address; connection should prefer the resolved address when available
+- Connection UX uses explicit phases (`resolving`, `healthCheck`, `establishingRealtime`) plus cancel/disconnect affordances
 
 ## Share Architecture
 - Share capability uses a layered split:
@@ -167,3 +178,4 @@ Rules:
 
 For platform ownership and impact analysis, also maintain:
 - `Docs/CLIENT_MODULE_BOUNDARY.md`
+- `Docs/PERFORMANCE_GUARDRAILS.md`

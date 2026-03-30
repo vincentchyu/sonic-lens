@@ -20,6 +20,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var syncState: SyncState = .idle
     @Published private(set) var favoriteTrackCount: Int = 0
+    @Published private(set) var isAlbumPageLoading: Bool = false
+    @Published private(set) var isAlbumCountLoading: Bool = false
+    @Published private(set) var isTrackPageLoading: Bool = false
+    @Published private(set) var isTrackCountLoading: Bool = false
 
     private let pageSize = 30
     private let prefetchMargin = 8
@@ -53,6 +57,19 @@ final class LibraryViewModel: ObservableObject {
     private var hasLoadedTracks = false
     private var hasLoadedTrackInsights = false
     private var hasLoadedAlbumInsights = false
+    private var hasResolvedAlbumTotal = false
+    private var hasResolvedTrackTotal = false
+    private var refreshTask: Task<Void, Never>?
+    private var pendingRefreshRequest: RefreshRequest?
+    private var albumCountTask: Task<Void, Never>?
+    private var trackCountTask: Task<Void, Never>?
+    private var albumQueryToken: UInt64 = 0
+    private var trackQueryToken: UInt64 = 0
+
+    private struct RefreshRequest {
+        let server: ServerConfig
+        var forceFullSync: Bool
+    }
 
     init() {
         favoriteObserver = NotificationCenter.default.addObserver(
@@ -68,6 +85,8 @@ final class LibraryViewModel: ObservableObject {
     }
 
     deinit {
+        albumCountTask?.cancel()
+        trackCountTask?.cancel()
         if let favoriteObserver {
             NotificationCenter.default.removeObserver(favoriteObserver)
         }
@@ -81,6 +100,8 @@ final class LibraryViewModel: ObservableObject {
             logger.info("切换服务端，重置资料库状态 \(server.displayName, privacy: .public)")
         }
 
+        isLoading = albums.isEmpty && tracks.isEmpty
+        errorMessage = nil
         do {
             logger.info("开始加载本地资料库索引")
             try await ensureIndexStore()
@@ -91,18 +112,16 @@ final class LibraryViewModel: ObservableObject {
             errorMessage = "本地资料库初始化失败"
         }
 
-        isLoading = albums.isEmpty && tracks.isEmpty
-        errorMessage = nil
         insightOffset = 0
         albumInsightOffset = 0
-        logger.info("本地资料库初始加载完成，准备后台同步")
-        await runBackgroundRefresh(using: server, forceFullSync: isServerChanged)
         isLoading = false
+        logger.info("本地资料库初始加载完成，准备后台同步")
+        scheduleBackgroundRefresh(using: server, forceFullSync: isServerChanged)
     }
 
     func refresh(using server: ServerConfig) async {
         logger.debug("触发资料库刷新")
-        await runBackgroundRefresh(using: server, forceFullSync: false)
+        scheduleBackgroundRefresh(using: server, forceFullSync: false)
     }
 
     func reloadAlbums(sort: LibrarySort, query: String, force: Bool = false) async {
@@ -112,22 +131,48 @@ final class LibraryViewModel: ObservableObject {
         }
         currentAlbumSort = sort
         currentAlbumQuery = query
+        albumQueryToken &+= 1
+        let requestToken = albumQueryToken
+        albumCountTask?.cancel()
+        hasResolvedAlbumTotal = false
+        isAlbumPageLoading = true
+        isAlbumCountLoading = true
         logger.info("开始重载专辑列表，排序 \(sort.rawValue, privacy: .public)，关键词长度 \(query.count, privacy: .public)")
-        let nextAlbumTotal = (try? await indexStore.countAlbums(keyword: query)) ?? 0
-        guard !Task.isCancelled else {
-            logger.debug("专辑重载在计数后被取消")
-            return
-        }
         let nextAlbums = (try? await indexStore.queryAlbums(sort: sort, keyword: query, limit: pageSize, offset: 0)) ?? []
         guard !Task.isCancelled else {
             logger.debug("专辑重载在查询后被取消")
+            if requestToken == albumQueryToken {
+                isAlbumPageLoading = false
+                isAlbumCountLoading = false
+            }
             return
         }
-        albumTotal = nextAlbumTotal
+        guard requestToken == albumQueryToken else {
+            logger.debug("专辑重载结果已过期，丢弃本次第一页结果")
+            return
+        }
         albums = nextAlbums
+        albumTotal = max(nextAlbums.count, 0)
         lastAlbumPrefetchIndex = -1
         hasLoadedAlbums = true
-        logger.info("专辑列表重载完成，总数 \(self.albumTotal, privacy: .public)，当前页数量 \(self.albums.count, privacy: .public)")
+        isAlbumPageLoading = false
+        logger.info("专辑列表第一页已刷新，当前页数量 \(self.albums.count, privacy: .public)")
+
+        albumCountTask = Task { [weak self] in
+            guard let self else { return }
+            let nextAlbumTotal = (try? await self.indexStore.countAlbums(keyword: query)) ?? nextAlbums.count
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard requestToken == self.albumQueryToken else {
+                    self.logger.debug("专辑总数统计结果已过期，丢弃本次计数")
+                    return
+                }
+                self.albumTotal = nextAlbumTotal
+                self.hasResolvedAlbumTotal = true
+                self.isAlbumCountLoading = false
+                self.logger.info("专辑总数统计完成，总数 \(self.albumTotal, privacy: .public)")
+            }
+        }
     }
 
     func loadMoreAlbums(sort: LibrarySort, query: String) async {
@@ -137,14 +182,21 @@ final class LibraryViewModel: ObservableObject {
             await reloadAlbums(sort: sort, query: query)
             return
         }
+        guard hasResolvedAlbumTotal else { return }
         guard albums.count < albumTotal else { return }
 
         isLoadingMoreAlbums = true
         let nextOffset = albums.count
+        let requestToken = albumQueryToken
         logger.debug("继续加载更多专辑，偏移 \(nextOffset, privacy: .public)")
         if let page = try? await indexStore.queryAlbums(sort: sort, keyword: query, limit: pageSize, offset: nextOffset) {
             guard !Task.isCancelled else {
                 logger.debug("追加专辑页在查询后被取消")
+                isLoadingMoreAlbums = false
+                return
+            }
+            guard requestToken == albumQueryToken else {
+                logger.debug("追加专辑页结果已过期，丢弃")
                 isLoadingMoreAlbums = false
                 return
             }
@@ -162,23 +214,49 @@ final class LibraryViewModel: ObservableObject {
         currentTrackSort = sort
         currentTrackFilter = filter
         currentTrackQuery = query
+        trackQueryToken &+= 1
+        let requestToken = trackQueryToken
+        trackCountTask?.cancel()
+        hasResolvedTrackTotal = false
+        isTrackPageLoading = true
+        isTrackCountLoading = true
         logger.info("开始重载曲目列表，排序 \(sort.rawValue, privacy: .public)，筛选 \(filter.rawValue, privacy: .public)，关键词长度 \(query.count, privacy: .public)")
-        let nextTrackTotal = (try? await indexStore.countTracks(filter: filter, keyword: query)) ?? 0
-        guard !Task.isCancelled else {
-            logger.debug("曲目重载在计数后被取消")
-            return
-        }
         let nextTracks = (try? await indexStore.queryTracks(sort: sort, filter: filter, keyword: query, limit: pageSize, offset: 0)) ?? []
         guard !Task.isCancelled else {
             logger.debug("曲目重载在查询后被取消")
+            if requestToken == trackQueryToken {
+                isTrackPageLoading = false
+                isTrackCountLoading = false
+            }
             return
         }
-        trackTotal = nextTrackTotal
+        guard requestToken == trackQueryToken else {
+            logger.debug("曲目重载结果已过期，丢弃本次第一页结果")
+            return
+        }
         tracks = nextTracks
+        trackTotal = max(nextTracks.count, 0)
         favoriteTrackCount = nextTracks.filter(\.isFavorited).count
         lastTrackPrefetchIndex = -1
         hasLoadedTracks = true
-        logger.info("曲目列表重载完成，总数 \(self.trackTotal, privacy: .public)，当前页数量 \(self.tracks.count, privacy: .public)")
+        isTrackPageLoading = false
+        logger.info("曲目列表第一页已刷新，当前页数量 \(self.tracks.count, privacy: .public)")
+
+        trackCountTask = Task { [weak self] in
+            guard let self else { return }
+            let nextTrackTotal = (try? await self.indexStore.countTracks(filter: filter, keyword: query)) ?? nextTracks.count
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard requestToken == self.trackQueryToken else {
+                    self.logger.debug("曲目总数统计结果已过期，丢弃本次计数")
+                    return
+                }
+                self.trackTotal = nextTrackTotal
+                self.hasResolvedTrackTotal = true
+                self.isTrackCountLoading = false
+                self.logger.info("曲目总数统计完成，总数 \(self.trackTotal, privacy: .public)")
+            }
+        }
     }
 
     func loadMoreTracks(sort: LibrarySort, filter: TrackFilter, query: String) async {
@@ -188,10 +266,12 @@ final class LibraryViewModel: ObservableObject {
             await reloadTracks(sort: sort, filter: filter, query: query)
             return
         }
+        guard hasResolvedTrackTotal else { return }
         guard tracks.count < trackTotal else { return }
 
         isLoadingMoreTracks = true
         let nextOffset = tracks.count
+        let requestToken = trackQueryToken
         logger.debug("继续加载更多曲目，偏移 \(nextOffset, privacy: .public)")
         if let page = try? await indexStore.queryTracks(
             sort: sort,
@@ -205,6 +285,11 @@ final class LibraryViewModel: ObservableObject {
                 isLoadingMoreTracks = false
                 return
             }
+            guard requestToken == trackQueryToken else {
+                logger.debug("追加曲目页结果已过期，丢弃")
+                isLoadingMoreTracks = false
+                return
+            }
             tracks.append(contentsOf: page)
             favoriteTrackCount = tracks.filter(\.isFavorited).count
             logger.debug("追加曲目页完成，本次数量 \(page.count, privacy: .public)")
@@ -213,11 +298,17 @@ final class LibraryViewModel: ObservableObject {
     }
 
     var albumCountText: String {
-        "\(albumTotal)"
+        if isAlbumCountLoading {
+            return "…"
+        }
+        return hasResolvedAlbumTotal ? "\(albumTotal)" : "—"
     }
 
     var trackCountText: String {
-        "\(trackTotal)"
+        if isTrackCountLoading {
+            return "…"
+        }
+        return hasResolvedTrackTotal ? "\(trackTotal)" : "—"
     }
 
     var favoriteCountText: String {
@@ -226,6 +317,26 @@ final class LibraryViewModel: ObservableObject {
 
     var pendingScrobbleCountText: String {
         unscrobbledCount.map(String.init) ?? "—"
+    }
+
+    var albumLoadingStatusText: String? {
+        if isAlbumPageLoading {
+            return "列表更新中"
+        }
+        if isAlbumCountLoading {
+            return "统计更新中"
+        }
+        return nil
+    }
+
+    var trackLoadingStatusText: String? {
+        if isTrackPageLoading {
+            return "列表更新中"
+        }
+        if isTrackCountLoading {
+            return "统计更新中"
+        }
+        return nil
     }
 
     var syncStatusText: String {
@@ -297,6 +408,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func shouldLoadMoreAlbums(at index: Int) -> Bool {
+        guard hasResolvedAlbumTotal else { return false }
         guard index >= max(albums.count - prefetchMargin, 0) else { return false }
         guard index != lastAlbumPrefetchIndex else { return false }
         guard albums.count < albumTotal else { return false }
@@ -305,6 +417,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func shouldLoadMoreTracks(at index: Int) -> Bool {
+        guard hasResolvedTrackTotal else { return false }
         guard index >= max(tracks.count - prefetchMargin, 0) else { return false }
         guard index != lastTrackPrefetchIndex else { return false }
         guard tracks.count < trackTotal else { return false }
@@ -395,7 +508,11 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func runBackgroundRefresh(using server: ServerConfig, forceFullSync: Bool) async {
-        guard !isRefreshing else { return }
+        guard currentServerURL == nil || currentServerURL == server.baseURL else {
+            logger.debug("跳过过期服务端的资料库刷新 \(server.displayName, privacy: .public)")
+            syncState = .idle
+            return
+        }
         isRefreshing = true
         syncState = .syncing
         logger.info("开始后台同步，强制全量 \(forceFullSync, privacy: .public)")
@@ -403,6 +520,12 @@ final class LibraryViewModel: ObservableObject {
         do {
             try await ensureIndexStore()
             try await syncService.sync(using: server, forceFullSync: forceFullSync)
+            guard currentServerURL == nil || currentServerURL == server.baseURL else {
+                logger.debug("后台同步完成后发现服务端已切换，放弃回写旧结果")
+                isRefreshing = false
+                syncState = .idle
+                return
+            }
             await reloadAlbums(sort: currentAlbumSort, query: currentAlbumQuery, force: true)
             await reloadTracks(sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery, force: true)
 
@@ -432,6 +555,38 @@ final class LibraryViewModel: ObservableObject {
         isRefreshing = false
     }
 
+    private func scheduleBackgroundRefresh(using server: ServerConfig, forceFullSync: Bool) {
+        if refreshTask != nil {
+            if let pendingRefreshRequest, pendingRefreshRequest.server.baseURL == server.baseURL {
+                self.pendingRefreshRequest = RefreshRequest(
+                    server: pendingRefreshRequest.server,
+                    forceFullSync: pendingRefreshRequest.forceFullSync || forceFullSync
+                )
+            } else {
+                pendingRefreshRequest = RefreshRequest(server: server, forceFullSync: forceFullSync)
+            }
+            logger.debug("资料库刷新已在进行中，合并后续请求 forceFull=\(forceFullSync, privacy: .public)")
+            return
+        }
+
+        refreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.runScheduledRefreshLoop(initialRequest: RefreshRequest(server: server, forceFullSync: forceFullSync))
+        }
+    }
+
+    private func runScheduledRefreshLoop(initialRequest: RefreshRequest) async {
+        var request = initialRequest
+        while true {
+            await runBackgroundRefresh(using: request.server, forceFullSync: request.forceFullSync)
+            guard !Task.isCancelled else { break }
+            guard let next = pendingRefreshRequest else { break }
+            pendingRefreshRequest = nil
+            request = next
+        }
+        refreshTask = nil
+    }
+
     private func resetSyncStateForServerChange() {
         syncState = .idle
         insights = []
@@ -448,11 +603,34 @@ final class LibraryViewModel: ObservableObject {
         unscrobbledCount = nil
         hasLoadedAlbums = false
         hasLoadedTracks = false
+        hasResolvedAlbumTotal = false
+        hasResolvedTrackTotal = false
+        isAlbumPageLoading = false
+        isAlbumCountLoading = false
+        isTrackPageLoading = false
+        isTrackCountLoading = false
+        albumCountTask?.cancel()
+        trackCountTask?.cancel()
     }
 
-    func fetchInsightDetail(using server: ServerConfig, id: Int64) async throws -> Insight {
+    func fetchTrackInsightDetail(using server: ServerConfig, id: Int64) async throws -> Insight {
         let client = APIClient(baseURL: server.baseURL)
-        return try await client.getJSON(path: APIPath.insightDetail(id: id))
+        return try await client.getJSON(
+            path: APIPath.insightDetail(id: id),
+            queryItems: [
+                URLQueryItem(name: "analysis_target_type", value: InsightTargetType.track.rawValue)
+            ]
+        )
+    }
+
+    func fetchAlbumInsightDetail(using server: ServerConfig, id: Int64) async throws -> AlbumInsight {
+        let client = APIClient(baseURL: server.baseURL)
+        return try await client.getJSON(
+            path: APIPath.insightDetail(id: id),
+            queryItems: [
+                URLQueryItem(name: "analysis_target_type", value: InsightTargetType.album.rawValue)
+            ]
+        )
     }
 
     private func fetchInsightsPage(
@@ -531,11 +709,47 @@ final class LibraryViewModel: ObservableObject {
                 appleMusic: change.appleMusic,
                 lastFm: change.lastfm
             )
-            await reloadTracks(sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery, force: true)
+            if currentTrackFilter == .favorites {
+                await reloadTracks(sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery, force: true)
+            } else {
+                applyFavoriteChangeToVisibleTracks(change)
+            }
             logger.debug("收藏变更已回写到本地索引")
         } catch {
             // 忽略本地收藏状态回写失败，交给下一次同步兜底
         }
+    }
+
+    private func applyFavoriteChangeToVisibleTracks(_ change: LibraryFavoriteChange) {
+        guard !tracks.isEmpty else { return }
+
+        let updatedTracks = tracks.map { track -> Track in
+            guard track.artist == change.artist,
+                  track.album == change.album,
+                  track.track == change.track,
+                  track.trackNumber == change.trackNumber,
+                  track.discNumber == change.discNumber else {
+                return track
+            }
+
+            return Track(
+                id: track.id,
+                artist: track.artist,
+                album: track.album,
+                track: track.track,
+                playCount: track.playCount,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber,
+                duration: track.duration,
+                isAppleMusicFav: change.appleMusic,
+                isLastFmFav: change.lastfm,
+                createdAt: track.createdAt,
+                updatedAt: track.updatedAt
+            )
+        }
+
+        tracks = updatedTracks
+        favoriteTrackCount = updatedTracks.filter(\.isFavorited).count
     }
 
     private static let syncFormatter: RelativeDateTimeFormatter = {

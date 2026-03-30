@@ -1,5 +1,51 @@
 # 记忆索引
 
+## 2026-04-02
+
+- **日期**: 2026-04-02
+    - **特性摘要**: Bridge 实现音眸异步任务闭环与 iOS Live Activity 支持；Web Dashboard 新增艺人管理、待处理专辑手动维护及上下文陈旧检测
+    - **链接**: [Bridge 音眸异步任务、Live Activity 与 Web Dashboard 增强特性清单](memory/2026-04-02/bridge_live_activity_web_dashboard_manifest.md)
+
+## 2026-04-01
+
+- **日期**: 2026-04-01
+    - **特性摘要**: 首页“热门艺术家”接入 `artist_profile` 头像映射，`top-artists` 响应补齐头像字段，Bridge 三端优先展示对象存储头像并保留首字母兜底
+    - **链接**: [首页热门艺术家头像映射闭环特性清单](memory/2026-04-01/home_artist_avatar_profile_manifest.md)
+
+## 2026-03-31
+
+- **日期**: 2026-03-31
+    - **特性摘要**: Bridge 完成一轮共享层性能治理，收口高频状态广播、资料库 single-flight/页优先加载、本地索引查询结构、Bonjour 直连和连接阶段反馈，并补齐三端断开入口
+    - **链接**: [Bridge 性能治理与连接链路收敛特性清单](memory/2026-03-31/bridge_performance_governance_manifest.md)
+
+- **日期**: 2026-03-31
+    - **特性摘要**: iPhone 音眸改为“异步任务 + WS 主通道 + GET 对账 + Live Activity/灵动岛”混合链路，详情页、深链回流与 Widget Extension 已完成接线，并补齐 `result_insight_id` 结果闭环
+    - **链接**: [iPhone 音眸灵动岛与 WS/任务混合闭环特性清单](memory/2026-03-31/iphone_insight_dynamic_island_ws_job_manifest.md)
+
+## 2026-03-30
+
+- **日期**: 2026-03-30
+    - **特性摘要**: 待归因专辑工作台新增手动维护兜底路径，MusicBrainz 缺失时可直接提交整专结构并复用 replay/收藏回填闭环
+    - **链接**: [待归因专辑手动维护兜底闭环](memory/2026-03-30/pending_album_manual_maintenance_fallback_manifest.md)
+
+## 2026-03-29
+
+- **日期**: 2026-03-29
+    - **特性摘要**: Bridge 共享网络层统一改为 GET query 百分号编码，修复曲名中的 `+` 被后端误解为空格的问题，并补齐客户端 URL 编码红线
+    - **链接**: [Bridge Query 百分号编码修复清单](memory/2026-03-29/bridge_query_percent_encoding_manifest.md)
+
+- **日期**: 2026-03-29
+    - **特性摘要**: 播放流水新增 `trace_id/root_span_id/trace_sampled`，当前歌曲根 span 标识已能随 scrobble 阈值写入 `track_play_record`，支持从业务记录反查观测链路
+    - **链接**: [播放流水 Trace 关联闭环](memory/2026-03-29/track_play_record_trace_link_closure_manifest.md)
+
+- **日期**: 2026-03-29
+    - **特性摘要**: Scrobbler 正在播放链路完成单首歌根 span 收口、收藏探测降频、favorite projection 会话缓存和 Last.fm 热缓存退避，显著降低稳态轮询 trace 噪音
+    - **链接**: [Scrobbler 收藏探测与 Trace 降噪闭环](memory/2026-03-29/scrobbler_favorite_probe_trace_noise_reduction_manifest.md)
+
+- **日期**: 2026-03-29
+    - **特性摘要**: Bridge 正在播放页与全局播放条增加 WS 静默冻结逻辑，暂停后不再继续自增进度，收到新的 `now_playing` 后自动恢复
+    - **链接**: [Bridge 正在播放进度静默冻结修复清单](memory/2026-03-29/bridge_now_playing_progress_silence_freeze_manifest.md)
+
 ## 2026-03-28
 
 - **日期**: 2026-03-28

@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/ai"
+	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -22,6 +24,8 @@ type fakeAIRouteService struct {
 	trackErr  error
 	albumErr  error
 	streamErr error
+	jobErr    error
+	jobByID   map[string]*model.InsightJob
 
 	lastTrackInput struct {
 		provider  string
@@ -62,8 +66,9 @@ func (f *fakeAIRouteService) GetPlatformModels(
 	return f.modelsByPlatform[platform], nil
 }
 
-func (f *fakeAIRouteService) GetOrCreateInsight(
-	_ context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, provider, modelName, legacyModelType string,
+func (f *fakeAIRouteService) GetOrCreateTrackInsight(
+	_ context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+	provider, modelName, legacyModelType string,
 ) ([]*model.TrackInsight, bool, error) {
 	f.lastTrackInput = struct {
 		provider  string
@@ -113,7 +118,8 @@ func (f *fakeAIRouteService) GetOrCreateAlbumInsight(
 }
 
 func (f *fakeAIRouteService) GetOrCreateInsightStream(
-	_ context.Context, artist, album, track string, trackNumber, discNumber int8, force bool, provider, modelName, legacyModelType string,
+	_ context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
+	provider, modelName, legacyModelType string,
 ) (<-chan string, bool, error) {
 	f.lastStreamInput = struct {
 		provider  string
@@ -141,6 +147,57 @@ func (f *fakeAIRouteService) GetOrCreateInsightStream(
 	ch <- "ok"
 	close(ch)
 	return ch, false, nil
+}
+
+func (f *fakeAIRouteService) CreateInsightJob(
+	_ context.Context, req insight.CreateInsightJobRequest,
+) (*model.InsightJob, bool, error) {
+	if f.jobErr != nil {
+		return nil, false, f.jobErr
+	}
+	if f.jobByID == nil {
+		f.jobByID = map[string]*model.InsightJob{}
+	}
+	job := &model.InsightJob{
+		ID:                 "job-1",
+		AnalysisTargetType: req.TargetType,
+		Status:             common.InsightJobPhaseQueued,
+		AlbumID:            req.AlbumID,
+		Artist:             req.Artist,
+		Album:              req.Album,
+		Track:              req.Track,
+		TrackNumber:        req.TrackNumber,
+		DiscNumber:         req.DiscNumber,
+		Provider:           req.Provider,
+		Model:              req.Model,
+		ClientPlatform:     req.ClientPlatform,
+	}
+	f.jobByID[job.ID] = job
+	return job, false, nil
+}
+
+func (f *fakeAIRouteService) GetInsightJob(_ context.Context, jobID string) (*model.InsightJob, error) {
+	if f.jobErr != nil {
+		return nil, f.jobErr
+	}
+	if job, ok := f.jobByID[jobID]; ok {
+		return job, nil
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (f *fakeAIRouteService) UpdateInsightJobLiveActivityToken(
+	_ context.Context, jobID, token string,
+) (*model.InsightJob, error) {
+	if f.jobErr != nil {
+		return nil, f.jobErr
+	}
+	job, ok := f.jobByID[jobID]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	job.LiveActivityPushToken = token
+	return job, nil
 }
 
 func newAITestRouter(service aiRouteService) *gin.Engine {
@@ -274,6 +331,70 @@ func TestRegisterAIRoutesAlbumInsightSupportsLegacyModelType(t *testing.T) {
 	}
 	if service.lastAlbumInput.albumID != 42 || service.lastAlbumInput.legacy != "gemini" {
 		t.Fatalf("legacy modelType not passed through: %+v", service.lastAlbumInput)
+	}
+}
+
+func TestRegisterAIRoutesCreateInsightJob(t *testing.T) {
+	service := &fakeAIRouteService{}
+	router := newAITestRouter(service)
+
+	body := `{"target_type":"track","artist":"A","album":"B","track":"C","provider":"openai","model":"gpt-5","client_platform":"iphone"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/insight-jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp struct {
+		Job      model.InsightJob `json:"job"`
+		Existing bool             `json:"existing"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Job.ID == "" || resp.Job.Track != "C" || resp.Job.Provider != "openai" {
+		t.Fatalf("unexpected job response: %+v", resp.Job)
+	}
+}
+
+func TestRegisterAIRoutesGetInsightJob(t *testing.T) {
+	resultInsightID := int64(88)
+	service := &fakeAIRouteService{
+		jobByID: map[string]*model.InsightJob{
+			"job-1": {
+				ID:                 "job-1",
+				AnalysisTargetType: common.AnalysisTargetTypeAlbum,
+				Status:             common.InsightJobPhaseRunning,
+				AlbumID:            42,
+				Artist:             "Artist",
+				Album:              "Album",
+				Provider:           "openai",
+				Model:              "gpt-5",
+				ResultInsightID:    &resultInsightID,
+			},
+		},
+	}
+	router := newAITestRouter(service)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insight-jobs/job-1", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp struct {
+		Job model.InsightJob `json:"job"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Job.ResultInsightID == nil || *resp.Job.ResultInsightID != resultInsightID {
+		t.Fatalf("unexpected result insight id: %+v", resp.Job.ResultInsightID)
 	}
 }
 

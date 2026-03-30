@@ -7,10 +7,15 @@ final class PlayerViewModel: ObservableObject {
     @Published var lyricLines: [LyricLine] = []
     @Published var currentLineID: UUID?
     @Published var currentTime: TimeInterval = 0
+    @Published var playbackState: PlaybackActivityState = .inactive
 
+    private static let pauseStaleTimeout: TimeInterval = 5
+    private static let inactiveTimeout: TimeInterval = 10
     private var timer: Timer?
     private var progressAnchorDate: Date?
     private var progressAnchorTime: TimeInterval = 0
+    private var lastSyncDate: Date?
+    private var loadSequence: UInt64 = 0
 
     func load(
         using server: ServerConfig,
@@ -20,9 +25,11 @@ final class PlayerViewModel: ObservableObject {
         trackNumber: Int? = nil,
         discNumber: Int? = nil
     ) async {
+        loadSequence &+= 1
+        let requestToken = loadSequence
         let client = APIClient(baseURL: server.baseURL)
         do {
-            lyrics = try await client.getJSON(
+            async let lyricsResponse: TrackLyricsResponse = client.getJSON(
                 path: APIPath.trackLyrics,
                 queryItems: [
                     URLQueryItem(name: "artist", value: artist),
@@ -32,10 +39,7 @@ final class PlayerViewModel: ObservableObject {
                     URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
                 ]
             )
-            lyricLines = LRCParser.parseLyrics(lyrics?.lyrics ?? "", hasLRC: lyrics?.hasLRC ?? false)
-            applyPlaybackState(time: currentTime, forceTimeUpdate: true)
-
-            let insightResponse: TrackInsightResponse = try await client.getJSON(
+            async let insightResponse: TrackInsightResponse = client.getJSON(
                 path: APIPath.trackInsight,
                 queryItems: [
                     URLQueryItem(name: "artist", value: artist),
@@ -45,7 +49,14 @@ final class PlayerViewModel: ObservableObject {
                     URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
                 ]
             )
-            insights = insightResponse.insights
+            let lyrics = try await lyricsResponse
+            let insight = try await insightResponse
+            guard !Task.isCancelled, requestToken == loadSequence else { return }
+
+            self.lyrics = lyrics
+            lyricLines = LRCParser.parseLyrics(lyrics.lyrics, hasLRC: lyrics.hasLRC)
+            applyPlaybackState(time: currentTime, forceTimeUpdate: true)
+            insights = insight.insights
         } catch {
             // TODO: expose error state
         }
@@ -56,6 +67,8 @@ final class PlayerViewModel: ObservableObject {
         let startTime = resolvedTime(position: position, positionMs: positionMs)
         progressAnchorTime = startTime
         progressAnchorDate = Date()
+        lastSyncDate = Date()
+        playbackState = .active
         applyPlaybackState(time: startTime, forceTimeUpdate: true)
         timer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -70,10 +83,20 @@ final class PlayerViewModel: ObservableObject {
         timer?.invalidate()
         timer = nil
         progressAnchorDate = nil
+        lastSyncDate = nil
+        playbackState = .inactive
+        currentTime = 0
+        currentLineID = nil
     }
 
     func syncProgress(position: Int?, positionMs: Int?) {
         let incoming = resolvedTime(position: position, positionMs: positionMs)
+        lastSyncDate = Date()
+        if timer == nil || playbackState.isInactive {
+            startProgress(position: position, positionMs: positionMs)
+            return
+        }
+        playbackState = .active
         if abs(incoming - currentTime) > 0.35 {
             progressAnchorTime = incoming
             progressAnchorDate = Date()
@@ -93,7 +116,18 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func refreshCurrentTime() {
-        guard let progressAnchorDate else { return }
+        guard let progressAnchorDate, let lastSyncDate else { return }
+        let silence = Date().timeIntervalSince(lastSyncDate)
+        if silence >= Self.inactiveTimeout {
+            playbackState = .inactive
+            stopProgress()
+            return
+        }
+        if silence >= Self.pauseStaleTimeout {
+            playbackState = .pausedStale
+            return
+        }
+        playbackState = .active
         let nextTime = progressAnchorTime + Date().timeIntervalSince(progressAnchorDate)
         applyPlaybackState(time: nextTime, forceTimeUpdate: false)
     }

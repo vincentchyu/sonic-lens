@@ -41,6 +41,8 @@ Primary data sources:
 - /api/albums
 - /api/tracks
 - /api/insights/all
+- /api/insights/:id?analysis_target_type=track|album
+- /api/insights/:id/logs?analysis_target_type=track|album
 - /api/unscrobbled-records
 
 ## Mini Player

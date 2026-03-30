@@ -2824,6 +2824,7 @@
                         <!-- 分组 A: 专辑 -->
                         <div class="tree-line-group">
                             <li><a href="#" id="albumListTab" class="side-nav-sublink">专辑</a></li>
+                            <li><a href="#" id="artistListTab" class="side-nav-sublink">艺术家</a></li>
                             <li><a href="#" id="pendingAlbumListTab" class="side-nav-sublink">待归因专辑</a></li>
                         </div>
                         
@@ -3034,6 +3035,44 @@
         </div>
     </div>
 
+    <div id="artistListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">艺术家资料库</div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative;">
+                        <input type="text" id="artistSearchInput" placeholder="搜索艺术家..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshArtistListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div style="padding: 0 20px 18px 20px;">
+                <div style="padding: 16px; border-radius: 16px; border: 1px solid var(--border-color); background: rgba(var(--primary-rgb), 0.05); display: flex; flex-direction: column; gap: 12px;">
+                    <div style="font-size: 0.95em; font-weight: 700; color: var(--text-primary);">从热门艺术家选择并上传头像</div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <select id="artistSourceSelect" style="min-width: 220px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); outline: none;">
+                            <option value="">选择热门艺术家</option>
+                        </select>
+                        <input id="artistAvatarFileInput" type="file" accept="image/*" style="max-width: 260px; color: var(--text-secondary);" />
+                        <button id="uploadArtistAvatarBtn" class="time-filter">上传头像</button>
+                    </div>
+                    <div id="artistUploadHint" style="font-size: 0.82em; color: var(--text-secondary);">图片会转为 data URL 后上传，并写入对象存储与 `artist_profile`。</div>
+                </div>
+            </div>
+            <div id="artistListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="artistPagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="artistPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="artistPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="artistNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
     <div id="pendingAlbumListContainer" style="display: none">
         <div class="chart-card">
             <div class="module-trail"></div>
@@ -3196,6 +3235,13 @@
     let currentAlbumKeyword = "";
     let albumSearchTimeout = null;
     let pendingAlbumGroups = [];
+
+    // 艺术家资料分页及搜索变量
+    let currentArtistPage = 1;
+    let artistPageSize = 20;
+    let totalArtistsCount = 0;
+    let currentArtistKeyword = "";
+    let artistSearchTimeout = null;
     
     // 待归因工作台变量
     let currentPendingWorkTab = 'pending_groups'; // pending_groups, working_items, completed_items
@@ -3209,6 +3255,8 @@
     let currentPendingCandidates = [];
     let currentPendingSelectedMBID = "";
     let currentPendingAlbumStalePromptedWorkItemID = 0;
+    let currentPendingAlbumWorkItemDetail = null;
+    let currentPendingManualTrackDrafts = [];
 
     // 曲目列表分页及搜索变量
     let currentTrackPage = 1;
@@ -3474,19 +3522,22 @@
             insight: null, 
             allInsights: [], 
             eventSource: null,
-            trackInfo: null
+            trackInfo: null,
+            targetType: 'track'
         },
         list: { 
             insight: null, 
             allInsights: [], 
             eventSource: null,
-            trackInfo: null
+            trackInfo: null,
+            targetType: 'track'
         },
         details: { 
             insight: null, 
             allInsights: [], 
             eventSource: null,
-            trackInfo: null
+            trackInfo: null,
+            targetType: 'track'
         }
     };
 
@@ -3495,6 +3546,7 @@
         albumMeta: null,
         insights: [],
         insight: null,
+        focusInsightID: 0,
         view: 'summary',
         loading: false,
         generating: false,
@@ -3502,6 +3554,7 @@
     };
 
     let currentAlbumDetailTab = 'info';
+    let pendingAlbumInsightFocusID = 0;
 
     let lastTrackKey = ""; // 用于检测切歌
     let currentRankingType = "all"; // 当前排行榜类型
@@ -4587,7 +4640,9 @@
         const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
         const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
 
+        configureInsightModal(contextType, 'track');
         insightStates[contextType].insight = insights[0];
+        insightStates[contextType].allInsights = insights;
         currentTrackInsight = insights[0]; // 保持兼容
 
         renderInsight(insights, contextType);
@@ -4606,6 +4661,7 @@
         const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
         const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
 
+        configureInsightModal(contextType, 'track');
         if (streamContent) streamContent.innerHTML = '<div class="loading">该曲目暂无分析数据，请点击下方按钮开始分析。</div>';
         if (actionFooter) actionFooter.style.display = "flex";
         if (reanalyzeBtn) reanalyzeBtn.textContent = "开始分析";
@@ -4618,6 +4674,7 @@
         const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
         const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
 
+        configureInsightModal(contextType, 'track');
         console.error("AI Insight Error:", err);
         if (aiButton) aiButton.disabled = false;
         if (streamContent) streamContent.innerHTML = `<div class="error">${err.message}</div>`;
@@ -4750,10 +4807,49 @@
         }
     }
 
+    function configureInsightModal(contextType = 'nowPlaying', targetType = 'track') {
+        const modal = document.getElementById(`${contextType}InsightModal`);
+        if (!modal) return;
+
+        const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
+        const state = insightStates[contextType];
+        if (state) {
+            state.targetType = normalizedTargetType;
+        }
+
+        const topTabsContainer = modal.querySelector('.modal-body > .insight-tabs');
+        const feedbackTabButton = topTabsContainer
+            ? Array.from(topTabsContainer.querySelectorAll('.insight-tab')).find((tab) => tab.textContent.includes('反馈'))
+            : null;
+        const footer = document.getElementById(`${contextType}-aiActionFooter`);
+
+        if (feedbackTabButton) {
+            feedbackTabButton.style.display = normalizedTargetType === 'album' ? 'none' : '';
+        }
+
+        if (footer && normalizedTargetType === 'album') {
+            footer.style.display = 'none';
+        }
+    }
+
+    function renderAlbumInsightDetailsInModal(insight, contextType = 'list') {
+        const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        if (!streamContent) return;
+
+        streamContent.innerHTML = generateAlbumInsightContentHtml(insight);
+        streamContent.scrollTop = 0;
+    }
+
     function switchInsightTab(tabName, contextType = 'nowPlaying') {
         console.log("switchInsightTab:", tabName, "context:", contextType);
         const modal = document.getElementById(`${contextType}InsightModal`);
         if (!modal) return;
+        const state = insightStates[contextType];
+        const normalizedTargetType = state && state.targetType === 'album' ? 'album' : 'track';
+
+        if (normalizedTargetType === 'album' && tabName === 'feedback') {
+            tabName = 'summary';
+        }
 
         // 仅切换顶层标签页 UI (解析详情/用户反馈/原始数据)
         // 使用针对性的选择器只寻找直接隶属于 modal-body > insight-tabs 的项，避免误伤内容区的小 Tab
@@ -4780,7 +4876,6 @@
         if (tabName === 'feedback') {
             loadInsightFeedback(contextType);
         } else if (tabName === 'raw') {
-            const state = insightStates[contextType];
             const content = modal.querySelector(`#${contextType}-insightRawContent pre`);
             if (content && state.insight) {
                 content.textContent = JSON.stringify(state.insight, null, 2);
@@ -5350,6 +5445,7 @@
     function switchAlbumInsightHistory(index) {
         if (!albumInsightState.insights[index]) return;
         albumInsightState.insight = albumInsightState.insights[index];
+        albumInsightState.focusInsightID = Number(albumInsightState.insight.id || 0);
         renderAlbumInsightPanel();
     }
 
@@ -5392,7 +5488,12 @@
 
             const insights = data.insights || (data.insight ? [data.insight] : []);
             albumInsightState.insights = insights;
-            albumInsightState.insight = insights[0] || null;
+            const focusInsightID = Number(albumInsightState.focusInsightID || 0);
+            const focusedInsight = focusInsightID > 0
+                ? insights.find((item) => Number(item.id || 0) === focusInsightID)
+                : null;
+            albumInsightState.insight = focusedInsight || insights[0] || null;
+            albumInsightState.focusInsightID = Number(albumInsightState.insight ? albumInsightState.insight.id : 0);
             albumInsightState.view = albumInsightState.view || 'summary';
             window.currentAlbumDetailData = window.currentAlbumDetailData || {};
             window.currentAlbumDetailData.insights = insights;
@@ -7143,6 +7244,15 @@
             rankingItem.dataset.artist = item.artist || "";
             rankingItem.dataset.album = item.album || "";
             rankingItem.dataset.track = item.track || "";
+            rankingItem.dataset.trackNumber = String(item.track_number || 0);
+            rankingItem.dataset.discNumber = String(item.disc_number || 0);
+            rankingItem.dataset.playTime = item.play_time || "";
+            rankingItem.dataset.source = item.source || "";
+            rankingItem.dataset.scrobbled = item.scrobbled ? "1" : "0";
+            rankingItem.dataset.traceId = item.trace_id || "";
+            rankingItem.dataset.rootSpanId = item.root_span_id || "";
+            rankingItem.dataset.traceSampled = item.trace_sampled ? "1" : "0";
+            rankingItem.dataset.resolutionStatus = item.resolution_status || "";
 
             const playTime = new Date(item.play_time);
             const timeString = playTime.toLocaleTimeString("zh-CN", {
@@ -7595,13 +7705,16 @@
             html += `<td style="padding: 12px; text-align: center;">
                         <div style="display: flex; gap: 8px; justify-content: center;">
                             ${isAlbum ? `
-                                <button class="time-filter" onclick="showAlbumInsightDetailsByAlbumId(${ins.album_id || 0})" style="padding: 4px 10px;">专辑详情</button>
-                                <button class="time-filter" onclick="showAlbumInsightCallLogs(${ins.album_id || 0}, '${esc(ins.artist)}', '${esc(ins.album)}')" style="padding: 4px 10px;">流水</button>
+                                <button class="time-filter" onclick="toggleInsightStatus(${ins.id}, '${targetType}')" style="padding: 4px 10px;">${toggleText}</button>
+                                <button class="time-filter" onclick="showInsightDetailsById(${ins.id}, '${targetType}')" style="padding: 4px 10px;">详情</button>
+                                <button class="time-filter" onclick="showAlbumInsightDetailsByAlbumId(${ins.album_id || 0})" style="padding: 4px 10px;">专辑</button>
+                                <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${esc(ins.artist)}', '${esc(ins.album)}', '${targetType}')" style="padding: 4px 10px;">流水</button>
+                                <button class="time-filter" onclick="deleteInsight(${ins.id}, '${targetType}')" style="padding: 4px 10px; background-color: #e74c3c; color: white; border-color: #e74c3c;">删除</button>
                             ` : `
-                                <button class="time-filter" onclick="toggleInsightStatus(${ins.id})" style="padding: 4px 10px;">${toggleText}</button>
-                                <button class="time-filter" onclick="showInsightDetailsById(${ins.id})" style="padding: 4px 10px;">详情</button>
-                                <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${esc(ins.artist)}', '${esc(ins.track)}')" style="padding: 4px 10px;">流水</button>
-                                <button class="time-filter" onclick="deleteInsight(${ins.id})" style="padding: 4px 10px; background-color: #e74c3c; color: white; border-color: #e74c3c;">删除</button>
+                                <button class="time-filter" onclick="toggleInsightStatus(${ins.id}, '${targetType}')" style="padding: 4px 10px;">${toggleText}</button>
+                                <button class="time-filter" onclick="showInsightDetailsById(${ins.id}, '${targetType}')" style="padding: 4px 10px;">详情</button>
+                                <button class="time-filter" onclick="showInsightCallLogs(${ins.id}, '${esc(ins.artist)}', '${esc(ins.track)}', '${targetType}')" style="padding: 4px 10px;">流水</button>
+                                <button class="time-filter" onclick="deleteInsight(${ins.id}, '${targetType}')" style="padding: 4px 10px; background-color: #e74c3c; color: white; border-color: #e74c3c;">删除</button>
                             `}
                         </div>
                      </td>`;
@@ -7645,9 +7758,10 @@
     }
 
     // 切换禁用/启用状态
-    async function toggleInsightStatus(id) {
+    async function toggleInsightStatus(id, targetType = currentInsightTargetType) {
         try {
-            const res = await fetch(`/api/insights/${id}/toggle-status`, { method: 'POST' });
+            const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
+            const res = await fetch(`/api/insights/${id}/toggle-status?analysis_target_type=${encodeURIComponent(normalizedTargetType)}`, { method: 'POST' });
             if (res.ok) loadInsightList();
             else alert("操作失败");
         } catch (e) {
@@ -7667,10 +7781,50 @@
 
 
 
+    function focusAlbumInsightByID(insightID) {
+        albumInsightState.focusInsightID = Number(insightID || 0);
+    }
+
     // 展示详情（从列表点击，使用 list 上下文）
-    async function showInsightDetailsById(id) {
+    async function showInsightDetailsById(id, targetType = 'track') {
+        const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
+        if (normalizedTargetType === 'album') {
+            const contextType = 'list';
+            try {
+                showModal(`${contextType}InsightModal`);
+                configureInsightModal(contextType, 'album');
+                switchInsightTab('summary', contextType);
+
+                const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+                const footer = document.getElementById(`${contextType}-aiActionFooter`);
+                if (streamContent) streamContent.innerHTML = '<div class="loading">加载专辑解析详情中...</div>';
+                if (footer) footer.style.display = 'none';
+
+                const response = await fetch(`/api/insights/${id}?analysis_target_type=album`);
+                if (!response.ok) {
+                    throw new Error("加载专辑解析详情失败");
+                }
+                const insight = await response.json();
+
+                insightStates[contextType].insight = insight;
+                insightStates[contextType].allInsights = [insight];
+                insightStates[contextType].trackInfo = {
+                    artist: insight.artist || '',
+                    album: insight.album || '',
+                    title: insight.album || ''
+                };
+
+                renderAlbumInsightDetailsInModal(insight, contextType);
+            } catch (e) {
+                console.error(e);
+                alert("加载详情失败");
+            }
+            return;
+        }
+
         const contextType = 'list';
         try {
+            configureInsightModal(contextType, 'track');
             // 首先切换到“解析详情”页签并展示 Loading
             showModal(`${contextType}InsightModal`);
             switchInsightTab('summary', contextType);
@@ -7681,7 +7835,7 @@
             const footer = document.getElementById(`${contextType}-aiActionFooter`);
             if (footer) footer.style.display = "none";
 
-            const response = await fetch(`/api/insights/${id}`);
+            const response = await fetch(`/api/insights/${id}?analysis_target_type=track`);
             if (!response.ok) {
                 throw new Error("加载详情失败");
             }
@@ -7689,6 +7843,7 @@
 
             // 更新上下文状态
             insightStates[contextType].insight = insight;
+            insightStates[contextType].allInsights = [insight];
             insightStates[contextType].trackInfo = {
                 artist: insight.artist,
                 album: insight.album,
@@ -7710,11 +7865,12 @@
     window.showInsightDetailsById = showInsightDetailsById;
 
     // 删除解析记录
-    async function deleteInsight(id) {
+    async function deleteInsight(id, targetType = currentInsightTargetType) {
         if (!confirm("确定要永久删除这条解析记录吗？此操作不可撤销。")) return;
         
         try {
-            const res = await fetch(`/api/insights/${id}`, { method: 'DELETE' });
+            const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
+            const res = await fetch(`/api/insights/${id}?analysis_target_type=${encodeURIComponent(normalizedTargetType)}`, { method: 'DELETE' });
             if (res.ok) {
                 loadInsightList();
             } else {
@@ -7728,7 +7884,7 @@
     }
 
     // 展示流水日志
-    async function showInsightCallLogs(id, artist, track) {
+    async function showInsightCallLogs(id, artist, track, targetType = 'track') {
         const modal = document.getElementById("callLogModal");
         const content = document.getElementById("callLogContent");
         document.getElementById("callLogTitle").textContent = `流水日志: ${artist} - ${track}`;
@@ -7737,7 +7893,8 @@
         content.innerHTML = '<div class="loading">加载中...</div>';
         
         try {
-            const res = await fetch(`/api/insights/${id}/logs`);
+            const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
+            const res = await fetch(`/api/insights/${id}/logs?analysis_target_type=${encodeURIComponent(normalizedTargetType)}`);
             const data = await res.json();
             
             if (!data.logs || data.logs.length === 0) {
@@ -8160,7 +8317,15 @@
                 const trackNumber = Number(item.dataset.trackNumber || 0);
                 const discNumber = Number(item.dataset.discNumber || 0);
                 if (artist && track) {
-                    showTrackDetails(artist, album, track, trackNumber, discNumber);
+                    showTrackDetails(artist, album, track, trackNumber, discNumber, {
+                        playTime: item.dataset.playTime || "",
+                        source: item.dataset.source || "",
+                        scrobbled: item.dataset.scrobbled === "1",
+                        traceId: item.dataset.traceId || "",
+                        rootSpanId: item.dataset.rootSpanId || "",
+                        traceSampled: item.dataset.traceSampled === "1",
+                        resolutionStatus: item.dataset.resolutionStatus || "",
+                    });
                 }
             });
             recentPlaysList.dataset.clickBound = "1";
@@ -8373,13 +8538,52 @@
     }
 
     // 获取并显示曲目详细信息
-    async function showTrackDetails(artist, album, trackName, trackNumber = 0, discNumber = 0) {
+    function escapeDetailHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function buildRecentPlayDetailSection(recentPlay) {
+        if (!recentPlay) {
+            return "";
+        }
+
+        const playTimeText = recentPlay.playTime
+            ? new Date(recentPlay.playTime).toLocaleString("zh-CN")
+            : "未知";
+        const sourceText = recentPlay.source || "未知";
+        const scrobbledText = recentPlay.scrobbled ? "是" : "否";
+        const sampledText = recentPlay.traceSampled ? "是" : "否";
+        const traceIDText = recentPlay.traceId || "未记录";
+        const rootSpanIDText = recentPlay.rootSpanId || "未记录";
+        const resolutionStatusText = recentPlay.resolutionStatus || "未知";
+
+        return `
+            <div style="margin-top: 20px; padding: 16px 18px; border-radius: 16px; background: rgba(15, 23, 42, 0.04); border: 1px solid var(--border-color);">
+              <div style="font-size: 0.95rem; font-weight: 700; margin-bottom: 12px;">最近播放链路</div>
+              <p><strong>播放时间:</strong> ${escapeDetailHtml(playTimeText)}</p>
+              <p><strong>播放来源:</strong> ${escapeDetailHtml(sourceText)}</p>
+              <p><strong>已上报:</strong> ${scrobbledText}</p>
+              <p><strong>归因状态:</strong> ${escapeDetailHtml(resolutionStatusText)}</p>
+              <p><strong>Trace ID:</strong> <span style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.9em; word-break: break-all;">${escapeDetailHtml(traceIDText)}</span></p>
+              <p><strong>Root Span ID:</strong> <span style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.9em; word-break: break-all;">${escapeDetailHtml(rootSpanIDText)}</span></p>
+              <p><strong>Trace Sampled:</strong> ${sampledText}</p>
+            </div>
+        `;
+    }
+
+    async function showTrackDetails(artist, album, trackName, trackNumber = 0, discNumber = 0, recentPlay = null) {
         // 1. 彻底清空旧数据，防止数据污染
         window.currentDetailData = {
             track: null,
             insight: null,
             loadingTrack: true,
-            loadingInsight: true
+            loadingInsight: true,
+            recentPlay: recentPlay
         };
 
         const modal = document.getElementById("trackDetailsModal");
@@ -8475,6 +8679,7 @@
                 return;
             }
             const track = data.track;
+            const recentPlaySection = buildRecentPlayDetailSection(data.recentPlay);
             const formatDuration = (seconds) => {
                 const mins = Math.floor(seconds / 60);
                 const secs = Math.floor(seconds % 60);
@@ -8520,6 +8725,7 @@
                 <p><strong>喜欢Last.fm:</strong> ${track.is_last_fm_fav ? "是" : "否"}</p>
                 <p><strong>数据来源:</strong> <span class="play-source ${sourceClass}">${sourceText}</span></p>
                 <p><strong>更新时间:</strong> ${new Date(track.updated_at).toLocaleString('zh-CN')}</p>
+                ${recentPlaySection}
               </div>
             </div>
           `;
@@ -8702,6 +8908,7 @@
      */
     function showAlbumDetails(id, selectedTab = 'info') {
         if (!id) return;
+        const previousAlbumID = Number(window.currentAlbumID || 0);
         window.currentAlbumID = id; // 记录当前处理的专辑 ID
         window.currentAlbumSyncStatus = 0; // 记录当前专辑的同步状态
         window.currentAlbumDetailData = { albumID: id, album: null, insights: [] };
@@ -8757,6 +8964,14 @@
         albumInsightState.albumMeta = null;
         albumInsightState.insights = [];
         albumInsightState.insight = null;
+        if (pendingAlbumInsightFocusID > 0) {
+            albumInsightState.focusInsightID = Number(pendingAlbumInsightFocusID || 0);
+        } else if (albumInsightState.focusInsightID && previousAlbumID === id) {
+            albumInsightState.focusInsightID = Number(albumInsightState.focusInsightID || 0);
+        } else {
+            albumInsightState.focusInsightID = 0;
+        }
+        pendingAlbumInsightFocusID = 0;
         albumInsightState.view = 'summary';
         albumInsightState.loading = true;
         albumInsightState.generating = false;
@@ -9389,6 +9604,76 @@
                     <div id="pendingAlbumCandidates" style="display: flex; flex-direction: column; gap: 10px;"></div>
                 </div>
                 <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <div>
+                            <div style="font-weight: 700; color: var(--text-primary);">手动创建专辑</div>
+                            <div style="font-size: 0.8em; opacity: 0.7; color: var(--text-secondary); margin-top: 4px;">MusicBrainz 搜不到时，直接用冻结上下文预填并一次提交整专结构。</div>
+                        </div>
+                        <button class="time-filter" onclick="resetPendingManualFormFromContext()">重置默认值</button>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">专辑名</span>
+                            <input id="pendingManualAlbumName" class="search-input" type="text" placeholder="专辑名">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">默认来自冻结上下文的专辑名</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">专辑艺术家</span>
+                            <input id="pendingManualAlbumArtist" class="search-input" type="text" placeholder="专辑艺术家">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">默认来自冻结上下文的 album_artist / artist</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">显示艺人</span>
+                            <input id="pendingManualDisplayArtist" class="search-input" type="text" placeholder="显示艺人">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">默认来自冻结上下文的 artist</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">发行日期</span>
+                            <input id="pendingManualReleaseDate" class="search-input" type="text" placeholder="YYYY-MM-DD">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">流派</span>
+                            <input id="pendingManualGenre" class="search-input" type="text" placeholder="流派">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">国家/地区</span>
+                            <input id="pendingManualCountry" class="search-input" type="text" placeholder="国家/地区">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">发行状态</span>
+                            <input id="pendingManualStatus" class="search-input" type="text" placeholder="official / bootleg / ...">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">包装形式</span>
+                            <input id="pendingManualPackaging" class="search-input" type="text" placeholder="CD / Digital Media / ...">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">条码</span>
+                            <input id="pendingManualBarcode" class="search-input" type="text" placeholder="条码">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">封面 URL</span>
+                            <input id="pendingManualCoverArtURL" class="search-input" type="text" placeholder="https://...">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充，直接写入专辑封面</small>
+                        </label>
+                    </div>
+                    <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                        <div>
+                            <div style="font-weight: 700; color: var(--text-primary);">曲目列表</div>
+                            <div id="pendingManualTrackSourceHint" style="font-size: 0.78em; opacity: 0.7; color: var(--text-secondary); margin-top: 4px;">默认来自冻结上下文的曲名、位置和弱线索；没有位置的行需要手动补齐。</div>
+                        </div>
+                        <button class="time-filter" onclick="addPendingManualTrackRow()">新增曲目</button>
+                    </div>
+                    <div id="pendingManualTrackTable" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;"></div>
+                    <button id="pendingManualSubmitBtn" class="time-filter" style="margin-top: 14px; width: 100%; background: #2d8f5b; color: #fff;" onclick="submitPendingManualMaintenance()">手动创建并应用上下文</button>
+                </div>
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
                     <div style="font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">执行结果</div>
                     <div id="pendingAlbumExecutionReport" style="font-size: 0.9em; color: var(--text-secondary);">尚未执行</div>
                     <button id="pendingAlbumDeepBtn" class="time-filter" style="margin-top: 14px; width: 100%; background: var(--primary-color); color: #fff;" onclick="runPendingAlbumDeepMaintenance()">深度维护并应用上下文</button>
@@ -9818,7 +10103,7 @@
         const sections = [
             '.stats-container', '.charts-container', '.rankings-container',
             '#unscrobbledContainer', '#insightListContainer', 
-            '#albumListContainer', '#pendingAlbumListContainer', '#trackListContainer'
+            '#albumListContainer', '#artistListContainer', '#pendingAlbumListContainer', '#trackListContainer'
         ];
         
         sections.forEach(selector => {
@@ -9873,6 +10158,10 @@
 
             // 特殊逻辑：如果是特定列表，则加载数据
             if (sectionId === 'albumList') loadAlbumList();
+            if (sectionId === 'artistList') {
+                loadArtistList();
+                loadArtistSourceOptions();
+            }
             if (sectionId === 'pendingAlbumList') loadPendingAlbumList();
             if (sectionId === 'trackList') loadTrackList();
             if (sectionId === 'insightList') loadInsightList();
@@ -9906,6 +10195,7 @@
                 const sectionMap = {
                     'dashboardTab': 'dashboard',
                     'albumListTab': 'albumList',
+                    'artistListTab': 'artistList',
                     'pendingAlbumListTab': 'pendingAlbumList',
                     'trackListTab': 'trackList',
                     'insightListTab': 'insightList',
@@ -9981,6 +10271,134 @@
         document.getElementById('albumPageInfo').textContent = `第 ${currentAlbumPage} 页 / 共 ${totalPages} 页 (总计 ${totalAlbumsCount})`;
         document.getElementById('albumPrevPage').disabled = currentAlbumPage <= 1;
         document.getElementById('albumNextPage').disabled = currentAlbumPage >= totalPages;
+    }
+
+    async function loadArtistList(page = 1) {
+        currentArtistPage = page;
+        const content = document.getElementById('artistListContent');
+        content.innerHTML = '<div class="loading">加载中...</div>';
+
+        const offset = (page - 1) * artistPageSize;
+        const url = `/api/artist-profiles?limit=${artistPageSize}&offset=${offset}&keyword=${encodeURIComponent(currentArtistKeyword)}`;
+
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || '加载失败');
+            totalArtistsCount = Number(data.total || 0);
+            renderArtistList(data.items || []);
+            updateArtistPagination();
+        } catch (err) {
+            content.innerHTML = `<div class="error">加载失败: ${err.message}</div>`;
+        }
+    }
+
+    function renderArtistList(items) {
+        const content = document.getElementById('artistListContent');
+        if (!items || items.length === 0) {
+            content.innerHTML = '<div class="no-data">暂无艺术家资料</div>';
+            return;
+        }
+
+        let html = '<div class="album-grid">';
+        items.forEach(item => {
+            const avatarURL = item.avatar_url || '';
+            const initial = esc(((item.artist_name || '?').trim().charAt(0) || '?').toUpperCase());
+            html += `
+                <div style="border-radius: 18px; border: 1px solid var(--border-color); background: var(--bg-card); padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+                    <div style="width: 100%; aspect-ratio: 1 / 1; border-radius: 18px; overflow: hidden; background: rgba(var(--primary-rgb), 0.08); display: flex; align-items: center; justify-content: center;">
+                        ${avatarURL
+                            ? `<img src="${esc(avatarURL)}" alt="${esc(item.artist_name || '艺术家头像')}" style="width: 100%; height: 100%; object-fit: cover;" />`
+                            : `<div style="font-size: 2.2rem; font-weight: 800; color: var(--primary-color);">${initial}</div>`}
+                    </div>
+                    <div>
+                        <div style="font-size: 1rem; font-weight: 700; color: var(--text-primary); word-break: break-word;">${esc(item.artist_name || '-')}</div>
+                        <div style="margin-top: 6px; font-size: 0.78em; color: var(--text-secondary); word-break: break-all;">${esc(item.avatar_object_key || '未上传头像')}</div>
+                        <div style="margin-top: 8px; font-size: 0.78em; color: var(--text-secondary);">MIME: ${esc(item.avatar_mime || '-')}</div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        content.innerHTML = html;
+    }
+
+    function updateArtistPagination() {
+        const totalPages = Math.max(1, Math.ceil(totalArtistsCount / artistPageSize));
+        document.getElementById('artistPageInfo').textContent = `第 ${currentArtistPage} 页 / 共 ${totalPages} 页 (总计 ${totalArtistsCount})`;
+        document.getElementById('artistPrevPage').disabled = currentArtistPage <= 1;
+        document.getElementById('artistNextPage').disabled = currentArtistPage >= totalPages;
+    }
+
+    async function loadArtistSourceOptions() {
+        const select = document.getElementById('artistSourceSelect');
+        if (!select || select.dataset.loaded === '1') {
+            return;
+        }
+
+        try {
+            const resp = await fetch('/api/artist-profiles/top-artists?limit=50');
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || '加载热门艺术家失败');
+
+            const items = Array.isArray(data.items) ? data.items : [];
+            select.innerHTML = '<option value="">选择热门艺术家</option>' +
+                items.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+            select.dataset.loaded = '1';
+        } catch (err) {
+            select.innerHTML = '<option value="">加载热门艺术家失败</option>';
+        }
+    }
+
+    async function uploadArtistAvatar() {
+        const artistName = (document.getElementById('artistSourceSelect')?.value || '').trim();
+        const fileInput = document.getElementById('artistAvatarFileInput');
+        const hint = document.getElementById('artistUploadHint');
+        const uploadBtn = document.getElementById('uploadArtistAvatarBtn');
+        const file = fileInput?.files?.[0];
+
+        if (!artistName) {
+            alert('请选择热门艺术家');
+            return;
+        }
+        if (!file) {
+            alert('请选择图片文件');
+            return;
+        }
+
+        uploadBtn.disabled = true;
+        hint.textContent = '正在读取图片并上传...';
+        try {
+            const dataURL = await readFileAsDataURL(file);
+            const resp = await fetch('/api/artist-profiles/avatar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    artist_name: artistName,
+                    data: dataURL,
+                }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || '上传失败');
+
+            hint.textContent = `上传完成：${artistName}`;
+            if (fileInput) fileInput.value = '';
+            await loadArtistList(currentArtistPage);
+        } catch (err) {
+            hint.textContent = `上传失败：${err.message || '未知错误'}`;
+            alert(hint.textContent);
+        } finally {
+            uploadBtn.disabled = false;
+        }
+    }
+
+    function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('读取图片失败'));
+            reader.readAsDataURL(file);
+        });
     }
 
     async function loadPendingAlbumList() {
@@ -10199,6 +10617,331 @@
         hydrateArtworkSlots(content);
     }
 
+    function normalizePendingManualTitle(value) {
+        return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
+    function uniqPendingStrings(values) {
+        const result = [];
+        (values || []).forEach(value => {
+            const trimmed = String(value || '').trim();
+            if (!trimmed || result.includes(trimmed)) {
+                return;
+            }
+            result.push(trimmed);
+        });
+        return result;
+    }
+
+    function renderPendingMaintenanceReport(report) {
+        if (!report || !report.resolved_album_id) {
+            return '尚未执行';
+        }
+        const modeText = report.mode === 'manual' ? '手动维护' : 'MusicBrainz 维护';
+        return `
+            <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">${modeText}完成</div>
+            目标专辑 #${report.resolved_album_id || '-'}<br>
+            复用已听曲 ${report.reused_heard_tracks || 0} 首<br>
+            新建曲目 ${report.created_tracks || 0} 首<br>
+            写入 track_album ${report.track_album_writes || 0} 条<br>
+            回填播放流水 ${report.applied_play_records || 0} 条<br>
+            回填点赞事件 ${report.applied_favorite_events || 0} 条
+        `;
+    }
+
+    function collectPendingManualTrackDrafts(detail) {
+        const rows = new Map();
+        let looseIndex = 0;
+
+        function ensureRow(key, seed) {
+            if (!rows.has(key)) {
+                rows.set(key, {
+                    discNumber: seed.discNumber || 0,
+                    trackNumber: seed.trackNumber || 0,
+                    title: seed.title || '',
+                    artist: seed.artist || '',
+                    duration: seed.duration || 0,
+                    composer: seed.composer || '',
+                    musicBrainzId: seed.musicBrainzId || '',
+                    evidenceTitles: [],
+                    sourceHints: [],
+                    needsPosition: !seed.trackNumber,
+                });
+            }
+            return rows.get(key);
+        }
+
+        function absorb(item, sourceType) {
+            const title = String(item.track || '').trim();
+            const rawTrackNumber = Number(item.track_number || 0);
+            const rawDiscNumber = Number(item.disc_number || 0);
+            const discNumber = rawTrackNumber > 0 ? (rawDiscNumber || 1) : 0;
+            const key = rawTrackNumber > 0
+                ? `pos:${discNumber}|${rawTrackNumber}`
+                : `loose:${normalizePendingManualTitle(title) || 'untitled'}:${looseIndex++}`;
+            const row = ensureRow(key, {
+                discNumber,
+                trackNumber: rawTrackNumber,
+                title,
+                artist: item.artist || '',
+                duration: Number(item.duration || 0),
+                composer: item.composer || '',
+                musicBrainzId: item.music_brainz_id || '',
+            });
+            if (!row.title && title) {
+                row.title = title;
+            }
+            if (!row.artist && item.artist) {
+                row.artist = item.artist;
+            }
+            if (!row.duration && Number(item.duration || 0) > 0) {
+                row.duration = Number(item.duration || 0);
+            }
+            if (!row.musicBrainzId && item.music_brainz_id) {
+                row.musicBrainzId = item.music_brainz_id;
+            }
+            row.needsPosition = row.needsPosition || !(row.trackNumber > 0 && row.discNumber > 0);
+            row.evidenceTitles = uniqPendingStrings([...(row.evidenceTitles || []), title]);
+            row.sourceHints = uniqPendingStrings([
+                ...(row.sourceHints || []),
+                `${sourceType} · ${item.source || '-'} · #${item.id || '-'}`
+            ]);
+        }
+
+        (detail?.play_records || []).forEach(item => absorb(item, '播放流水'));
+        (detail?.favorite_events || []).forEach(item => absorb(item, '点赞事件'));
+
+        return Array.from(rows.values()).sort((left, right) => {
+            return comparePendingManualTrackDrafts(left, right);
+        });
+    }
+
+    function comparePendingManualTrackDrafts(left, right) {
+        const leftTrack = Number(left.trackNumber || 0);
+        const rightTrack = Number(right.trackNumber || 0);
+        if (leftTrack > 0 && rightTrack === 0) return -1;
+        if (leftTrack === 0 && rightTrack > 0) return 1;
+        const leftDisc = Number(left.discNumber || 0);
+        const rightDisc = Number(right.discNumber || 0);
+        if (leftDisc !== rightDisc) return leftDisc - rightDisc;
+        if (leftTrack !== rightTrack) return leftTrack - rightTrack;
+        return String(left.title || '').localeCompare(String(right.title || ''));
+    }
+
+    function sortPendingManualTrackDrafts() {
+        currentPendingManualTrackDrafts.sort(comparePendingManualTrackDrafts);
+    }
+
+    function renderPendingManualTrackTable() {
+        const container = document.getElementById('pendingManualTrackTable');
+        if (!container) return;
+        if (!currentPendingManualTrackDrafts.length) {
+            container.innerHTML = '<div class="no-data">当前没有可编辑曲目，请点击“新增曲目”。</div>';
+            return;
+        }
+
+        container.innerHTML = currentPendingManualTrackDrafts.map((item, index) => {
+            const sourceText = (item.sourceHints || []).join(' ｜ ') || '手动新增';
+            const evidenceText = (item.evidenceTitles || []).join('、') || '无';
+            return `
+                <div style="padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: rgba(255,255,255,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px;">
+                        <div style="font-weight: 700; color: var(--text-primary);">曲目 ${index + 1}</div>
+                        <button class="time-filter" onclick="removePendingManualTrackRow(${index})" style="padding: 5px 10px;">删除</button>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 80px 80px minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px;">
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">碟号</span>
+                            <input class="search-input" type="number" min="1" value="${Number(item.discNumber || 0) || ''}" oninput="updatePendingManualTrackField(${index}, 'discNumber', this.value)">
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">曲序</span>
+                            <input class="search-input" type="number" min="1" value="${Number(item.trackNumber || 0) || ''}" oninput="updatePendingManualTrackField(${index}, 'trackNumber', this.value)">
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">曲名</span>
+                            <input class="search-input" type="text" value="${esc(item.title || '')}" oninput="updatePendingManualTrackField(${index}, 'title', this.value)">
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">曲目艺人</span>
+                            <input class="search-input" type="text" value="${esc(item.artist || '')}" oninput="updatePendingManualTrackField(${index}, 'artist', this.value)">
+                        </label>
+                    </div>
+                    <div style="display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 8px;">
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">时长(秒)</span>
+                            <input class="search-input" type="number" min="0" value="${Number(item.duration || 0) || ''}" oninput="updatePendingManualTrackField(${index}, 'duration', this.value)">
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">Composer</span>
+                            <input class="search-input" type="text" value="${esc(item.composer || '')}" oninput="updatePendingManualTrackField(${index}, 'composer', this.value)">
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">MusicBrainz ID</span>
+                            <input class="search-input" type="text" value="${esc(item.musicBrainzId || '')}" oninput="updatePendingManualTrackField(${index}, 'musicBrainzId', this.value)">
+                        </label>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.75em; line-height: 1.6; color: var(--text-secondary);">
+                        默认值来源: ${esc(sourceText)}<br>
+                        归因证据标题: ${esc(evidenceText)}
+                        ${item.needsPosition ? '<br><span style="color: #e67e22; font-weight: 700;">该行没有可靠位置，请补齐碟号和曲序后再提交。</span>' : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function updatePendingManualTrackField(index, field, value) {
+        const row = currentPendingManualTrackDrafts[index];
+        if (!row) return;
+        if (field === 'discNumber' || field === 'trackNumber' || field === 'duration') {
+            row[field] = Number(value || 0);
+        } else {
+            row[field] = String(value || '');
+        }
+        row.needsPosition = !(Number(row.discNumber || 0) > 0 && Number(row.trackNumber || 0) > 0);
+        if (field === 'discNumber' || field === 'trackNumber') {
+            sortPendingManualTrackDrafts();
+            renderPendingManualTrackTable();
+        }
+    }
+
+    function addPendingManualTrackRow() {
+        currentPendingManualTrackDrafts.push({
+            discNumber: 1,
+            trackNumber: 0,
+            title: '',
+            artist: document.getElementById('pendingManualDisplayArtist')?.value || '',
+            duration: 0,
+            composer: '',
+            musicBrainzId: '',
+            evidenceTitles: [],
+            sourceHints: ['手动新增'],
+            needsPosition: true,
+        });
+        sortPendingManualTrackDrafts();
+        renderPendingManualTrackTable();
+    }
+
+    function removePendingManualTrackRow(index) {
+        currentPendingManualTrackDrafts.splice(index, 1);
+        sortPendingManualTrackDrafts();
+        renderPendingManualTrackTable();
+    }
+
+    function resetPendingManualFormFromContext() {
+        const detail = currentPendingAlbumWorkItemDetail || {};
+        const workItem = detail.work_item || {};
+        document.getElementById('pendingManualAlbumName').value = workItem.album || '';
+        document.getElementById('pendingManualAlbumArtist').value = workItem.album_artist || workItem.artist || '';
+        document.getElementById('pendingManualDisplayArtist').value = workItem.artist || '';
+        document.getElementById('pendingManualReleaseDate').value = '';
+        document.getElementById('pendingManualGenre').value = '';
+        document.getElementById('pendingManualCountry').value = '';
+        document.getElementById('pendingManualStatus').value = '';
+        document.getElementById('pendingManualPackaging').value = '';
+        document.getElementById('pendingManualBarcode').value = '';
+        document.getElementById('pendingManualCoverArtURL').value = '';
+        currentPendingManualTrackDrafts = collectPendingManualTrackDrafts(detail);
+        sortPendingManualTrackDrafts();
+        renderPendingManualTrackTable();
+    }
+
+    function buildPendingManualPayload() {
+        const albumName = document.getElementById('pendingManualAlbumName').value.trim();
+        const albumArtist = document.getElementById('pendingManualAlbumArtist').value.trim();
+        const displayArtist = document.getElementById('pendingManualDisplayArtist').value.trim();
+        if (!albumName) {
+            throw new Error('专辑名不能为空');
+        }
+        if (!albumArtist) {
+            throw new Error('专辑艺术家不能为空');
+        }
+        if (!currentPendingManualTrackDrafts.length) {
+            throw new Error('至少需要一首曲目');
+        }
+
+        sortPendingManualTrackDrafts();
+        const positionSet = new Set();
+        const manualTracks = currentPendingManualTrackDrafts.map((row, index) => {
+            const title = String(row.title || '').trim();
+            const discNumber = Number(row.discNumber || 0);
+            const trackNumber = Number(row.trackNumber || 0);
+            if (!title) {
+                throw new Error(`第 ${index + 1} 首曲目的曲名不能为空`);
+            }
+            if (!(discNumber > 0 && trackNumber > 0)) {
+                throw new Error(`第 ${index + 1} 首曲目需要补齐碟号和曲序`);
+            }
+            const posKey = `${discNumber}|${trackNumber}`;
+            if (positionSet.has(posKey)) {
+                throw new Error(`曲目位置重复：CD ${discNumber} / Track ${trackNumber}`);
+            }
+            positionSet.add(posKey);
+
+            return {
+                disc_number: discNumber,
+                track_number: trackNumber,
+                title,
+                artist: String(row.artist || '').trim(),
+                duration: Number(row.duration || 0),
+                composer: String(row.composer || '').trim(),
+                music_brainz_id: String(row.musicBrainzId || '').trim(),
+                evidence_titles: uniqPendingStrings(row.evidenceTitles || []),
+            };
+        });
+
+        return {
+            manual_album: {
+                name: albumName,
+                album_artist: albumArtist,
+                display_artist: displayArtist,
+                release_date: document.getElementById('pendingManualReleaseDate').value.trim(),
+                genre: document.getElementById('pendingManualGenre').value.trim(),
+                country: document.getElementById('pendingManualCountry').value.trim(),
+                status: document.getElementById('pendingManualStatus').value.trim(),
+                packaging: document.getElementById('pendingManualPackaging').value.trim(),
+                barcode: document.getElementById('pendingManualBarcode').value.trim(),
+                cover_art_url: document.getElementById('pendingManualCoverArtURL').value.trim(),
+            },
+            manual_tracks: manualTracks,
+        };
+    }
+
+    async function submitPendingManualMaintenance() {
+        if (!currentPendingAlbumWorkItemID) return;
+        const button = document.getElementById('pendingManualSubmitBtn');
+        let payload;
+        try {
+            payload = buildPendingManualPayload();
+        } catch (err) {
+            alert(err.message);
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = '手动维护处理中...';
+        try {
+            const resp = await fetch(`/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}/manual-maintenance`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(data.error || '执行失败');
+            }
+            document.getElementById('pendingAlbumExecutionReport').innerHTML = renderPendingMaintenanceReport(data.report || {});
+            await loadPendingAlbumWorkItemDetail();
+            await loadPendingAlbumList();
+        } catch (err) {
+            document.getElementById('pendingAlbumExecutionReport').innerHTML = `<span style="color: #e74c3c;">${esc(err.message || '执行失败')}</span>`;
+        } finally {
+            button.disabled = false;
+            button.textContent = '手动创建并应用上下文';
+        }
+    }
+
     async function openPendingAlbumWorkItem(identityKey) {
         const resp = await fetch('/api/pending-albums/work-items', {
             method: 'POST',
@@ -10211,6 +10954,8 @@
             return;
         }
         currentPendingAlbumWorkItemID = data.id;
+        currentPendingAlbumWorkItemDetail = null;
+        currentPendingManualTrackDrafts = [];
         currentPendingAlbumStalePromptedWorkItemID = 0;
         currentPendingCandidates = [];
         currentPendingSelectedMBID = "";
@@ -10232,6 +10977,7 @@
             return;
         }
 
+        currentPendingAlbumWorkItemDetail = data;
         const workItem = data.work_item || {};
         currentPendingSelectedMBID = workItem.selected_mbid || "";
         document.getElementById('pendingAlbumWorkItemMeta').textContent =
@@ -10299,16 +11045,19 @@
             currentPendingAlbumStalePromptedWorkItemID = 0;
         }
 
+        resetPendingManualFormFromContext();
+
         let resultText = '尚未执行';
         if (workItem.status === 'completed') {
             resultText = '<span style="color: #27ae60;">执行完成</span>';
         } else if (workItem.last_error) {
-            resultText = `<span style="color: #e74c3c;">最近错误: ${workItem.last_error}</span>`;
+            resultText = `<span style="color: #e74c3c;">最近错误: ${esc(workItem.last_error)}</span>`;
         }
         document.getElementById('pendingAlbumExecutionReport').innerHTML = resultText;
-        
-        // 禁用逻辑：如果是已完成状态，或者没有选择候选，则禁用按钮
-        document.getElementById('pendingAlbumDeepBtn').disabled = (workItem.status === 'completed' || !workItem.selected_mbid);
+
+        const isCompleted = workItem.status === 'completed';
+        document.getElementById('pendingAlbumDeepBtn').disabled = (isCompleted || !workItem.selected_mbid);
+        document.getElementById('pendingManualSubmitBtn').disabled = isCompleted;
         if (currentPendingCandidates.length > 0) {
             renderPendingAlbumCandidates(currentPendingCandidates);
         }
@@ -10400,21 +11149,14 @@
         });
         const data = await resp.json();
         if (!resp.ok) {
-            document.getElementById('pendingAlbumExecutionReport').textContent = data.error || '执行失败';
+            document.getElementById('pendingAlbumExecutionReport').innerHTML = `<span style="color: #e74c3c;">${esc(data.error || '执行失败')}</span>`;
             button.disabled = false;
             button.textContent = '深度维护并应用上下文';
             return;
         }
 
         const report = data.report || {};
-        document.getElementById('pendingAlbumExecutionReport').innerHTML = `
-            目标专辑 #${report.resolved_album_id || '-'}<br>
-            复用已听曲 ${report.reused_heard_tracks || 0} 首<br>
-            新建曲目 ${report.created_tracks || 0} 首<br>
-            写入 track_album ${report.track_album_writes || 0} 条<br>
-            回填播放流水 ${report.applied_play_records || 0} 条<br>
-            回填点赞事件 ${report.applied_favorite_events || 0} 条
-        `;
+        document.getElementById('pendingAlbumExecutionReport').innerHTML = renderPendingMaintenanceReport(report);
         button.textContent = '已完成';
         await loadPendingAlbumWorkItemDetail();
         await loadPendingAlbumList();
@@ -10482,6 +11224,20 @@
         clearTimeout(albumSearchTimeout);
         albumSearchTimeout = setTimeout(() => loadAlbumList(1), 500);
     });
+
+    document.getElementById('artistPrevPage')?.addEventListener('click', () => loadArtistList(currentArtistPage - 1));
+    document.getElementById('artistNextPage')?.addEventListener('click', () => loadArtistList(currentArtistPage + 1));
+    document.getElementById('refreshArtistListBtn')?.addEventListener('click', () => {
+        document.getElementById('artistSourceSelect').dataset.loaded = '';
+        loadArtistSourceOptions();
+        loadArtistList(1);
+    });
+    document.getElementById('artistSearchInput')?.addEventListener('input', (e) => {
+        currentArtistKeyword = e.target.value.trim();
+        clearTimeout(artistSearchTimeout);
+        artistSearchTimeout = setTimeout(() => loadArtistList(1), 500);
+    });
+    document.getElementById('uploadArtistAvatarBtn')?.addEventListener('click', uploadArtistAvatar);
 
     document.getElementById('trackPrevPage')?.addEventListener('click', () => loadTrackList(currentTrackPage - 1));
     document.getElementById('trackNextPage')?.addEventListener('click', () => loadTrackList(currentTrackPage + 1));
@@ -10567,6 +11323,8 @@
             const sectionMap = {
                 'dashboardTab': 'dashboard',
                 'albumListTab': 'albumList',
+                'artistListTab': 'artistList',
+                'pendingAlbumListTab': 'pendingAlbumList',
                 'trackListTab': 'trackList',
                 'insightListTab': 'insightList',
                 'unscrobbledTab': 'unscrobbled'

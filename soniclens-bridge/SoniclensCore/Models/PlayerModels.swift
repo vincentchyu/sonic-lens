@@ -17,6 +17,32 @@ struct LyricLine: Identifiable {
     let isSectionLabel: Bool
 }
 
+/// 播放静默状态，用于区分“仍在更新”“已暂停/已停止更新”和“无活动播放”。
+enum PlaybackActivityState: Equatable {
+    case active
+    case pausedStale
+    case inactive
+
+    var isActive: Bool {
+        self == .active
+    }
+
+    var bannerText: String? {
+        switch self {
+        case .active:
+            return nil
+        case .pausedStale:
+            return "已暂停/已停止更新"
+        case .inactive:
+            return nil
+        }
+    }
+
+    var isInactive: Bool {
+        self == .inactive
+    }
+}
+
 enum LRCParser {
     static func parseLyrics(_ raw: String, hasLRC: Bool) -> [LyricLine] {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

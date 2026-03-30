@@ -2,7 +2,7 @@ import SwiftUI
 import NukeUI
 
 struct PlaybackBarView: View {
-    @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @Binding var isExpanded: Bool
     var style: PlaybackBarStyle = .regular
@@ -21,48 +21,15 @@ struct PlaybackBarView: View {
     }
 
     var body: some View {
-        let nowPlaying = store.nowPlaying
+        let nowPlaying = playbackStore.nowPlaying
+        let playbackState = progressModel.playbackState
 
         Button(action: {
-            guard nowPlaying != nil else { return }
+            guard nowPlaying != nil, !playbackState.isInactive else { return }
             isExpanded = true
         }) {
             VStack(spacing: style == .compact ? 7 : 8) {
-                HStack(spacing: style == .compact ? 10 : 12) {
-                    PlaybackArtworkView(
-                        artworkURL: nowPlaying?.artwork,
-                        fallbackTitle: nowPlaying?.album ?? nowPlaying?.track,
-                        style: style
-                    )
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(nowPlaying?.track ?? "未播放")
-                            .font(style == .compact ? .subheadline.weight(.semibold) : .body.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-
-                        Text([nowPlaying?.artist, nowPlaying?.album].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                HStack(spacing: 10) {
-                    Text(currentTimeText)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, alignment: .leading)
-
-                    ProgressBarView(progress: progressValue)
-                        .frame(maxWidth: .infinity)
-
-                    Text(durationText)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, alignment: .trailing)
-                }
+                playbackContent(nowPlaying: nowPlaying, playbackState: playbackState)
             }
             .padding(.horizontal, style == .compact ? 14 : 18)
             .padding(.vertical, style == .compact ? 10 : 11)
@@ -97,10 +64,10 @@ struct PlaybackBarView: View {
         .onChange(of: playbackIdentity) { _, _ in
             syncPlaybackProgress(forceRestart: true)
         }
-        .onChange(of: store.nowPlaying?.position) { _, _ in
+        .onChange(of: playbackStore.nowPlaying?.position) { _, _ in
             syncPlaybackProgress()
         }
-        .onChange(of: store.nowPlaying?.positionMs) { _, _ in
+        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, _ in
             syncPlaybackProgress()
         }
         .onDisappear {
@@ -109,7 +76,7 @@ struct PlaybackBarView: View {
     }
 
     private var progressValue: Double {
-        guard let duration = store.nowPlaying?.duration,
+        guard let duration = playbackStore.nowPlaying?.duration,
               duration > 0 else {
             return 0
         }
@@ -121,7 +88,7 @@ struct PlaybackBarView: View {
     }
 
     private var durationText: String {
-        formatTime(Double(store.nowPlaying?.duration ?? 0))
+        formatTime(Double(playbackStore.nowPlaying?.duration ?? 0))
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -132,7 +99,7 @@ struct PlaybackBarView: View {
     }
 
     private var playbackIdentity: String {
-        let current = store.nowPlaying
+        let current = playbackStore.nowPlaying
         return [
             current?.artist ?? "",
             current?.album ?? "",
@@ -142,7 +109,7 @@ struct PlaybackBarView: View {
     }
 
     private func syncPlaybackProgress(forceRestart: Bool = false) {
-        guard let nowPlaying = store.nowPlaying else {
+        guard let nowPlaying = playbackStore.nowPlaying else {
             progressModel.stop()
             return
         }
@@ -151,6 +118,84 @@ struct PlaybackBarView: View {
             progressModel.start(position: nowPlaying.position, positionMs: nowPlaying.positionMs)
         } else {
             progressModel.sync(position: nowPlaying.position, positionMs: nowPlaying.positionMs)
+        }
+    }
+
+    @ViewBuilder
+    private func playbackContent(
+        nowPlaying: NowPlaying?,
+        playbackState: PlaybackActivityState
+    ) -> some View {
+        if playbackState.isInactive {
+            inactivePlaybackContent
+        } else {
+            activePlaybackContent(nowPlaying: nowPlaying, playbackState: playbackState)
+        }
+    }
+
+    @ViewBuilder
+    private func activePlaybackContent(
+        nowPlaying: NowPlaying?,
+        playbackState: PlaybackActivityState
+    ) -> some View {
+        HStack(spacing: style == .compact ? 10 : 12) {
+            PlaybackArtworkView(
+                artworkURL: nowPlaying?.artwork,
+                fallbackTitle: nowPlaying?.album ?? nowPlaying?.track,
+                style: style
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(nowPlaying?.track ?? "未播放")
+                    .font(style == .compact ? .subheadline.weight(.semibold) : .body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text([nowPlaying?.artist, nowPlaying?.album].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if let bannerText = playbackState.bannerText {
+                    PlaybackStatusBanner(text: bannerText)
+                        .padding(.top, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        HStack(spacing: 10) {
+            Text(currentTimeText)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 36, alignment: .leading)
+
+            ProgressBarView(progress: progressValue)
+                .frame(maxWidth: .infinity)
+
+            Text(durationText)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 36, alignment: .trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var inactivePlaybackContent: some View {
+        HStack(spacing: style == .compact ? 10 : 12) {
+            PlaybackArtworkView(
+                artworkURL: nil,
+                fallbackTitle: nil,
+                style: style
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("无活动播放")
+                    .font(style == .compact ? .subheadline.weight(.semibold) : .body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -327,16 +372,22 @@ struct ProgressBarView: View {
 @MainActor
 private final class PlaybackBarProgressModel: ObservableObject {
     @Published var currentTime: TimeInterval = 0
+    @Published var playbackState: PlaybackActivityState = .inactive
 
+    private static let pauseStaleTimeout: TimeInterval = 5
+    private static let inactiveTimeout: TimeInterval = 10
     private var timer: Timer?
     private var anchorDate: Date?
     private var anchorTime: TimeInterval = 0
+    private var lastSyncDate: Date?
 
     func start(position: Int?, positionMs: Int?) {
         stop()
         let startTime = resolvedTime(position: position, positionMs: positionMs)
         anchorTime = startTime
         anchorDate = Date()
+        lastSyncDate = Date()
+        playbackState = .active
         currentTime = startTime
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
@@ -348,18 +399,21 @@ private final class PlaybackBarProgressModel: ObservableObject {
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        invalidateTimer()
         anchorDate = nil
+        lastSyncDate = nil
+        playbackState = .inactive
         currentTime = 0
     }
 
     func sync(position: Int?, positionMs: Int?) {
-        if timer == nil {
+        lastSyncDate = Date()
+        if timer == nil || playbackState.isInactive {
             start(position: position, positionMs: positionMs)
             return
         }
 
+        playbackState = .active
         let incoming = resolvedTime(position: position, positionMs: positionMs)
         if abs(incoming - currentTime) > 0.35 {
             anchorTime = incoming
@@ -369,8 +423,23 @@ private final class PlaybackBarProgressModel: ObservableObject {
     }
 
     private func tick() {
-        guard let anchorDate else { return }
+        guard let anchorDate, let lastSyncDate else { return }
+        let silence = Date().timeIntervalSince(lastSyncDate)
+        if silence >= Self.inactiveTimeout {
+            stop()
+            return
+        }
+        if silence >= Self.pauseStaleTimeout {
+            playbackState = .pausedStale
+            return
+        }
+        playbackState = .active
         currentTime = anchorTime + Date().timeIntervalSince(anchorDate)
+    }
+
+    private func invalidateTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 
     private func resolvedTime(position: Int?, positionMs: Int?) -> TimeInterval {

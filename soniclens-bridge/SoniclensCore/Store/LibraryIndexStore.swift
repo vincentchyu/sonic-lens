@@ -4,7 +4,11 @@ import SQLite3
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor LibraryIndexStore {
-    static let syncSchemaVersion = 5
+    static let syncSchemaVersion = 7
+    private static let databaseFileName = "soniclens-library-index.sqlite"
+    private static let appSupportDirectoryName = "SonicLens"
+    private static let dataDirectoryName = "data"
+    private static let databaseDirectoryName = "db"
 
     enum StoreError: Error {
         case openDatabase
@@ -14,8 +18,11 @@ actor LibraryIndexStore {
 
     private var db: OpaquePointer?
     private let databaseURL: URL
+    private let legacyDatabaseURLs: [URL]
+    private let fileManager: FileManager
 
     init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
         let supportDirectory = try? fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -23,7 +30,15 @@ actor LibraryIndexStore {
             create: true
         )
         let baseDirectory = supportDirectory ?? fileManager.temporaryDirectory
-        self.databaseURL = baseDirectory.appendingPathComponent("soniclens-library-index.sqlite")
+        let appRootDirectory = baseDirectory.appendingPathComponent(Self.appSupportDirectoryName, isDirectory: true)
+        let databaseDirectory = appRootDirectory
+            .appendingPathComponent(Self.dataDirectoryName, isDirectory: true)
+            .appendingPathComponent(Self.databaseDirectoryName, isDirectory: true)
+        self.databaseURL = databaseDirectory.appendingPathComponent(Self.databaseFileName)
+        self.legacyDatabaseURLs = [
+            baseDirectory.appendingPathComponent(Self.databaseFileName),
+            appRootDirectory.appendingPathComponent(Self.databaseFileName)
+        ]
     }
 
     deinit {
@@ -44,14 +59,17 @@ actor LibraryIndexStore {
                 cover_art_url TEXT,
                 cover_art_mime TEXT,
                 cover_art_object_key TEXT,
+                has_insight INTEGER NOT NULL DEFAULT 0,
                 play_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT,
                 updated_at TEXT
             );
             """
         )
+        try ensureAlbumIndexColumns()
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_name ON album_index(name);")
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_artist ON album_index(artist);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_album_index_created_at ON album_index(created_at DESC, id DESC);")
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_updated_at ON album_index(updated_at);")
         try createFTS5Table(
             named: "album_index_fts",
@@ -72,17 +90,25 @@ actor LibraryIndexStore {
                 duration INTEGER,
                 is_apple_music_fav INTEGER NOT NULL DEFAULT 0,
                 is_last_fm_fav INTEGER NOT NULL DEFAULT 0,
+                is_favorited_effective INTEGER NOT NULL DEFAULT 0,
                 is_reported INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT,
                 updated_at TEXT
             );
             """
         )
+        try ensureTrackIndexColumns()
         try execute("CREATE INDEX IF NOT EXISTS idx_track_index_track ON track_index(track);")
         try execute("CREATE INDEX IF NOT EXISTS idx_track_index_artist ON track_index(artist);")
         try execute("CREATE INDEX IF NOT EXISTS idx_track_index_album ON track_index(album);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_track_index_created_at ON track_index(created_at DESC, id DESC);")
         try execute("CREATE INDEX IF NOT EXISTS idx_track_index_updated_at ON track_index(updated_at);")
         try execute("CREATE INDEX IF NOT EXISTS idx_track_index_reported ON track_index(is_reported);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_track_index_favorited_effective ON track_index(is_favorited_effective);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_track_index_favorited_created_at_id ON track_index(is_favorited_effective, created_at DESC, id DESC);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_track_index_favorited_updated_at_id ON track_index(is_favorited_effective, updated_at DESC, id DESC);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_track_index_reported_created_at_id ON track_index(is_reported, created_at DESC, id DESC);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_track_index_reported_updated_at_id ON track_index(is_reported, updated_at DESC, id DESC);")
         try createFTS5Table(
             named: "track_index_fts",
             columns: "track, artist, album",
@@ -243,7 +269,7 @@ actor LibraryIndexStore {
         if hasPhysicalPosition {
             sql = """
             UPDATE track_index
-            SET is_apple_music_fav = ?, is_last_fm_fav = ?
+            SET is_apple_music_fav = ?, is_last_fm_fav = ?, is_favorited_effective = ?
             WHERE artist = ? AND album = ? AND track = ?
               AND track_number = COALESCE(?, track_number)
               AND disc_number = COALESCE(?, disc_number);
@@ -251,7 +277,7 @@ actor LibraryIndexStore {
         } else {
             sql = """
             UPDATE track_index
-            SET is_apple_music_fav = ?, is_last_fm_fav = ?
+            SET is_apple_music_fav = ?, is_last_fm_fav = ?, is_favorited_effective = ?
             WHERE artist = ? AND album = ? AND track = ?;
             """
         }
@@ -259,12 +285,13 @@ actor LibraryIndexStore {
         try execute(sql) { statement in
             sqlite3_bind_int(statement, 1, appleMusic ? 1 : 0)
             sqlite3_bind_int(statement, 2, lastFm ? 1 : 0)
-            self.bindText(artist, to: 3, in: statement)
-            self.bindText(album, to: 4, in: statement)
-            self.bindText(track, to: 5, in: statement)
+            sqlite3_bind_int(statement, 3, Self.favoriteEffectiveFlag(appleMusic: appleMusic, lastFm: lastFm))
+            self.bindText(artist, to: 4, in: statement)
+            self.bindText(album, to: 5, in: statement)
+            self.bindText(track, to: 6, in: statement)
             if hasPhysicalPosition {
-                self.bindOptionalInt(trackNumber, to: 6, in: statement)
-                self.bindOptionalInt(discNumber, to: 7, in: statement)
+                self.bindOptionalInt(trackNumber, to: 7, in: statement)
+                self.bindOptionalInt(discNumber, to: 8, in: statement)
             }
         }
     }
@@ -316,9 +343,9 @@ actor LibraryIndexStore {
     private func upsertAlbums(_ albums: [Album]) throws {
         let sql = """
         INSERT INTO album_index(
-            id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, play_count, created_at, updated_at
+            id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             artist = excluded.artist,
@@ -326,6 +353,7 @@ actor LibraryIndexStore {
             cover_art_url = excluded.cover_art_url,
             cover_art_mime = excluded.cover_art_mime,
             cover_art_object_key = excluded.cover_art_object_key,
+            has_insight = excluded.has_insight,
             play_count = excluded.play_count,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at;
@@ -345,9 +373,10 @@ actor LibraryIndexStore {
             bindOptionalText(album.coverArtURL, to: 5, in: statement)
             bindOptionalText(album.coverArtMime, to: 6, in: statement)
             bindOptionalText(album.coverArtObjectKey, to: 7, in: statement)
-            sqlite3_bind_int64(statement, 8, Int64(album.playCount ?? 0))
-            bindOptionalText(album.createdAt, to: 9, in: statement)
-            bindOptionalText(album.updatedAt, to: 10, in: statement)
+            sqlite3_bind_int(statement, 8, album.hasInsight ? 1 : 0)
+            sqlite3_bind_int64(statement, 9, Int64(album.playCount ?? 0))
+            bindOptionalText(album.createdAt, to: 10, in: statement)
+            bindOptionalText(album.updatedAt, to: 11, in: statement)
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.executeStatement(sql)
             }
@@ -378,9 +407,9 @@ actor LibraryIndexStore {
         let sql = """
         INSERT INTO track_index(
             id, artist, album, track, play_count, track_number, disc_number, duration,
-            is_apple_music_fav, is_last_fm_fav, created_at, updated_at
+            is_apple_music_fav, is_last_fm_fav, is_favorited_effective, created_at, updated_at
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             artist = excluded.artist,
             album = excluded.album,
@@ -391,6 +420,7 @@ actor LibraryIndexStore {
             duration = excluded.duration,
             is_apple_music_fav = excluded.is_apple_music_fav,
             is_last_fm_fav = excluded.is_last_fm_fav,
+            is_favorited_effective = excluded.is_favorited_effective,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at;
         """
@@ -412,8 +442,12 @@ actor LibraryIndexStore {
             bindOptionalInt64(track.duration, to: 8, in: statement)
             sqlite3_bind_int(statement, 9, (track.isAppleMusicFav ?? false) ? 1 : 0)
             sqlite3_bind_int(statement, 10, (track.isLastFmFav ?? false) ? 1 : 0)
-            bindOptionalText(track.createdAt, to: 11, in: statement)
-            bindOptionalText(track.updatedAt, to: 12, in: statement)
+            sqlite3_bind_int(statement, 11, Self.favoriteEffectiveFlag(
+                appleMusic: track.isAppleMusicFav ?? false,
+                lastFm: track.isLastFmFav ?? false
+            ))
+            bindOptionalText(track.createdAt, to: 12, in: statement)
+            bindOptionalText(track.updatedAt, to: 13, in: statement)
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.executeStatement(sql)
             }
@@ -525,7 +559,7 @@ actor LibraryIndexStore {
         case .all:
             break
         case .favorites:
-            clauses.append("(is_apple_music_fav = 1 OR is_last_fm_fav = 1)")
+            clauses.append("is_favorited_effective = 1")
         case .unreported:
             clauses.append("is_reported = 0")
         }
@@ -550,7 +584,7 @@ actor LibraryIndexStore {
 
     private func queryAlbumsUsingFTS(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let sql = """
-        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, play_count, created_at, updated_at
+        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
         FROM album_index
         WHERE id IN (
             SELECT rowid FROM album_index_fts WHERE album_index_fts MATCH ?
@@ -564,7 +598,7 @@ actor LibraryIndexStore {
     private func queryAlbumsUsingLIKE(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let hasKeyword = !keyword.isEmpty
         let sql = """
-        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, play_count, created_at, updated_at
+        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
         FROM album_index
         \(hasKeyword ? "WHERE name LIKE ? OR artist LIKE ?" : "")
         ORDER BY \(albumOrder(sort))
@@ -652,11 +686,12 @@ actor LibraryIndexStore {
                     coverArtURL: optionalString(at: 4, in: statement),
                     coverArtMime: optionalString(at: 5, in: statement),
                     coverArtObjectKey: optionalString(at: 6, in: statement),
+                    hasInsight: sqlite3_column_int(statement, 7) != 0,
                     genre: nil,
                     totalDiscs: nil,
-                    playCount: Int(sqlite3_column_int(statement, 7)),
-                    createdAt: optionalString(at: 8, in: statement),
-                    updatedAt: optionalString(at: 9, in: statement)
+                    playCount: Int(sqlite3_column_int(statement, 8)),
+                    createdAt: optionalString(at: 9, in: statement),
+                    updatedAt: optionalString(at: 10, in: statement)
                 )
             )
         }
@@ -756,19 +791,104 @@ actor LibraryIndexStore {
         }
     }
 
+    private static func favoriteEffectiveFlag(appleMusic: Bool, lastFm: Bool) -> Int32 {
+        (appleMusic || lastFm) ? 1 : 0
+    }
+
+    private func ensureAlbumIndexColumns() throws {
+        let existingColumns = try existingColumns(in: "album_index")
+        let requiredColumns: [(name: String, definition: String)] = [
+            ("release_date", "TEXT"),
+            ("cover_art_url", "TEXT"),
+            ("cover_art_mime", "TEXT"),
+            ("cover_art_object_key", "TEXT"),
+            ("has_insight", "INTEGER NOT NULL DEFAULT 0"),
+            ("play_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT")
+        ]
+        try ensureColumns(requiredColumns, existingColumns: existingColumns, in: "album_index")
+    }
+
+    private func ensureTrackIndexColumns() throws {
+        let existingColumns = try existingColumns(in: "track_index")
+        let requiredColumns: [(name: String, definition: String)] = [
+            ("play_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("track_number", "INTEGER"),
+            ("disc_number", "INTEGER"),
+            ("duration", "INTEGER"),
+            ("is_apple_music_fav", "INTEGER NOT NULL DEFAULT 0"),
+            ("is_last_fm_fav", "INTEGER NOT NULL DEFAULT 0"),
+            ("is_favorited_effective", "INTEGER NOT NULL DEFAULT 0"),
+            ("is_reported", "INTEGER NOT NULL DEFAULT 1"),
+            ("created_at", "TEXT"),
+            ("updated_at", "TEXT")
+        ]
+        try ensureColumns(requiredColumns, existingColumns: existingColumns, in: "track_index")
+    }
+
+    private func ensureColumns(
+        _ requiredColumns: [(name: String, definition: String)],
+        existingColumns: Set<String>,
+        in table: String
+    ) throws {
+        for column in requiredColumns where !existingColumns.contains(column.name) {
+            try execute("ALTER TABLE \(table) ADD COLUMN \(column.name) \(column.definition);")
+        }
+    }
+
+    private func existingColumns(in table: String) throws -> Set<String> {
+        let sql = "PRAGMA table_info(\(table));"
+        guard let statement = try prepare(sql) else {
+            throw StoreError.prepareStatement(sql)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var columns: Set<String> = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let columnName = sqlite3_column_text(statement, 1) else { continue }
+            columns.insert(String(cString: columnName))
+        }
+        return columns
+    }
+
     private func openIfNeeded() throws {
         if db != nil {
             return
         }
 
         let parent = databaseURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true, attributes: nil)
+        try fileManager.createDirectory(at: parent, withIntermediateDirectories: true, attributes: nil)
+        try migrateLegacyDatabaseIfNeeded()
 
         var handle: OpaquePointer?
         if sqlite3_open(databaseURL.path, &handle) != SQLITE_OK {
             throw StoreError.openDatabase
         }
         db = handle
+    }
+
+    private func migrateLegacyDatabaseIfNeeded() throws {
+        guard !fileManager.fileExists(atPath: databaseURL.path) else { return }
+
+        for sourceURL in legacyDatabaseRelatedURLs() {
+            guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
+            let targetURL = databaseURL.deletingLastPathComponent().appendingPathComponent(sourceURL.lastPathComponent)
+            if fileManager.fileExists(atPath: targetURL.path) {
+                continue
+            }
+            try fileManager.copyItem(at: sourceURL, to: targetURL)
+        }
+    }
+
+    private func legacyDatabaseRelatedURLs() -> [URL] {
+        let suffixes = ["", "-wal", "-shm"]
+        return legacyDatabaseURLs.flatMap { legacyDatabaseURL in
+            suffixes.map { suffix in
+                legacyDatabaseURL.deletingLastPathComponent()
+                    .appendingPathComponent(Self.databaseFileName + suffix)
+            }
+        }
     }
 
     @discardableResult

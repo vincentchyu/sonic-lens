@@ -65,6 +65,7 @@ enum SidebarDestination: String, CaseIterable, Hashable {
 
 struct AppLayoutView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
     @State private var selection: SidebarDestination = .home
     @State private var showNowPlaying = false
     @State private var albumSort: LibrarySort = .recent
@@ -94,6 +95,14 @@ struct AppLayoutView: View {
                                 .equatable()
                             }
                             ToolbarItemGroup(placement: .automatic) {
+                                if store.currentServer != nil {
+                                    Button {
+                                        store.disconnect()
+                                    } label: {
+                                        Image(systemName: "power")
+                                    }
+                                    .help("断开当前服务端")
+                                }
                                 Toggle("性能模式", isOn: $performanceModeEnabled)
                                     .toggleStyle(.switch)
                                     .help("降低动效/材质/阴影开销，提升长时间运行稳定性")
@@ -114,7 +123,7 @@ struct AppLayoutView: View {
             }
         )
         .overlay {
-            if showNowPlaying, let nowPlaying = store.nowPlaying {
+            if showNowPlaying, let nowPlaying = playbackStore.nowPlaying {
                 NowPlayingView(nowPlaying: nowPlaying) {
                     showNowPlaying = false
                 }

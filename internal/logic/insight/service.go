@@ -21,8 +21,8 @@ import (
 
 // Service 定义歌词解析与深度分析服务接口
 type Service interface {
-	// GetOrCreateInsight 获取或创建某首歌的解析结果，第二个返回值表示是否命中缓存
-	GetOrCreateInsight(
+	// GetOrCreateTrackInsight 获取或创建某首歌的解析结果，第二个返回值表示是否命中缓存
+	GetOrCreateTrackInsight(
 		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 		provider, model, legacyModelType string,
 	) ([]*model.TrackInsight, bool, error)
@@ -47,20 +47,28 @@ type Service interface {
 	GetOrCreateAlbumInsight(
 		ctx context.Context, albumID int64, force bool, provider, model, legacyModelType string,
 	) ([]*model.AlbumInsight, bool, error)
+	// CreateInsightJob 创建音眸异步任务，供客户端后台等待与 WS 同步使用。
+	CreateInsightJob(ctx context.Context, req CreateInsightJobRequest) (*model.InsightJob, bool, error)
+	// GetInsightJob 获取单个音眸任务当前状态。
+	GetInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error)
+	// UpdateInsightJobLiveActivityToken 更新任务关联的 Live Activity push token。
+	UpdateInsightJobLiveActivityToken(ctx context.Context, jobID, token string) (*model.InsightJob, error)
 	// GetAllInsights 分页获取所有解析记录
 	GetAllInsights(
 		ctx context.Context, limit, offset int, keyword string, targetType common.AnalysisTargetType,
 	) ([]*model.InsightListItem, int64, error)
-	// GetInsightByID 按主键获取解析记录，避免上层通过分页结果回扫定位。
-	GetInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error)
-	// ToggleInsightStatus 切换解析记录的禁用状态
-	ToggleInsightStatus(ctx context.Context, id int64) error
+	// GetInsightDetail 按主键和对象类型获取解析详情，避免上层直接区分表结构。
+	GetInsightDetail(ctx context.Context, targetType common.AnalysisTargetType, id int64) (any, error)
+	// ToggleInsightStatus 切换解析记录的禁用状态，并按对象类型路由到正确的数据表。
+	ToggleInsightStatus(ctx context.Context, targetType common.AnalysisTargetType, id int64) error
 	// GetTrackCallLogs 获取某曲目的 LLM 调用流水
 	GetTrackCallLogs(ctx context.Context, artist, album, track string) ([]*model.LLMCallLog, error)
 	// GetAlbumCallLogs 获取某专辑的 LLM 调用流水
 	GetAlbumCallLogs(ctx context.Context, albumID int64) ([]*model.LLMCallLog, error)
-	// DeleteInsight 删除解析记录
-	DeleteInsight(ctx context.Context, id int64) error
+	// GetInsightCallLogs 按对象类型获取调用流水。
+	GetInsightCallLogs(ctx context.Context, targetType common.AnalysisTargetType, id int64) ([]*model.LLMCallLog, error)
+	// DeleteInsight 按对象类型删除解析记录。
+	DeleteInsight(ctx context.Context, targetType common.AnalysisTargetType, id int64) error
 	// GetInsightFeedbacks 获取关联反馈
 	GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
 	// GetLyrics 获取歌词内容，缺失时自动回源并写入缓存。
@@ -344,8 +352,8 @@ func (s *serviceImpl) GetOrCreateAlbumInsight(
 	return insights, false, nil
 }
 
-// GetOrCreateInsight 获取或创建某首歌的解析结果
-func (s *serviceImpl) GetOrCreateInsight(
+// GetOrCreateTrackInsight 获取或创建某首歌的解析结果
+func (s *serviceImpl) GetOrCreateTrackInsight(
 	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 	provider, modelName, legacyModelType string,
 ) ([]*model.TrackInsight, bool, error) {
@@ -875,19 +883,42 @@ func (s *serviceImpl) GetAllInsights(
 	return model.GetAllInsightSummaries(ctx, targetType, limit, offset, keyword)
 }
 
-// GetInsightByID 按 ID 直接获取解析记录，避免上层回扫分页结果。
-func (s *serviceImpl) GetInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error) {
-	return getInsightByID(ctx, id)
+// GetInsightDetail 按主键和对象类型获取解析详情。
+func (s *serviceImpl) GetInsightDetail(
+	ctx context.Context,
+	targetType common.AnalysisTargetType,
+	id int64,
+) (any, error) {
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		return model.GetAlbumInsightByID(ctx, id)
+	default:
+		return getInsightByID(ctx, id)
+	}
 }
 
-// ToggleInsightStatus 切换解析记录的禁用状态
-func (s *serviceImpl) ToggleInsightStatus(ctx context.Context, id int64) error {
-	insight, err := getInsightByID(ctx, id)
-	if err != nil {
+// ToggleInsightStatus 切换解析记录的禁用状态，并按对象类型更新正确的数据表。
+func (s *serviceImpl) ToggleInsightStatus(
+	ctx context.Context,
+	targetType common.AnalysisTargetType,
+	id int64,
+) error {
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		insight, err := model.GetAlbumInsightByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		_, err = model.UpdateAlbumInsightDisabled(ctx, id, !insight.IsDisabled)
 		return err
+	default:
+		insight, err := getInsightByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		insight.IsDisabled = !insight.IsDisabled
+		return model.UpdateTrackInsight(ctx, insight)
 	}
-	insight.IsDisabled = !insight.IsDisabled
-	return model.UpdateTrackInsight(ctx, insight)
 }
 
 // GetTrackCallLogs 获取某曲目的 LLM 调用流水。
@@ -935,6 +966,28 @@ func (s *serviceImpl) GetAlbumCallLogs(ctx context.Context, albumID int64) ([]*m
 	return mergeCallLogs(50, primaryLogs, legacyLogs), nil
 }
 
+// GetInsightCallLogs 按对象类型获取某次解析关联的调用流水。
+func (s *serviceImpl) GetInsightCallLogs(
+	ctx context.Context,
+	targetType common.AnalysisTargetType,
+	id int64,
+) ([]*model.LLMCallLog, error) {
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		insight, err := model.GetAlbumInsightByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return s.GetAlbumCallLogs(ctx, insight.AlbumID)
+	default:
+		insight, err := getInsightByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return s.GetTrackCallLogs(ctx, insight.Artist, insight.Album, insight.Track)
+	}
+}
+
 func mergeCallLogs(limit int, groups ...[]*model.LLMCallLog) []*model.LLMCallLog {
 	seen := make(map[int64]struct{})
 	if limit <= 0 {
@@ -966,9 +1019,14 @@ func mergeCallLogs(limit int, groups ...[]*model.LLMCallLog) []*model.LLMCallLog
 	return merged
 }
 
-// DeleteInsight 删除解析记录
-func (s *serviceImpl) DeleteInsight(ctx context.Context, id int64) error {
-	return model.DeleteTrackInsight(ctx, uint64(id))
+// DeleteInsight 按对象类型删除解析记录。
+func (s *serviceImpl) DeleteInsight(ctx context.Context, targetType common.AnalysisTargetType, id int64) error {
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		return model.DeleteAlbumInsight(ctx, uint64(id))
+	default:
+		return model.DeleteTrackInsight(ctx, uint64(id))
+	}
 }
 
 // GetInsightFeedbacks 获取关联反馈

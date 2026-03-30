@@ -11,6 +11,8 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
+	artworkcore "github.com/vincentchyu/sonic-lens/core/artwork"
+	"github.com/vincentchyu/sonic-lens/core/objectstorage"
 )
 
 const (
@@ -21,6 +23,9 @@ const (
 )
 
 var dashboardAlbumPeriods = []int{7, 30, 90, 365}
+
+var dashboardTrackRankObjectStorageGet = objectstorage.Get
+var dashboardArtistProfileObjectStorageGet = objectstorage.Get
 
 type DashboardStat struct {
 	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
@@ -111,16 +116,20 @@ func (PlayTrendHourlyStat) TableName() string {
 }
 
 type TrackRankStat struct {
-	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodType  string    `gorm:"column:period_type;type:varchar(20);not null" json:"period_type"`
-	Artist      string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
-	Album       string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
-	Track       string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
-	TrackNumber int8      `gorm:"column:track_number;type:tinyint" json:"track_number"`
-	DiscNumber  int8      `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
-	PlayCount   int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
-	Rank        int       `gorm:"column:rank;type:int;not null" json:"rank"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	ID                int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	PeriodType        string    `gorm:"column:period_type;type:varchar(20);not null" json:"period_type"`
+	TrackID           int64     `gorm:"column:track_id;type:bigint;default:0;index:idx_track_rank_track_id" json:"track_id"`
+	Artist            string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
+	Album             string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
+	Track             string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
+	TrackNumber       int8      `gorm:"column:track_number;type:tinyint" json:"track_number"`
+	DiscNumber        int8      `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
+	PlayCount         int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
+	Rank              int       `gorm:"column:rank;type:int;not null" json:"rank"`
+	CoverArtURL       string    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
+	CoverArtMime      string    `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
+	CoverArtObjectKey string    `gorm:"column:cover_art_object_key;type:varchar(512)" json:"cover_art_object_key"`
+	UpdatedAt         time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 func (TrackRankStat) TableName() string {
@@ -197,7 +206,18 @@ func EnsureDashboardStatSchema(ctx context.Context) error {
 		return err
 	}
 	if err := ensureTableAndColumns(
-		migrator, &TopAlbumStat{}, []string{"ID", "PeriodDays", "AlbumID", "Album", "Artist", "PlayCount", "Rank", "UpdatedAt"},
+		migrator, &ArtistProfile{},
+		[]string{
+			"ID", "ArtistName", "NormalizedArtistKey",
+			"AvatarURL", "AvatarMime", "AvatarObjectKey",
+			"CreatedAt", "UpdatedAt",
+		},
+	); err != nil {
+		return err
+	}
+	if err := ensureTableAndColumns(
+		migrator, &TopAlbumStat{},
+		[]string{"ID", "PeriodDays", "AlbumID", "Album", "Artist", "PlayCount", "Rank", "UpdatedAt"},
 	); err != nil {
 		return err
 	}
@@ -219,13 +239,47 @@ func EnsureDashboardStatSchema(ctx context.Context) error {
 	}
 	if err := ensureTableAndColumns(
 		migrator, &TrackRankStat{},
-		[]string{"ID", "PeriodType", "Artist", "Album", "Track", "PlayCount", "Rank", "UpdatedAt"},
+		[]string{
+			"ID", "PeriodType", "TrackID", "Artist", "Album", "Track",
+			"TrackNumber", "DiscNumber", "PlayCount", "Rank",
+			"CoverArtURL", "CoverArtMime", "CoverArtObjectKey", "UpdatedAt",
+		},
 	); err != nil {
 		return err
 	}
 	if err := ensureTrackRankStatIndexes(ctx); err != nil {
 		return err
 	}
+	if err := ensureArtistProfileIndexes(ctx); err != nil {
+		return err
+	}
+	/*if err := ensureDefaultArtistProfiles(ctx); err != nil {
+		return err
+	}*/
+
+	return nil
+}
+
+func EnsureArtistProfileSchema(ctx context.Context) error {
+	db := GetDB().WithContext(ctx)
+	migrator := db.Migrator()
+
+	if err := ensureTableAndColumns(
+		migrator, &ArtistProfile{},
+		[]string{
+			"ID", "ArtistName", "NormalizedArtistKey",
+			"AvatarURL", "AvatarMime", "AvatarObjectKey",
+			"CreatedAt", "UpdatedAt",
+		},
+	); err != nil {
+		return err
+	}
+	if err := ensureArtistProfileIndexes(ctx); err != nil {
+		return err
+	}
+	/*if err := ensureDefaultArtistProfiles(ctx); err != nil {
+		return err
+	}*/
 
 	return nil
 }
@@ -283,7 +337,8 @@ func isLegacyDashboardSchemaError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "unknown column") ||
 		strings.Contains(msg, "doesn't have a default value") ||
-		strings.Contains(msg, "doesn't exist")
+		strings.Contains(msg, "doesn't exist") ||
+		strings.Contains(msg, "no such table")
 }
 
 func rebuildBrokenDashboardStatTable(ctx context.Context, rootErr error) error {
@@ -320,8 +375,9 @@ func rebuildBrokenDashboardStatTable(ctx context.Context, rootErr error) error {
 }
 
 func refreshDashboardStatsLightOnly(ctx context.Context, topN int) error {
+	periods := []string{"all"}
 	db := GetDB().WithContext(ctx)
-	return db.Transaction(
+	if err := db.Transaction(
 		func(tx *gorm.DB) error {
 			if err := refreshDashboardOverview(tx); err != nil {
 				return err
@@ -329,18 +385,22 @@ func refreshDashboardStatsLightOnly(ctx context.Context, topN int) error {
 			if err := refreshPlaySourceStats(tx); err != nil {
 				return err
 			}
-			if err := refreshTrackRankStats(tx, topN, []string{"all"}); err != nil {
+			if err := refreshTrackRankStats(tx, topN, periods); err != nil {
 				return err
 			}
 			return nil
 		},
-	)
+	); err != nil {
+		return err
+	}
+	return backfillTrackRankStatArtwork(ctx, periods)
 }
 
 func refreshDashboardStatsHeavyWithOptions(ctx context.Context, topN, trendDays, hourlyTrendDays int) error {
 	if err := EnsureDashboardStatSchema(ctx); err != nil {
 		return err
 	}
+	periods := []string{"all", "week", "month"}
 	db := GetDB().WithContext(ctx)
 	err := db.Transaction(
 		func(tx *gorm.DB) error {
@@ -356,7 +416,7 @@ func refreshDashboardStatsHeavyWithOptions(ctx context.Context, topN, trendDays,
 			if err := refreshTrendStats(tx, trendDays, hourlyTrendDays); err != nil {
 				return err
 			}
-			if err := refreshTrackRankStats(tx, topN, []string{"all", "week", "month"}); err != nil {
+			if err := refreshTrackRankStats(tx, topN, periods); err != nil {
 				return err
 			}
 			return nil
@@ -380,14 +440,17 @@ func refreshDashboardStatsHeavyWithOptions(ctx context.Context, topN, trendDays,
 				if err := refreshTrendStats(tx, trendDays, hourlyTrendDays); err != nil {
 					return err
 				}
-				if err := refreshTrackRankStats(tx, topN, []string{"all", "week", "month"}); err != nil {
+				if err := refreshTrackRankStats(tx, topN, periods); err != nil {
 					return err
 				}
 				return nil
 			},
 		)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return backfillTrackRankStatArtwork(ctx, periods)
 }
 
 func refreshDashboardOverview(tx *gorm.DB) error {
@@ -736,6 +799,17 @@ func normalizeTrackRankPeriod(period string) string {
 	}
 }
 
+func normalizeTrackPeriodByDays(days int) string {
+	switch normalizeAlbumPeriod(days) {
+	case 7:
+		return "week"
+	case 30, 90:
+		return "month"
+	default:
+		return "all"
+	}
+}
+
 func GetTrackPlayCountsFromStat(ctx context.Context, period string, limit, offset int, keyword string) (
 	[]*Track, error,
 ) {
@@ -772,15 +846,77 @@ func GetTrackPlayCountsFromStat(ctx context.Context, period string, limit, offse
 	return result, nil
 }
 
+func GetTopTracksByPlayCountFromStat(ctx context.Context, days int, limit int) ([]*TopTrack, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	period := normalizeTrackPeriodByDays(days)
+
+	type topTrackRow struct {
+		TrackID           int64
+		Track             string
+		Album             string
+		Artist            string
+		PlayCount         int64
+		Rank              int
+		CoverArtURL       string
+		CoverArtMime      string
+		CoverArtObjectKey string
+	}
+
+	var rows []topTrackRow
+	err := GetDB().WithContext(ctx).
+		Model(&TrackRankStat{}).
+		Select("track_id, track, album, artist, play_count, `rank`, cover_art_url, cover_art_mime, cover_art_object_key").
+		Where("period_type = ?", period).
+		Where("TRIM(COALESCE(track, '')) <> ''").
+		Order("play_count DESC, `rank` ASC").
+		Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*TopTrack, 0, len(rows))
+	for index, row := range rows {
+		rank := row.Rank
+		if rank <= 0 {
+			rank = index + 1
+		}
+		result = append(
+			result, &TopTrack{
+				TrackID:           row.TrackID,
+				Track:             row.Track,
+				Album:             row.Album,
+				Artist:            row.Artist,
+				PlayCount:         int(row.PlayCount),
+				Rank:              rank,
+				CoverArtURL:       row.CoverArtURL,
+				CoverArtMime:      row.CoverArtMime,
+				CoverArtObjectKey: row.CoverArtObjectKey,
+			},
+		)
+	}
+	return result, nil
+}
+
 func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 	topN = topN * 10
 	type aggRow struct {
-		Artist      string `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
-		Album       string `gorm:"column:album;type:varchar(255);not null" json:"album"`
-		Track       string `gorm:"column:track;type:varchar(255);not null" json:"track"`
-		TrackNumber int8   `gorm:"column:track_number;type:tinyint" json:"track_number"`
-		DiscNumber  int8   `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
-		PlayCount   int64  `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
+		TrackID           int64  `gorm:"column:track_id;type:bigint" json:"track_id"`
+		Artist            string `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
+		Album             string `gorm:"column:album;type:varchar(255);not null" json:"album"`
+		Track             string `gorm:"column:track;type:varchar(255);not null" json:"track"`
+		TrackNumber       int8   `gorm:"column:track_number;type:tinyint" json:"track_number"`
+		DiscNumber        int8   `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
+		PlayCount         int64  `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
+		CoverArtURL       string `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
+		CoverArtMime      string `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
+		CoverArtObjectKey string `gorm:"column:cover_art_object_key;type:varchar(512)" json:"cover_art_object_key"`
 	}
 
 	for _, p := range periods {
@@ -789,10 +925,28 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 
 		switch period {
 		case "all":
-			if err := tx.Model(&Track{}).
-				//uidx_t_aatdntn
-				Select("artist, album, track, track_number, disc_number, play_count").
-				Order("play_count DESC").
+			if err := tx.Table("track AS t").
+				Select(
+					"t.id AS track_id, t.artist, t.album, t.track, t.track_number, t.disc_number, t.play_count, " +
+						"COALESCE(aa.cover_art_url, ab.cover_art_url, '') AS cover_art_url, " +
+						"COALESCE(aa.cover_art_mime, ab.cover_art_mime, '') AS cover_art_mime, " +
+						"COALESCE(aa.cover_art_object_key, ab.cover_art_object_key, '') AS cover_art_object_key",
+				).
+				Joins(
+					"LEFT JOIN track_album AS ta ON ta.id = (" +
+						"SELECT ta2.id FROM track_album AS ta2 " +
+						"WHERE ta2.track_id = t.id AND ta2.track_number = t.track_number AND ta2.disc_number = t.disc_number " +
+						"ORDER BY ta2.id ASC LIMIT 1" +
+						")",
+				).
+				Joins("LEFT JOIN album AS aa ON aa.id = ta.album_id").
+				Joins(
+					"LEFT JOIN (" +
+						"SELECT artist, name, MIN(id) AS id FROM album GROUP BY artist, name" +
+						") AS ac ON ac.artist = t.artist AND ac.name = t.album",
+				).
+				Joins("LEFT JOIN album AS ab ON ab.id = ac.id").
+				Order("t.play_count DESC").
 				Limit(topN).
 				Find(&rows).Error; err != nil {
 				return err
@@ -802,11 +956,24 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 			if period == "month" {
 				startTime = time.Now().AddDate(0, -1, 0)
 			}
-			if err := tx.Model(&TrackPlayRecord{}).
+			if err := tx.Table("track_play_records AS tpr").
 				Where("play_time >= ?", startTime).
-				Select("artist, album, track, track_number, disc_number, COUNT(*) as play_count").
-				Group("artist, album, track, track_number, disc_number").
-				Order("play_count DESC").
+				Select(
+					"COALESCE(MAX(CASE WHEN tpr.resolved_track_id > 0 THEN tpr.resolved_track_id ELSE 0 END), 0) AS track_id, " +
+						"tpr.artist, tpr.album, tpr.track, tpr.track_number, tpr.disc_number, COUNT(*) AS play_count, " +
+						"COALESCE(MAX(aa.cover_art_url), MAX(ab.cover_art_url), '') AS cover_art_url, " +
+						"COALESCE(MAX(aa.cover_art_mime), MAX(ab.cover_art_mime), '') AS cover_art_mime, " +
+						"COALESCE(MAX(aa.cover_art_object_key), MAX(ab.cover_art_object_key), '') AS cover_art_object_key",
+				).
+				Joins("LEFT JOIN album AS aa ON aa.id = tpr.album_id AND tpr.album_id > 0").
+				Joins(
+					"LEFT JOIN (" +
+						"SELECT artist, name, MIN(id) AS id FROM album GROUP BY artist, name" +
+						") AS ac ON ac.artist = tpr.artist AND ac.name = tpr.album",
+				).
+				Joins("LEFT JOIN album AS ab ON ab.id = ac.id").
+				Group("tpr.artist, tpr.album, tpr.track, tpr.track_number, tpr.disc_number").
+				Order("COUNT(*) DESC").
 				Limit(topN).
 				Find(&rows).Error; err != nil {
 				return err
@@ -828,14 +995,18 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 			items = append(
 				items,
 				TrackRankStat{
-					PeriodType:  period,
-					Artist:      row.Artist,
-					Album:       row.Album,
-					Track:       row.Track,
-					TrackNumber: row.TrackNumber,
-					DiscNumber:  row.DiscNumber,
-					PlayCount:   row.PlayCount,
-					Rank:        i + 1,
+					PeriodType:        period,
+					TrackID:           row.TrackID,
+					Artist:            row.Artist,
+					Album:             row.Album,
+					Track:             row.Track,
+					TrackNumber:       row.TrackNumber,
+					DiscNumber:        row.DiscNumber,
+					PlayCount:         row.PlayCount,
+					Rank:              i + 1,
+					CoverArtURL:       row.CoverArtURL,
+					CoverArtMime:      row.CoverArtMime,
+					CoverArtObjectKey: row.CoverArtObjectKey,
 				},
 			)
 		}
@@ -850,6 +1021,115 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 	return nil
 }
 
+type trackRankCoverSeed struct {
+	Artist string `gorm:"column:artist"`
+	Album  string `gorm:"column:album"`
+}
+
+type trackRankCoverUpdate struct {
+	CoverArtURL       string
+	CoverArtMime      string
+	CoverArtObjectKey string
+}
+
+func backfillTrackRankStatArtwork(ctx context.Context, periods []string) error {
+	normalizedPeriods := normalizeTrackRankPeriods(periods)
+	if len(normalizedPeriods) == 0 {
+		return nil
+	}
+
+	provider := dashboardTrackRankObjectStorageGet()
+	if provider == nil {
+		return nil
+	}
+
+	var seeds []trackRankCoverSeed
+	if err := GetDB().WithContext(ctx).
+		Model(&TrackRankStat{}).
+		Select("artist, album").
+		Where("period_type IN ?", normalizedPeriods).
+		Where("TRIM(COALESCE(album, '')) <> ''").
+		Where(
+			"TRIM(COALESCE(cover_art_url, '')) = '' OR TRIM(COALESCE(cover_art_mime, '')) = '' OR TRIM(COALESCE(cover_art_object_key, '')) = ''",
+		).
+		Group("artist, album").
+		Scan(&seeds).Error; err != nil {
+		return err
+	}
+
+	db := GetDB().WithContext(ctx)
+	for _, seed := range seeds {
+		update, ok, err := resolveTrackRankCoverUpdate(ctx, provider, seed.Artist, seed.Album)
+		if err != nil || !ok {
+			continue
+		}
+
+		if err := db.Model(&TrackRankStat{}).
+			Where("period_type IN ?", normalizedPeriods).
+			Where("artist = ? AND album = ?", seed.Artist, seed.Album).
+			Where(
+				"TRIM(COALESCE(cover_art_url, '')) = '' OR TRIM(COALESCE(cover_art_mime, '')) = '' OR TRIM(COALESCE(cover_art_object_key, '')) = ''",
+			).
+			Updates(
+				map[string]interface{}{
+					"cover_art_url":        update.CoverArtURL,
+					"cover_art_mime":       update.CoverArtMime,
+					"cover_art_object_key": update.CoverArtObjectKey,
+				},
+			).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func resolveTrackRankCoverUpdate(
+	ctx context.Context, provider objectstorage.Provider, artist, album string,
+) (trackRankCoverUpdate, bool, error) {
+	artist = strings.TrimSpace(artist)
+	album = strings.TrimSpace(album)
+	if provider == nil || album == "" {
+		return trackRankCoverUpdate{}, false, nil
+	}
+
+	seed := artworkcore.BuildAlbumArtworkSeed(artist, artist, album)
+	objectKey := strings.TrimSpace(provider.BuildOriginalObjectKey(seed))
+	if objectKey == "" {
+		return trackRankCoverUpdate{}, false, nil
+	}
+
+	exists, contentType, err := provider.CheckObjectExists(ctx, objectKey)
+	if err != nil || !exists {
+		return trackRankCoverUpdate{}, false, err
+	}
+
+	contentType = strings.TrimSpace(contentType)
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
+	return trackRankCoverUpdate{
+		CoverArtURL:       provider.GetObjectCDNURL(objectKey),
+		CoverArtMime:      contentType,
+		CoverArtObjectKey: objectKey,
+	}, true, nil
+}
+
+func normalizeTrackRankPeriods(periods []string) []string {
+	seen := make(map[string]struct{}, len(periods))
+	result := make([]string, 0, len(periods))
+	for _, period := range periods {
+		normalized := normalizeTrackRankPeriod(period)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
 func ensureTrackRankStatIndexes(ctx context.Context) error {
 	if config.ConfigObj.Database.Type != string(common.DatabaseTypeMySQL) {
 		return nil
@@ -859,6 +1139,11 @@ func ensureTrackRankStatIndexes(ctx context.Context) error {
 
 	if !migrator.HasIndex(&TrackRankStat{}, "idx_track_rank_period_rank") {
 		if err := db.Exec("ALTER TABLE track_rank_stat ADD INDEX idx_track_rank_period_rank (period_type, `rank`)").Error; err != nil {
+			return err
+		}
+	}
+	if !migrator.HasIndex(&TrackRankStat{}, "idx_track_rank_track_id") {
+		if err := db.Exec("ALTER TABLE track_rank_stat ADD INDEX idx_track_rank_track_id (track_id)").Error; err != nil {
 			return err
 		}
 	}
@@ -934,7 +1219,7 @@ func GetTopArtistsFromStat(ctx context.Context, metricType string, limit int) ([
 
 	result := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
-		item := map[string]interface{}{"artist": row.Artist}
+		item := map[string]interface{}{"artist": row.Artist, "rank": row.Rank}
 		if metricType == "tracks" {
 			item["track_count"] = row.MetricValue
 		} else {
@@ -965,12 +1250,29 @@ func normalizeAlbumPeriod(days int) int {
 
 func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) ([]*TopAlbum, error) {
 	period := normalizeAlbumPeriod(days)
-	var rows []*TopAlbumStat
+	type topAlbumRow struct {
+		AlbumID           int64
+		Album             string
+		Artist            string
+		PlayCount         int64
+		CoverArtURL       string
+		CoverArtMime      string
+		CoverArtObjectKey string
+	}
+	var rows []topAlbumRow
 	if err := GetDB().WithContext(ctx).
-		Where("period_days = ?", period).
-		Order("`rank` ASC").
+		Table("top_album_stat AS tas").
+		Select(
+			"tas.album_id, tas.album, tas.artist, tas.play_count, "+
+				"COALESCE(a.cover_art_url, '') AS cover_art_url, "+
+				"COALESCE(a.cover_art_mime, '') AS cover_art_mime, "+
+				"COALESCE(a.cover_art_object_key, '') AS cover_art_object_key",
+		).
+		Joins("LEFT JOIN album AS a ON a.id = tas.album_id").
+		Where("tas.period_days = ?", period).
+		Order("tas.`rank` ASC").
 		Limit(limit).
-		Find(&rows).Error; err != nil {
+		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 
@@ -979,10 +1281,13 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 		result = append(
 			result,
 			&TopAlbum{
-				AlbumID:   row.AlbumID,
-				Album:     row.Album,
-				Artist:    row.Artist,
-				PlayCount: int(row.PlayCount),
+				AlbumID:           row.AlbumID,
+				Album:             row.Album,
+				Artist:            row.Artist,
+				PlayCount:         int(row.PlayCount),
+				CoverArtURL:       row.CoverArtURL,
+				CoverArtMime:      row.CoverArtMime,
+				CoverArtObjectKey: row.CoverArtObjectKey,
 			},
 		)
 	}
@@ -1004,6 +1309,7 @@ func GetTopGenresWithDetailsFromStat(ctx context.Context, limit int) ([]*TopGenr
 				TrackGenreCount: row.TrackGenreCount,
 				GenreNameZh:     row.GenreNameZh,
 				GenreCount:      row.GenreCount,
+				Rank:            row.Rank,
 			},
 		)
 	}

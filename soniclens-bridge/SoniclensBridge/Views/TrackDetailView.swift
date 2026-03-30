@@ -1,14 +1,26 @@
 import SwiftUI
 import Combine
 
+@ViewBuilder
+func trackDetailDestination(track: Track, selectedTab: TrackDetailTab = .info) -> some View {
+    TrackDetailView(track: track, selectedTab: selectedTab)
+}
+
 struct TrackDetailView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(FavoriteStore.self) private var favoriteStore
+    @EnvironmentObject private var insightCoordinator: InsightAnalysisCoordinator
     @StateObject private var viewModel = TrackDetailViewModel()
 
     let track: Track
     @State private var selectedTab: TrackDetailTab = .info
     @State private var previewTime: TimeInterval = 0
     @State private var sharePreviewRequest: SharePreviewRequest?
+
+    init(track: Track, selectedTab: TrackDetailTab = .info) {
+        self.track = track
+        _selectedTab = State(initialValue: selectedTab)
+    }
 
     private var isPhoneLayout: Bool {
         #if os(iOS)
@@ -77,6 +89,12 @@ struct TrackDetailView: View {
                 trackNumber: track.trackNumber,
                 discNumber: track.discNumber
             )
+            await viewModel.syncInsightJob(insightCoordinator.activeJob, using: server, track: track, forceRefresh: true)
+            await insightCoordinator.reconcileIfNeeded(using: server)
+        }
+        .task(id: insightJobTaskToken) {
+            guard let server = store.currentServer else { return }
+            await viewModel.syncInsightJob(matchingInsightJob, using: server, track: track)
         }
         .onChange(of: viewModel.selectedAIPlatform) { _, newValue in
             guard viewModel.isModelPickerPresented, let server = store.currentServer, !newValue.isEmpty else { return }
@@ -282,12 +300,8 @@ struct TrackDetailView: View {
 
     private var isCurrentTrackFavorite: Bool {
         track.isFavorited
-            || store.isFavorite(
-                artist: track.artist,
-                album: track.album,
-                track: track.track,
-                trackNumber: track.trackNumber,
-                discNumber: track.discNumber
+            || favoriteStore.favoriteKeys.contains(
+                [track.artist, track.album, track.track, String(track.trackNumber ?? 0), String(track.discNumber ?? 0)].joined(separator: "•")
             )
     }
 
@@ -308,7 +322,7 @@ struct TrackDetailView: View {
         case .loadingModels:
             return "正在加载可用模型，请稍候。"
         case .generating:
-            return "音眸解析可能持续数分钟，请保持应用前台并确保网络稳定。"
+            return "音眸解析可能持续数分钟，切到桌面后可通过灵动岛继续关注状态。"
         default:
             return nil
         }
@@ -348,13 +362,22 @@ struct TrackDetailView: View {
         Task {
             await viewModel.confirmInsightGeneration(
                 using: server,
-                artist: track.artist,
-                album: track.album,
-                track: track.track,
-                trackNumber: track.trackNumber,
-                discNumber: track.discNumber
+                coordinator: insightCoordinator,
+                track: track
             )
         }
+    }
+
+    private var matchingInsightJob: InsightAnalysisJob? {
+        guard let activeJob = insightCoordinator.activeJob, activeJob.matches(track: track) else {
+            return nil
+        }
+        return activeJob
+    }
+
+    private var insightJobTaskToken: String {
+        guard let job = matchingInsightJob else { return "none" }
+        return "\(job.id)::\(job.phase.rawValue)::\(job.updatedAt ?? "")"
     }
 
     private func formatDuration(_ duration: Int64) -> String {
@@ -365,7 +388,7 @@ struct TrackDetailView: View {
     }
 }
 
-enum TrackDetailTab {
+enum TrackDetailTab: String, Hashable {
     case info
     case lyrics
     case insights

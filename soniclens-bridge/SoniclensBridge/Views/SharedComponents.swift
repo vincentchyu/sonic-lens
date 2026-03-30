@@ -81,3 +81,24 @@ struct SectionHeader: View {
             .fontWeight(.semibold)
     }
 }
+
+/// 播放静默时显示的状态条，用来提示当前是暂停更新还是完全无活动播放。
+struct PlaybackStatusBanner: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(SonicTheme.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(SonicTheme.card.opacity(0.86))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(SonicTheme.glassBorder.opacity(0.72), lineWidth: 1)
+            )
+    }
+}

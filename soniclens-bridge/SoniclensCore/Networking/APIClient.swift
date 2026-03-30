@@ -14,25 +14,23 @@ final class APIClient {
         if let session = session {
             self.session = session
         } else {
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 5
-            config.timeoutIntervalForResource = 8
-            self.session = URLSession(configuration: config)
+            self.session = Self.sharedSession
         }
     }
 
-    func get(path: String, queryItems: [URLQueryItem] = []) async throws -> Data {
-        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
-        if !queryItems.isEmpty {
-            components?.queryItems = queryItems
-        }
-        guard let url = components?.url else {
+    func get(path: String, queryItems: [URLQueryItem] = [], timeout: TimeInterval? = nil) async throws -> Data {
+        guard let url = buildURL(path: path, queryItems: queryItems) else {
             throw URLError(.badURL)
         }
 
         logger.log("GET \(url.absoluteString, privacy: .public)")
         let request = makeRequest(url: url, method: "GET")
-        let (data, response) = try await session.data(for: request)
+        let activeSession = sessionForRequest(timeout: timeout)
+        var activeRequest = request
+        if let timeout {
+            activeRequest.timeoutInterval = timeout
+        }
+        let (data, response) = try await activeSession.data(for: activeRequest)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             logger.error("GET failed url=\(url.absoluteString, privacy: .public) response=\(String(describing: response), privacy: .public) body=\(self.responsePreview(from: data), privacy: .public)")
             throw URLError(.badServerResponse)
@@ -41,8 +39,8 @@ final class APIClient {
         return data
     }
 
-    func getJSON<T: Decodable>(path: String, queryItems: [URLQueryItem] = []) async throws -> T {
-        let data = try await get(path: path, queryItems: queryItems)
+    func getJSON<T: Decodable>(path: String, queryItems: [URLQueryItem] = [], timeout: TimeInterval? = nil) async throws -> T {
+        let data = try await get(path: path, queryItems: queryItems, timeout: timeout)
         do {
             return try await decodeJSON(T.self, from: data)
         } catch {
@@ -86,7 +84,24 @@ final class APIClient {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = timeout
         config.timeoutIntervalForResource = timeout
+        config.urlCache = Self.sharedSession.configuration.urlCache
+        config.requestCachePolicy = .useProtocolCachePolicy
         return URLSession(configuration: config)
+    }
+
+    private func buildURL(path: String, queryItems: [URLQueryItem]) -> URL? {
+        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        let encodedQuery = queryItems.compactMap { item -> String? in
+            let encodedName = Self.encodeQueryComponent(item.name)
+            guard let value = item.value else { return nil }
+            return "\(encodedName)=\(Self.encodeQueryComponent(value))"
+        }.joined(separator: "&")
+
+        if !encodedQuery.isEmpty {
+            components?.percentEncodedQuery = encodedQuery
+        }
+
+        return components?.url
     }
 
     private func makeRequest(url: URL, method: String) -> URLRequest {
@@ -109,6 +124,20 @@ final class APIClient {
     }
 
     private static let terminalHeaderField = "X-SonicLens-Terminal"
+    private static let sharedSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 5
+        config.timeoutIntervalForResource = 8
+        config.requestCachePolicy = .useProtocolCachePolicy
+        config.urlCache = URLCache.shared
+        return URLSession(configuration: config)
+    }()
+
+    private static func encodeQueryComponent(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
 
     private static var terminalIdentifier: String {
         #if os(macOS)

@@ -57,6 +57,16 @@ func appendLibraryChangeTx(tx *gorm.DB, entityType string, entityID int64, opera
 	return nil
 }
 
+// AppendLibraryChange 追加一条资料库变更记录，供非事务场景复用。
+func AppendLibraryChange(ctx context.Context, entityType string, entityID int64, operation string) error {
+	return appendLibraryChangeTx(GetDB().WithContext(ctx), entityType, entityID, operation)
+}
+
+// AppendAlbumLibraryUpsert 追加专辑索引 upsert 变更，驱动 Bridge 端专辑列表增量刷新。
+func AppendAlbumLibraryUpsert(ctx context.Context, albumID int64) error {
+	return AppendLibraryChange(ctx, LibraryEntityAlbum, albumID, LibraryOpUpsert)
+}
+
 // GetLibraryChangesSince 获取指定版本之后的资料库变更
 func GetLibraryChangesSince(ctx context.Context, sinceVersion int64) ([]*LibraryChangeLog, error) {
 	var rows []*LibraryChangeLog

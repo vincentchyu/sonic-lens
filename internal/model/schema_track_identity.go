@@ -42,6 +42,26 @@ func ensureTrackIdentitySchema(ctx context.Context) error {
 			return err
 		}
 	}
+	if !migrator.HasColumn(&TrackRankStat{}, "track_id") {
+		if err := db.Exec("ALTER TABLE track_rank_stat ADD COLUMN track_id BIGINT DEFAULT 0 AFTER period_type").Error; err != nil {
+			return err
+		}
+	}
+	if !migrator.HasColumn(&TrackRankStat{}, "cover_art_url") {
+		if err := db.Exec("ALTER TABLE track_rank_stat ADD COLUMN cover_art_url VARCHAR(1024) NULL AFTER `rank`").Error; err != nil {
+			return err
+		}
+	}
+	if !migrator.HasColumn(&TrackRankStat{}, "cover_art_mime") {
+		if err := db.Exec("ALTER TABLE track_rank_stat ADD COLUMN cover_art_mime VARCHAR(128) NULL AFTER cover_art_url").Error; err != nil {
+			return err
+		}
+	}
+	if !migrator.HasColumn(&TrackRankStat{}, "cover_art_object_key") {
+		if err := db.Exec("ALTER TABLE track_rank_stat ADD COLUMN cover_art_object_key VARCHAR(512) NULL AFTER cover_art_mime").Error; err != nil {
+			return err
+		}
+	}
 	if migrator.HasIndex(&TrackRankStat{}, "uk_track_rank_period_track") {
 		if err := db.Exec("ALTER TABLE track_rank_stat DROP INDEX uk_track_rank_period_track").Error; err != nil {
 			return err
@@ -51,6 +71,11 @@ func ensureTrackIdentitySchema(ctx context.Context) error {
 		if err := db.Exec(
 			"ALTER TABLE track_rank_stat ADD UNIQUE KEY uk_track_rank_period_track (period_type, artist(191), album(191), track(191), disc_number, track_number)",
 		).Error; err != nil {
+			return err
+		}
+	}
+	if !migrator.HasIndex(&TrackRankStat{}, "idx_track_rank_track_id") {
+		if err := db.Exec("ALTER TABLE track_rank_stat ADD INDEX idx_track_rank_track_id (track_id)").Error; err != nil {
 			return err
 		}
 	}

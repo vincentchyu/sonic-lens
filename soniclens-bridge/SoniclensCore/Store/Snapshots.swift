@@ -4,9 +4,10 @@ struct HomeSnapshot: Codable {
     let stats: DashboardStats?
     let topArtistsByPlays: [TopArtist]
     let topArtistsByTracks: [TopArtist]
+    let playSourceCounts: [String: Int64]?
     let topAlbums: [TopAlbum]
     let topGenres: [TopGenre]
-    let topTracks: [Track]
+    let topTracks: [TopTrack]
     let recentPlays: [RecentPlayRecord]
     let trendPoints: [TrendPoint]
     let hourlyData: [HourlyData]

@@ -20,6 +20,26 @@ struct InsightDetailView: View {
     }
 }
 
+struct AlbumInsightDetailView: View {
+    let insight: AlbumInsight
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                AlbumInsightDetailHeader(insight: insight)
+                AlbumInsightPrimaryContentView(
+                    insight: insight,
+                    compact: false,
+                    emptyTitle: "暂无专辑音眸",
+                    emptySubtitle: "当前专辑还没有可展示的音眸内容。"
+                )
+            }
+            .padding(32)
+        }
+        .navigationTitle("音眸")
+    }
+}
+
 struct InsightDetailHeader: View {
     let insight: Insight
 
@@ -29,6 +49,24 @@ struct InsightDetailHeader: View {
                 .font(.title2)
                 .fontWeight(.semibold)
             Text("\(insight.artist) · \(insight.album)")
+                .font(.body)
+                .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: 16)
+    }
+}
+
+struct AlbumInsightDetailHeader: View {
+    let insight: AlbumInsight
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(insight.album)
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(insight.artist)
                 .font(.body)
                 .foregroundStyle(.secondary)
         }

@@ -1066,8 +1066,26 @@ func GetTrack(ctx context.Context, artist, album, track string) (*Track, error) 
 func GetTrackByIdentity(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
 	*Track, error,
 ) {
-	record, err := findTrackByIdentity(
+	record, err := GetTrackByIdentityTx(
 		GetDB().WithContext(ctx),
+		artist,
+		album,
+		track,
+		trackNumber,
+		discNumber,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// GetTrackByIdentityTx 在事务内按五元组优先查询曲目，缺少编号时回退到旧三元组。
+func GetTrackByIdentityTx(
+	tx *gorm.DB, artist, album, track string, trackNumber, discNumber int8,
+) (*Track, error) {
+	return findTrackByIdentity(
+		tx,
 		TrackIdentity{
 			Artist:      artist,
 			Album:       album,
@@ -1076,10 +1094,6 @@ func GetTrackByIdentity(ctx context.Context, artist, album, track string, trackN
 			DiscNumber:  discNumber,
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-	return record, nil
 }
 
 // GetTrackByIDTx 在事务内按主键获取曲目，供上层编排多个 DAO 时复用。
@@ -1225,6 +1239,81 @@ func UpdateTrackMusicBrainzMetadataTx(
 	return appendLibraryChangeTx(tx, LibraryEntityTrack, trackID, LibraryOpUpsert)
 }
 
+// UpdateTrackCuratedMetadataTx 在事务内以精选维护优先的规则同步曲目身份和元数据。
+func UpdateTrackCuratedMetadataTx(
+	tx *gorm.DB, trackID int64, identity *TrackIdentity, metadata *TrackMetadata,
+) error {
+	if tx == nil || trackID <= 0 {
+		return nil
+	}
+
+	for i := 0; i < 3; i++ {
+		current, err := GetTrackByIDTx(tx, trackID)
+		if err != nil {
+			return err
+		}
+
+		updated := *current
+		if identity != nil {
+			updated.Artist = identity.Artist
+			updated.Album = identity.Album
+			updated.Track = identity.Track
+			if identity.TrackNumber > 0 {
+				updated.TrackNumber = identity.TrackNumber
+			}
+			if identity.DiscNumber > 0 {
+				updated.DiscNumber = identity.DiscNumber
+			}
+		}
+		if metadata != nil {
+			if metadata.TrackNumber > 0 {
+				updated.TrackNumber = metadata.TrackNumber
+			}
+			if metadata.DiscNumber > 0 {
+				updated.DiscNumber = metadata.DiscNumber
+			}
+			if metadata.Duration > 0 {
+				updated.Duration = metadata.Duration
+			}
+			if metadata.AlbumArtist != "" {
+				updated.AlbumArtist = metadata.AlbumArtist
+			}
+			if metadata.Genre != "" {
+				updated.Genre = metadata.Genre
+			}
+			if metadata.Composer != "" {
+				updated.Composer = metadata.Composer
+			}
+			if metadata.ReleaseDate != "" {
+				updated.ReleaseDate = metadata.ReleaseDate
+			}
+			if metadata.MusicBrainzID != "" {
+				updated.MusicBrainzID = metadata.MusicBrainzID
+			}
+			if metadata.Source != "" {
+				updated.Source = metadata.Source
+			}
+			if metadata.BundleID != "" {
+				updated.BundleID = metadata.BundleID
+			}
+			if metadata.UniqueID != "" {
+				updated.UniqueID = metadata.UniqueID
+			}
+		}
+		updated.Version = current.Version + 1
+
+		result := tx.Where("id = ? AND version = ?", current.ID, current.Version).Updates(&updated)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			return nil
+		}
+	}
+
+	return errors.New("track optimistic lock retries exhausted")
+}
+
 // GetAllTrackPlayCounts retrieves all track play counts
 func GetAllTrackPlayCounts(ctx context.Context) ([]*Track, error) {
 	var allTracks []*Track
@@ -1319,6 +1408,9 @@ func GetTopArtistsByPlayCount(ctx context.Context, limit int) ([]map[string]inte
 	if err != nil {
 		return nil, err
 	}
+	for index := range result {
+		result[index]["rank"] = index + 1
+	}
 	return result, nil
 }
 
@@ -1337,6 +1429,9 @@ func GetTopArtistsByTrackCount(ctx context.Context, limit int) ([]map[string]int
 		Find(&result).Error
 	if err != nil {
 		return nil, err
+	}
+	for index := range result {
+		result[index]["rank"] = index + 1
 	}
 	return result, nil
 }

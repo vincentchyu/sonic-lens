@@ -60,6 +60,34 @@ type WsLibraryUpdate struct {
 	Version int64  `json:"version"`
 }
 
+type WsInsightJobUpdate struct {
+	Type string           `json:"type"`
+	Data WsInsightJobData `json:"data"`
+}
+
+type WsInsightJobData struct {
+	ID                  string                    `json:"id"`
+	AnalysisTargetType  common.AnalysisTargetType `json:"analysis_target_type"`
+	Status              common.InsightJobPhase    `json:"status"`
+	AlbumID             int64                     `json:"album_id"`
+	Artist              string                    `json:"artist"`
+	Album               string                    `json:"album"`
+	Track               string                    `json:"track"`
+	TrackNumber         int8                      `json:"track_number"`
+	DiscNumber          int8                      `json:"disc_number"`
+	Provider            string                    `json:"provider"`
+	Model               string                    `json:"model"`
+	ProviderDisplayName string                    `json:"provider_display_name"`
+	ModelDisplayName    string                    `json:"model_display_name"`
+	ClientPlatform      string                    `json:"client_platform"`
+	ResultInsightID     *int64                    `json:"result_insight_id,omitempty"`
+	ResultAvailable     bool                      `json:"result_available"`
+	ErrorMessage        string                    `json:"error_message"`
+	StartedAt           string                    `json:"started_at,omitempty"`
+	FinishedAt          string                    `json:"finished_at,omitempty"`
+	UpdatedAt           string                    `json:"updated_at,omitempty"`
+}
+
 type libraryUpdateEvent struct {
 	EntityType string
 	EntityID   int64
@@ -108,6 +136,18 @@ func BroadcastLibraryUpdate(ctx context.Context, entityType string, entityID int
 			EntityID:   entityID,
 			Operation:  operation,
 			Version:    version,
+		},
+	)
+}
+
+func BroadcastInsightJobUpdate(ctx context.Context, data *WsInsightJobData) {
+	if data == nil {
+		return
+	}
+	broadcastJSON(
+		ctx, &WsInsightJobUpdate{
+			Type: "insight_job_updated",
+			Data: *data,
 		},
 	)
 }

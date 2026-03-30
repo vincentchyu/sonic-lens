@@ -19,14 +19,52 @@ import (
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
+const (
+	pendingAlbumMaintenanceModeMusicBrainz = "musicbrainz"
+	pendingAlbumMaintenanceModeManual      = "manual"
+)
+
 // DeepMaintainPendingAlbumReport 返回工作项执行后的汇总结果。
 type DeepMaintainPendingAlbumReport struct {
-	ResolvedAlbumID       int64 `json:"resolved_album_id"`
-	ReusedHeardTracks     int   `json:"reused_heard_tracks"`
-	CreatedTracks         int   `json:"created_tracks"`
-	TrackAlbumWrites      int   `json:"track_album_writes"`
-	AppliedPlayRecords    int   `json:"applied_play_records"`
-	AppliedFavoriteEvents int   `json:"applied_favorite_events"`
+	Mode                  string `json:"mode"`
+	ResolvedAlbumID       int64  `json:"resolved_album_id"`
+	ReusedHeardTracks     int    `json:"reused_heard_tracks"`
+	CreatedTracks         int    `json:"created_tracks"`
+	TrackAlbumWrites      int    `json:"track_album_writes"`
+	AppliedPlayRecords    int    `json:"applied_play_records"`
+	AppliedFavoriteEvents int    `json:"applied_favorite_events"`
+}
+
+// ManualPendingAlbumInput 描述手动维护专辑时的统一输入。
+type ManualPendingAlbumInput struct {
+	ManualAlbum  ManualPendingAlbumAlbumInput   `json:"manual_album"`
+	ManualTracks []ManualPendingAlbumTrackInput `json:"manual_tracks"`
+}
+
+// ManualPendingAlbumAlbumInput 描述手动维护时的专辑级元数据。
+type ManualPendingAlbumAlbumInput struct {
+	Name          string `json:"name"`
+	AlbumArtist   string `json:"album_artist"`
+	DisplayArtist string `json:"display_artist"`
+	ReleaseDate   string `json:"release_date"`
+	Genre         string `json:"genre"`
+	Country       string `json:"country"`
+	Status        string `json:"status"`
+	Packaging     string `json:"packaging"`
+	Barcode       string `json:"barcode"`
+	CoverArtURL   string `json:"cover_art_url"`
+}
+
+// ManualPendingAlbumTrackInput 描述手动维护时的曲目级元数据。
+type ManualPendingAlbumTrackInput struct {
+	DiscNumber     int8     `json:"disc_number"`
+	TrackNumber    int8     `json:"track_number"`
+	Title          string   `json:"title"`
+	Artist         string   `json:"artist"`
+	Duration       int64    `json:"duration"`
+	Composer       string   `json:"composer"`
+	MusicBrainzID  string   `json:"music_brainz_id"`
+	EvidenceTitles []string `json:"evidence_titles"`
 }
 
 // Service 定义待归因专辑工作台能力。
@@ -38,10 +76,42 @@ type Service interface {
 	SearchPendingAlbumMBReleases(ctx context.Context, workItemID int64) ([]*model.ReleaseMB, error)
 	LinkPendingAlbumMBRelease(ctx context.Context, workItemID, releaseMBID int64, mbid string) error
 	DeepMaintainPendingAlbumWorkItem(ctx context.Context, workItemID int64) (*DeepMaintainPendingAlbumReport, error)
+	ManualMaintainPendingAlbumWorkItem(
+		ctx context.Context, workItemID int64, input ManualPendingAlbumInput,
+	) (*DeepMaintainPendingAlbumReport, error)
 	ListWorkItems(ctx context.Context, limit, offset int, keyword string, statusGroup string) ([]*model.PendingAlbumWorkItem, int64, error)
 }
 
 type serviceImpl struct{}
+
+type pendingEvidence struct {
+	Title            string
+	TrackNumber      int8
+	DiscNumber       int8
+	ResolvedTrackID  int64
+	PlayRecordIDs    []int64
+	FavoriteEventIDs []int64
+}
+
+type pendingAlbumTrackDraft struct {
+	Title          string
+	TrackArtist    string
+	AlbumArtist    string
+	DiscNumber     int8
+	TrackNumber    int8
+	Duration       int64
+	Composer       string
+	MusicBrainzID  string
+	EvidenceTitles []string
+}
+
+type pendingAlbumMaintenanceMaterial struct {
+	Mode             string
+	AlbumCandidate   *model.Album
+	TrackDrafts      []pendingAlbumTrackDraft
+	ReleaseMB        *model.ReleaseMB
+	CoverEnsureInput artworklogic.EnsureAlbumCoverInput
+}
 
 // NewService 创建待归因专辑服务。
 func NewService() Service {
@@ -159,72 +229,115 @@ func (s *serviceImpl) LinkPendingAlbumMBRelease(ctx context.Context, workItemID,
 	return model.UpdatePendingAlbumWorkItemSelection(ctx, workItemID, releaseMBID, strings.TrimSpace(mbid))
 }
 
-type pendingEvidence struct {
-	Title           string
-	TrackNumber     int8
-	DiscNumber      int8
-	ResolvedTrackID int64
-}
-
 func buildPendingEvidence(detail *model.PendingAlbumWorkItemDetail) (
 	map[string]pendingEvidence, map[string]pendingEvidence,
 ) {
 	byPosition := make(map[string]pendingEvidence)
 	byTitle := make(map[string]pendingEvidence)
 
-	register := func(title string, trackNumber, discNumber int8, resolvedTrackID int64) {
-		evidence := pendingEvidence{
-			Title:           title,
-			TrackNumber:     trackNumber,
-			DiscNumber:      discNumber,
-			ResolvedTrackID: resolvedTrackID,
-		}
+	register := func(title string, trackNumber, discNumber int8, resolvedTrackID, playRecordID, favoriteEventID int64) {
 		if trackNumber > 0 {
 			if discNumber <= 0 {
 				discNumber = 1
 			}
 			key := fmt.Sprintf("%d|%d", discNumber, trackNumber)
-			if current, ok := byPosition[key]; !ok || current.ResolvedTrackID == 0 {
-				byPosition[key] = evidence
+			current := byPosition[key]
+			if current.Title == "" {
+				current.Title = title
 			}
+			if current.TrackNumber == 0 {
+				current.TrackNumber = trackNumber
+			}
+			if current.DiscNumber == 0 {
+				current.DiscNumber = discNumber
+			}
+			if current.ResolvedTrackID == 0 && resolvedTrackID > 0 {
+				current.ResolvedTrackID = resolvedTrackID
+			}
+			if playRecordID > 0 {
+				current.PlayRecordIDs = append(current.PlayRecordIDs, playRecordID)
+			}
+			if favoriteEventID > 0 {
+				current.FavoriteEventIDs = append(current.FavoriteEventIDs, favoriteEventID)
+			}
+			byPosition[key] = current
 		}
 		if key := normalizeTrackLookupKey(title); key != "" {
-			if current, ok := byTitle[key]; !ok || current.ResolvedTrackID == 0 {
-				byTitle[key] = evidence
+			current := byTitle[key]
+			if current.Title == "" {
+				current.Title = title
 			}
+			if current.TrackNumber == 0 {
+				current.TrackNumber = trackNumber
+			}
+			if current.DiscNumber == 0 {
+				current.DiscNumber = discNumber
+			}
+			if current.ResolvedTrackID == 0 && resolvedTrackID > 0 {
+				current.ResolvedTrackID = resolvedTrackID
+			}
+			if playRecordID > 0 {
+				current.PlayRecordIDs = append(current.PlayRecordIDs, playRecordID)
+			}
+			if favoriteEventID > 0 {
+				current.FavoriteEventIDs = append(current.FavoriteEventIDs, favoriteEventID)
+			}
+			byTitle[key] = current
 		}
 	}
 
 	for _, record := range detail.PlayRecords {
-		register(record.Track, record.TrackNumber, record.DiscNumber, record.ResolvedTrackID)
+		register(record.Track, record.TrackNumber, record.DiscNumber, record.ResolvedTrackID, record.ID, 0)
 	}
 	for _, event := range detail.FavoriteEvents {
-		register(event.Track, event.TrackNumber, event.DiscNumber, event.ResolvedTrackID)
+		register(event.Track, event.TrackNumber, event.DiscNumber, event.ResolvedTrackID, 0, event.ID)
 	}
 	return byPosition, byTitle
 }
 
-func chooseEvidenceForMBTrack(
-	mbTitle string,
-	trackNumber, discNumber int8,
+func chooseEvidenceForTrackDraft(
+	draft pendingAlbumTrackDraft,
 	byPosition map[string]pendingEvidence,
 	byTitle map[string]pendingEvidence,
 ) (pendingEvidence, bool) {
-	posKey := fmt.Sprintf("%d|%d", discNumber, trackNumber)
-	if evidence, ok := byPosition[posKey]; ok {
-		return evidence, true
+	if draft.TrackNumber > 0 {
+		discNumber := draft.DiscNumber
+		if discNumber <= 0 {
+			discNumber = 1
+		}
+		posKey := fmt.Sprintf("%d|%d", discNumber, draft.TrackNumber)
+		if evidence, ok := byPosition[posKey]; ok {
+			return evidence, true
+		}
 	}
-	if evidence, ok := byTitle[normalizeTrackLookupKey(mbTitle)]; ok {
-		return evidence, true
+
+	candidates := make([]string, 0, 1+len(draft.EvidenceTitles))
+	candidates = append(candidates, draft.Title)
+	candidates = append(candidates, draft.EvidenceTitles...)
+	for _, title := range candidates {
+		if evidence, ok := byTitle[normalizeTrackLookupKey(title)]; ok {
+			return evidence, true
+		}
 	}
 	return pendingEvidence{}, false
 }
 
-func buildAlbumDiscInfos(release musicbrainzws2.Release) (int, string) {
-	totalDiscs := len(release.Media)
-	discInfosMap := make(map[int]int, totalDiscs)
-	for _, medium := range release.Media {
-		discInfosMap[medium.Position] = medium.TrackCount
+func buildAlbumDiscInfosFromTrackDrafts(trackDrafts []pendingAlbumTrackDraft) (int, string) {
+	discInfosMap := make(map[int]int)
+	totalDiscs := 0
+	for _, draft := range trackDrafts {
+		discNumber := int(draft.DiscNumber)
+		if discNumber <= 0 {
+			discNumber = 1
+		}
+		discInfosMap[discNumber]++
+		if discNumber > totalDiscs {
+			totalDiscs = discNumber
+		}
+	}
+	if totalDiscs == 0 {
+		totalDiscs = 1
+		discInfosMap[1] = 0
 	}
 	raw, _ := json.Marshal(discInfosMap)
 	return totalDiscs, string(raw)
@@ -247,17 +360,232 @@ func extractReleaseGenres(release musicbrainzws2.Release) string {
 func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 	ctx context.Context, workItemID int64,
 ) (*DeepMaintainPendingAlbumReport, error) {
-	log.Info(ctx, "开始深度维护待归因专辑工作项", zap.Int64("work_item_id", workItemID))
+	log.Info(ctx, "开始 MusicBrainz 深度维护待归因专辑工作项", zap.Int64("work_item_id", workItemID))
 	detail, err := model.GetPendingAlbumWorkItemDetail(ctx, workItemID)
 	if err != nil {
 		log.Error(ctx, "获取待归因专辑工作项详情失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
 		return nil, err
 	}
-	if detail.WorkItem == nil || strings.TrimSpace(detail.WorkItem.SelectedMBID) == "" {
-		log.Warn(ctx, "待归因专辑工作项未选择 MBID", zap.Int64("work_item_id", workItemID))
+
+	material, err := s.resolveMusicBrainzMaterial(ctx, detail)
+	if err != nil {
+		log.Error(ctx, "解析 MusicBrainz 维护数据失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
+		return nil, err
+	}
+	return s.performPendingAlbumMaintenance(ctx, workItemID, detail, material)
+}
+
+func (s *serviceImpl) ManualMaintainPendingAlbumWorkItem(
+	ctx context.Context, workItemID int64, input ManualPendingAlbumInput,
+) (*DeepMaintainPendingAlbumReport, error) {
+	log.Info(ctx, "开始手动维护待归因专辑工作项", zap.Int64("work_item_id", workItemID))
+	detail, err := model.GetPendingAlbumWorkItemDetail(ctx, workItemID)
+	if err != nil {
+		log.Error(ctx, "获取待归因专辑工作项详情失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
+		return nil, err
+	}
+
+	material, err := s.resolveManualMaterial(detail, input)
+	if err != nil {
+		log.Error(ctx, "解析手动维护数据失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
+		return nil, err
+	}
+	return s.performPendingAlbumMaintenance(ctx, workItemID, detail, material)
+}
+
+func (s *serviceImpl) resolveMusicBrainzMaterial(
+	ctx context.Context, detail *model.PendingAlbumWorkItemDetail,
+) (*pendingAlbumMaintenanceMaterial, error) {
+	if detail == nil || detail.WorkItem == nil || strings.TrimSpace(detail.WorkItem.SelectedMBID) == "" {
 		return nil, errors.New("work item has no selected mbid")
 	}
 
+	release, err := coremusicbrainz.LookupRelease(
+		ctx,
+		mbtypes.MBID(detail.WorkItem.SelectedMBID),
+		musicbrainzws2.IncludesFilter{Includes: []string{"recordings", "media", "artist-credits", "genres"}},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	totalDiscs, discInfos := buildAlbumDiscInfosFromRelease(release)
+	releaseDate := release.Date.String()
+	genreStr := extractReleaseGenres(release)
+	material := &pendingAlbumMaintenanceMaterial{
+		Mode: pendingAlbumMaintenanceModeMusicBrainz,
+		AlbumCandidate: &model.Album{
+			Name:        detail.WorkItem.Album,
+			Artist:      pendingAlbumOwner(detail.WorkItem),
+			ReleaseDate: releaseDate,
+			Genre:       genreStr,
+			Country:     string(release.CountryCode),
+			Status:      release.Status,
+			Packaging:   release.Packaging,
+			Barcode:     string(release.Barcode),
+			TotalDiscs:  totalDiscs,
+			DiscInfos:   discInfos,
+		},
+		CoverEnsureInput: artworklogic.EnsureAlbumCoverInput{
+			AlbumArtist: detail.WorkItem.AlbumArtist,
+			Artist:      detail.WorkItem.Artist,
+			Album:       detail.WorkItem.Album,
+		},
+	}
+
+	releaseRaw, _ := json.Marshal(release)
+	material.ReleaseMB = &model.ReleaseMB{
+		MBID:     detail.WorkItem.SelectedMBID,
+		AlbumID:  0,
+		Name:     release.Title,
+		JSONData: string(releaseRaw),
+	}
+
+	for _, medium := range release.Media {
+		for _, releaseTrack := range medium.Tracks {
+			material.TrackDrafts = append(
+				material.TrackDrafts,
+				pendingAlbumTrackDraft{
+					Title:         common.UnityFixAll(coremusicbrainz.TrackTitleWithFeat(releaseTrack)),
+					TrackArtist:   detail.WorkItem.Artist,
+					AlbumArtist:   pendingAlbumOwner(detail.WorkItem),
+					DiscNumber:    int8(medium.Position),
+					TrackNumber:   int8(releaseTrack.Position),
+					Duration:      int64(releaseTrack.Length.Seconds()),
+					MusicBrainzID: string(releaseTrack.Recording.ID),
+				},
+			)
+		}
+	}
+
+	return material, nil
+}
+
+func buildAlbumDiscInfosFromRelease(release musicbrainzws2.Release) (int, string) {
+	totalDiscs := len(release.Media)
+	discInfosMap := make(map[int]int, totalDiscs)
+	for _, medium := range release.Media {
+		discInfosMap[medium.Position] = medium.TrackCount
+	}
+	raw, _ := json.Marshal(discInfosMap)
+	return totalDiscs, string(raw)
+}
+
+func (s *serviceImpl) resolveManualMaterial(
+	detail *model.PendingAlbumWorkItemDetail, input ManualPendingAlbumInput,
+) (*pendingAlbumMaintenanceMaterial, error) {
+	if detail == nil || detail.WorkItem == nil {
+		return nil, errors.New("work item detail is nil")
+	}
+
+	albumName := strings.TrimSpace(input.ManualAlbum.Name)
+	if albumName == "" {
+		return nil, errors.New("manual_album.name is required")
+	}
+	albumArtist := strings.TrimSpace(input.ManualAlbum.AlbumArtist)
+	if albumArtist == "" {
+		return nil, errors.New("manual_album.album_artist is required")
+	}
+	if len(input.ManualTracks) == 0 {
+		return nil, errors.New("manual_tracks is required")
+	}
+
+	trackDrafts := make([]pendingAlbumTrackDraft, 0, len(input.ManualTracks))
+	positionSet := make(map[string]struct{}, len(input.ManualTracks))
+	for idx, track := range input.ManualTracks {
+		title := strings.TrimSpace(track.Title)
+		if title == "" {
+			return nil, fmt.Errorf("manual_tracks[%d].title is required", idx)
+		}
+		discNumber := track.DiscNumber
+		if discNumber <= 0 {
+			return nil, fmt.Errorf("manual_tracks[%d].disc_number must be greater than 0", idx)
+		}
+		trackNumber := track.TrackNumber
+		if trackNumber <= 0 {
+			return nil, fmt.Errorf("manual_tracks[%d].track_number must be greater than 0", idx)
+		}
+		posKey := fmt.Sprintf("%d|%d", discNumber, trackNumber)
+		if _, ok := positionSet[posKey]; ok {
+			return nil, fmt.Errorf("manual_tracks has duplicated disc/track position: %s", posKey)
+		}
+		positionSet[posKey] = struct{}{}
+
+		evidenceTitles := make([]string, 0, len(track.EvidenceTitles))
+		for _, evidenceTitle := range track.EvidenceTitles {
+			trimmed := strings.TrimSpace(evidenceTitle)
+			if trimmed == "" {
+				continue
+			}
+			evidenceTitles = append(evidenceTitles, trimmed)
+		}
+		trackArtist := strings.TrimSpace(track.Artist)
+		if trackArtist == "" {
+			trackArtist = strings.TrimSpace(input.ManualAlbum.DisplayArtist)
+		}
+		if trackArtist == "" {
+			trackArtist = strings.TrimSpace(detail.WorkItem.Artist)
+		}
+		if trackArtist == "" {
+			trackArtist = albumArtist
+		}
+
+		trackDrafts = append(
+			trackDrafts,
+			pendingAlbumTrackDraft{
+				Title:          title,
+				TrackArtist:    trackArtist,
+				AlbumArtist:    albumArtist,
+				DiscNumber:     discNumber,
+				TrackNumber:    trackNumber,
+				Duration:       track.Duration,
+				Composer:       strings.TrimSpace(track.Composer),
+				MusicBrainzID:  strings.TrimSpace(track.MusicBrainzID),
+				EvidenceTitles: evidenceTitles,
+			},
+		)
+	}
+
+	totalDiscs, discInfos := buildAlbumDiscInfosFromTrackDrafts(trackDrafts)
+	return &pendingAlbumMaintenanceMaterial{
+		Mode: pendingAlbumMaintenanceModeManual,
+		AlbumCandidate: &model.Album{
+			Name:        albumName,
+			Artist:      albumArtist,
+			ReleaseDate: strings.TrimSpace(input.ManualAlbum.ReleaseDate),
+			Genre:       strings.TrimSpace(input.ManualAlbum.Genre),
+			Country:     strings.TrimSpace(input.ManualAlbum.Country),
+			Status:      strings.TrimSpace(input.ManualAlbum.Status),
+			Packaging:   strings.TrimSpace(input.ManualAlbum.Packaging),
+			Barcode:     strings.TrimSpace(input.ManualAlbum.Barcode),
+			TotalDiscs:  totalDiscs,
+			DiscInfos:   discInfos,
+		},
+		TrackDrafts: trackDrafts,
+		CoverEnsureInput: artworklogic.EnsureAlbumCoverInput{
+			AlbumArtist:  albumArtist,
+			Artist:       strings.TrimSpace(input.ManualAlbum.DisplayArtist),
+			Album:        albumName,
+			CoverArtURL:  strings.TrimSpace(input.ManualAlbum.CoverArtURL),
+			CoverArtMime: "",
+		},
+	}, nil
+}
+
+func (s *serviceImpl) performPendingAlbumMaintenance(
+	ctx context.Context,
+	workItemID int64,
+	detail *model.PendingAlbumWorkItemDetail,
+	material *pendingAlbumMaintenanceMaterial,
+) (*DeepMaintainPendingAlbumReport, error) {
+	if detail == nil || detail.WorkItem == nil {
+		return nil, errors.New("work item detail is nil")
+	}
+	if material == nil || material.AlbumCandidate == nil {
+		return nil, errors.New("maintenance material is nil")
+	}
+
+	report := &DeepMaintainPendingAlbumReport{Mode: material.Mode}
 	if err := model.UpdatePendingAlbumWorkItemProgress(
 		ctx,
 		workItemID,
@@ -269,190 +597,32 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		return nil, err
 	}
 
-	release, err := coremusicbrainz.LookupRelease(
-		ctx,
-		mbtypes.MBID(detail.WorkItem.SelectedMBID),
-		musicbrainzws2.IncludesFilter{Includes: []string{"recordings", "media", "artist-credits", "genres"}},
-	)
-	if err != nil {
-		_ = model.UpdatePendingAlbumWorkItemProgress(
-			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, 0, err.Error(),
-		)
-		log.Error(ctx, "拉取 MusicBrainz 专辑详情失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
-		return nil, err
-	}
-
-	byPosition, byTitle := buildPendingEvidence(detail)
-	report := &DeepMaintainPendingAlbumReport{}
-
-	err = model.InTx(
+	err := model.InTx(
 		ctx,
 		func(tx *gorm.DB) error {
-			totalDiscs, discInfos := buildAlbumDiscInfos(release)
-			releaseDate := release.Date.String()
-			genreStr := extractReleaseGenres(release)
-			albumCandidate := &model.Album{
-				Name:        detail.WorkItem.Album,
-				Artist:      pendingAlbumOwner(detail.WorkItem),
-				ReleaseDate: releaseDate,
-				Genre:       genreStr,
-				Country:     string(release.CountryCode),
-				Status:      release.Status,
-				Packaging:   release.Packaging,
-				Barcode:     string(release.Barcode),
-				TotalDiscs:  totalDiscs,
-				DiscInfos:   discInfos,
-			}
-			resolvedAlbum, resolveErr := model.ResolveCanonicalAlbumForPendingContextTx(tx, albumCandidate)
-			if resolveErr != nil {
-				return resolveErr
-			}
-			report.ResolvedAlbumID = resolvedAlbum.ID
-
-			releaseRaw, _ := json.Marshal(release)
-			releaseRow := &model.ReleaseMB{
-				MBID:     detail.WorkItem.SelectedMBID,
-				AlbumID:  resolvedAlbum.ID,
-				Name:     release.Title,
-				JSONData: string(releaseRaw),
-			}
-			if err := model.SaveReleaseMBTx(tx, releaseRow); err != nil {
-				return err
-			}
-			if err := model.LinkAlbumToMBIDTx(
-				tx, resolvedAlbum.ID, releaseRow.ID, detail.WorkItem.SelectedMBID,
-			); err != nil {
-				return err
-			}
-
-			for _, medium := range release.Media {
-				for _, releaseTrack := range medium.Tracks {
-					recordingID := string(releaseTrack.Recording.ID)
-					discNumber := int8(medium.Position)
-					trackNumber := int8(releaseTrack.Position)
-					mbTitle := common.UnityFixAll(coremusicbrainz.TrackTitleWithFeat(releaseTrack))
-
-					evidence, hasEvidence := chooseEvidenceForMBTrack(
-						mbTitle, trackNumber, discNumber, byPosition, byTitle,
-					)
-					var trackObj *model.Track
-					reusedTrack := false
-
-					if hasEvidence && evidence.ResolvedTrackID > 0 {
-						trackObj, err = model.GetTrackByIDTx(tx, evidence.ResolvedTrackID)
-						if err == nil {
-							reusedTrack = true
-						} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-							return err
-						}
-					}
-					if trackObj == nil && recordingID != "" {
-						trackObj, err = model.GetTrackByMusicBrainzIDTx(tx, recordingID)
-						if err == nil {
-							reusedTrack = true
-						} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-							return err
-						}
-					}
-
-					duration := int64(releaseTrack.Length.Seconds())
-					titleForTrack := mbTitle
-					if hasEvidence && strings.TrimSpace(evidence.Title) != "" {
-						titleForTrack = evidence.Title
-					}
-					if trackObj == nil {
-						trackObj, err = model.GetOrCreateTrackByIdentityTx(
-							tx,
-							&model.Track{
-								Artist:        detail.WorkItem.Artist,
-								AlbumArtist:   pendingAlbumOwner(detail.WorkItem),
-								Album:         resolvedAlbum.Name,
-								Track:         titleForTrack,
-								TrackNumber:   trackNumber,
-								DiscNumber:    discNumber,
-								Duration:      duration,
-								Genre:         genreStr,
-								ReleaseDate:   releaseDate,
-								MusicBrainzID: recordingID,
-								Source:        "PendingAlbumWorkItem",
-							},
-						)
-						if err != nil {
-							return err
-						}
-						if reusedTrack {
-							report.ReusedHeardTracks++
-						} else {
-							report.CreatedTracks++
-						}
-					} else {
-						report.ReusedHeardTracks++
-					}
-
-					if err := model.UpdateTrackMusicBrainzMetadataTx(
-						tx,
-						trackObj.ID,
-						recordingID,
-						discNumber,
-						trackNumber,
-						duration,
-					); err != nil {
-						return err
-					}
-					if err := model.UpsertTrackAlbumTx(
-						tx,
-						&model.TrackAlbum{
-							TrackID:                trackObj.ID,
-							AlbumID:                resolvedAlbum.ID,
-							TrackNumber:            trackNumber,
-							DiscNumber:             discNumber,
-							Track:                  mbTitle,
-							MusicBrainzRecordingID: recordingID,
-						},
-						true,
-					); err != nil {
-						return err
-					}
-					report.TrackAlbumWrites++
-				}
-			}
-
-			return model.UpdateAlbumFieldsTx(
-				tx,
-				resolvedAlbum.ID,
-				map[string]interface{}{
-					"sync_status":  3,
-					"release_date": releaseDate,
-					"genre":        genreStr,
-					"country":      string(release.CountryCode),
-					"status":       release.Status,
-					"packaging":    release.Packaging,
-					"barcode":      string(release.Barcode),
-					"total_discs":  totalDiscs,
-					"disc_infos":   discInfos,
-				},
-			)
+			return applyPendingAlbumStructureTx(tx, detail, material, report)
 		},
 	)
 	if err != nil {
 		_ = model.UpdatePendingAlbumWorkItemProgress(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, report.ResolvedAlbumID, err.Error(),
 		)
-		log.Error(ctx, "深度维护事务执行失败", zap.Int64("work_item_id", workItemID), zap.Int64("album_id", report.ResolvedAlbumID), zap.Error(err))
+		log.Error(
+			ctx,
+			"待归因专辑结构维护事务执行失败",
+			zap.String("mode", material.Mode),
+			zap.Int64("work_item_id", workItemID),
+			zap.Int64("album_id", report.ResolvedAlbumID),
+			zap.Error(err),
+		)
 		return nil, err
 	}
-	if coverErr := artworklogic.EnsureAlbumCover(
-		ctx,
-		artworklogic.EnsureAlbumCoverInput{
-			AlbumID:     report.ResolvedAlbumID,
-			AlbumArtist: detail.WorkItem.AlbumArtist,
-			Artist:      detail.WorkItem.Artist,
-			Album:       detail.WorkItem.Album,
-		},
-	); coverErr != nil {
+
+	if coverErr := ensurePendingAlbumCover(ctx, detail, report.ResolvedAlbumID, material.CoverEnsureInput); coverErr != nil {
 		log.Warn(
 			ctx,
-			"DeepMaintainPendingAlbumWorkItem ensure album cover err",
+			"待归因专辑维护补齐封面失败",
+			zap.String("mode", material.Mode),
 			zap.Int64("work_item_id", workItemID),
 			zap.Int64("album_id", report.ResolvedAlbumID),
 			zap.Error(coverErr),
@@ -470,6 +640,284 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 		return nil, err
 	}
 
+	if err := applyPendingAlbumFrozenContext(ctx, detail, report, workItemID); err != nil {
+		return nil, err
+	}
+
+	if err := model.UpdatePendingAlbumWorkItemProgress(
+		ctx,
+		workItemID,
+		model.PendingAlbumWorkItemStatusCompleted,
+		report.ResolvedAlbumID,
+		"",
+	); err != nil {
+		log.Error(ctx, "更新待归因专辑工作项为完成失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
+		return nil, err
+	}
+
+	log.Info(
+		ctx,
+		"待归因专辑维护完成",
+		zap.String("mode", material.Mode),
+		zap.Int64("work_item_id", workItemID),
+		zap.Int64("album_id", report.ResolvedAlbumID),
+		zap.Int("reused_heard_tracks", report.ReusedHeardTracks),
+		zap.Int("created_tracks", report.CreatedTracks),
+		zap.Int("track_album_writes", report.TrackAlbumWrites),
+		zap.Int("applied_play_records", report.AppliedPlayRecords),
+		zap.Int("applied_favorite_events", report.AppliedFavoriteEvents),
+	)
+	return report, nil
+}
+
+func applyPendingAlbumStructureTx(
+	tx *gorm.DB,
+	detail *model.PendingAlbumWorkItemDetail,
+	material *pendingAlbumMaintenanceMaterial,
+	report *DeepMaintainPendingAlbumReport,
+) error {
+	resolvedAlbum, err := model.ResolveCanonicalAlbumForPendingContextTx(tx, material.AlbumCandidate)
+	if err != nil {
+		return err
+	}
+	report.ResolvedAlbumID = resolvedAlbum.ID
+
+	if material.ReleaseMB != nil {
+		material.ReleaseMB.AlbumID = resolvedAlbum.ID
+		if err := model.SaveReleaseMBTx(tx, material.ReleaseMB); err != nil {
+			return err
+		}
+		if err := model.LinkAlbumToMBIDTx(
+			tx,
+			resolvedAlbum.ID,
+			material.ReleaseMB.ID,
+			material.ReleaseMB.MBID,
+		); err != nil {
+			return err
+		}
+	}
+
+	byPosition, byTitle := buildPendingEvidence(detail)
+	for _, draft := range material.TrackDrafts {
+		evidence, hasEvidence := chooseEvidenceForTrackDraft(draft, byPosition, byTitle)
+		trackObj, reusedTrack, err := resolvePendingTrackTx(tx, resolvedAlbum, draft, evidence, hasEvidence)
+		if err != nil {
+			return err
+		}
+		if reusedTrack {
+			report.ReusedHeardTracks++
+		} else {
+			report.CreatedTracks++
+		}
+
+		if err := model.UpdateTrackCuratedMetadataTx(
+			tx,
+			trackObj.ID,
+			&model.TrackIdentity{
+				Artist:      draft.TrackArtist,
+				Album:       resolvedAlbum.Name,
+				Track:       draft.Title,
+				TrackNumber: draft.TrackNumber,
+				DiscNumber:  draft.DiscNumber,
+			},
+			&model.TrackMetadata{
+				AlbumArtist:   draft.AlbumArtist,
+				TrackNumber:   draft.TrackNumber,
+				DiscNumber:    draft.DiscNumber,
+				Duration:      draft.Duration,
+				Composer:      draft.Composer,
+				Genre:         material.AlbumCandidate.Genre,
+				ReleaseDate:   material.AlbumCandidate.ReleaseDate,
+				MusicBrainzID: draft.MusicBrainzID,
+				Source:        "PendingAlbumWorkItem",
+			},
+		); err != nil {
+			return err
+		}
+		if err := model.UpsertTrackAlbumTx(
+			tx,
+			&model.TrackAlbum{
+				TrackID:                trackObj.ID,
+				AlbumID:                resolvedAlbum.ID,
+				TrackNumber:            draft.TrackNumber,
+				DiscNumber:             draft.DiscNumber,
+				Track:                  draft.Title,
+				MusicBrainzRecordingID: draft.MusicBrainzID,
+			},
+			true,
+		); err != nil {
+			return err
+		}
+		report.TrackAlbumWrites++
+		appliedPlayCount, appliedFavoriteCount, err := bindPendingEvidenceToTrackTx(
+			tx,
+			trackObj,
+			evidence,
+			hasEvidence,
+		)
+		if err != nil {
+			return err
+		}
+		report.AppliedPlayRecords += appliedPlayCount
+		report.AppliedFavoriteEvents += appliedFavoriteCount
+	}
+
+	return model.UpdateAlbumFieldsTx(
+		tx,
+		resolvedAlbum.ID,
+		map[string]interface{}{
+			"sync_status":  3,
+			"release_date": material.AlbumCandidate.ReleaseDate,
+			"genre":        material.AlbumCandidate.Genre,
+			"country":      material.AlbumCandidate.Country,
+			"status":       material.AlbumCandidate.Status,
+			"packaging":    material.AlbumCandidate.Packaging,
+			"barcode":      material.AlbumCandidate.Barcode,
+			"total_discs":  material.AlbumCandidate.TotalDiscs,
+			"disc_infos":   material.AlbumCandidate.DiscInfos,
+		},
+	)
+}
+
+func bindPendingEvidenceToTrackTx(
+	tx *gorm.DB,
+	trackObj *model.Track,
+	evidence pendingEvidence,
+	hasEvidence bool,
+) (int, int, error) {
+	if tx == nil || trackObj == nil || trackObj.ID <= 0 || !hasEvidence {
+		return 0, 0, nil
+	}
+
+	appliedPlayCount := 0
+	for _, recordID := range evidence.PlayRecordIDs {
+		applied, err := model.ApplyTrackPlayRecordToResolvedTrackTx(
+			tx,
+			recordID,
+			trackObj.ID,
+			common.TrackMetadataConfidenceAuthoritative,
+		)
+		if err != nil {
+			return 0, 0, err
+		}
+		if applied {
+			appliedPlayCount++
+		}
+	}
+
+	appliedFavoriteCount := 0
+	for _, eventID := range evidence.FavoriteEventIDs {
+		applied, err := model.ApplyTrackFavoriteEventToResolvedTrackTx(
+			tx,
+			eventID,
+			trackObj.ID,
+			common.TrackMetadataConfidenceAuthoritative,
+		)
+		if err != nil {
+			return 0, 0, err
+		}
+		if applied {
+			appliedFavoriteCount++
+		}
+	}
+
+	return appliedPlayCount, appliedFavoriteCount, nil
+}
+
+func resolvePendingTrackTx(
+	tx *gorm.DB,
+	resolvedAlbum *model.Album,
+	draft pendingAlbumTrackDraft,
+	evidence pendingEvidence,
+	hasEvidence bool,
+) (*model.Track, bool, error) {
+	var (
+		trackObj *model.Track
+		err      error
+	)
+
+	trackObj, err = model.GetTrackByIdentityTx(
+		tx,
+		draft.TrackArtist,
+		resolvedAlbum.Name,
+		draft.Title,
+		draft.TrackNumber,
+		draft.DiscNumber,
+	)
+	if err == nil {
+		return trackObj, true, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, err
+	}
+
+	if strings.TrimSpace(draft.MusicBrainzID) != "" {
+		trackObj, err = model.GetTrackByMusicBrainzIDTx(tx, draft.MusicBrainzID)
+		if err == nil {
+			return trackObj, true, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, err
+		}
+	}
+
+	if hasEvidence && evidence.ResolvedTrackID > 0 {
+		trackObj, err = model.GetTrackByIDTx(tx, evidence.ResolvedTrackID)
+		if err == nil {
+			return trackObj, true, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, err
+		}
+	}
+	trackObj, err = model.GetOrCreateTrackByIdentityTx(
+		tx,
+		&model.Track{
+			Artist:        draft.TrackArtist,
+			AlbumArtist:   draft.AlbumArtist,
+			Album:         resolvedAlbum.Name,
+			Track:         draft.Title,
+			TrackNumber:   draft.TrackNumber,
+			DiscNumber:    draft.DiscNumber,
+			Duration:      draft.Duration,
+			Genre:         resolvedAlbum.Genre,
+			Composer:      draft.Composer,
+			ReleaseDate:   resolvedAlbum.ReleaseDate,
+			MusicBrainzID: draft.MusicBrainzID,
+			Source:        "PendingAlbumWorkItem",
+		},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	return trackObj, false, nil
+}
+
+func ensurePendingAlbumCover(
+	ctx context.Context,
+	detail *model.PendingAlbumWorkItemDetail,
+	resolvedAlbumID int64,
+	input artworklogic.EnsureAlbumCoverInput,
+) error {
+	input.AlbumID = resolvedAlbumID
+	if strings.TrimSpace(input.AlbumArtist) == "" && detail != nil && detail.WorkItem != nil {
+		input.AlbumArtist = detail.WorkItem.AlbumArtist
+	}
+	if strings.TrimSpace(input.Artist) == "" && detail != nil && detail.WorkItem != nil {
+		input.Artist = detail.WorkItem.Artist
+	}
+	if strings.TrimSpace(input.Album) == "" && detail != nil && detail.WorkItem != nil {
+		input.Album = detail.WorkItem.Album
+	}
+	return artworklogic.EnsureAlbumCover(ctx, input)
+}
+
+func applyPendingAlbumFrozenContext(
+	ctx context.Context,
+	detail *model.PendingAlbumWorkItemDetail,
+	report *DeepMaintainPendingAlbumReport,
+	workItemID int64,
+) error {
 	playRecordIDs := make([]int64, 0, len(detail.PlayRecords))
 	for _, record := range detail.PlayRecords {
 		playRecordIDs = append(playRecordIDs, record.ID)
@@ -491,9 +939,9 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, report.ResolvedAlbumID, err.Error(),
 		)
 		log.Error(ctx, "回放播放记录失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
-		return nil, err
+		return err
 	}
-	report.AppliedPlayRecords = len(replayReport.Results)
+	report.AppliedPlayRecords += len(replayReport.Results)
 
 	favResult, err := model.ApplyTrackFavoriteEventsByIDs(ctx, favoriteEventIDs)
 	if err != nil {
@@ -501,30 +949,8 @@ func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
 			ctx, workItemID, model.PendingAlbumWorkItemStatusFailed, report.ResolvedAlbumID, err.Error(),
 		)
 		log.Error(ctx, "应用收藏事件失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
-		return nil, err
+		return err
 	}
-	report.AppliedFavoriteEvents = favResult.AppliedCount
-
-	if err := model.UpdatePendingAlbumWorkItemProgress(
-		ctx,
-		workItemID,
-		model.PendingAlbumWorkItemStatusCompleted,
-		report.ResolvedAlbumID,
-		"",
-	); err != nil {
-		log.Error(ctx, "更新待归因专辑工作项为完成失败", zap.Int64("work_item_id", workItemID), zap.Error(err))
-		return nil, err
-	}
-	log.Info(
-		ctx,
-		"深度维护待归因专辑工作项完成",
-		zap.Int64("work_item_id", workItemID),
-		zap.Int64("album_id", report.ResolvedAlbumID),
-		zap.Int("reused_heard_tracks", report.ReusedHeardTracks),
-		zap.Int("created_tracks", report.CreatedTracks),
-		zap.Int("track_album_writes", report.TrackAlbumWrites),
-		zap.Int("applied_play_records", report.AppliedPlayRecords),
-		zap.Int("applied_favorite_events", report.AppliedFavoriteEvents),
-	)
-	return report, nil
+	report.AppliedFavoriteEvents += favResult.AppliedCount
+	return nil
 }

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 struct AlbumDiscGroup: Identifiable, Equatable {
     let discNumber: Int?
@@ -63,6 +64,7 @@ struct AlbumTrackPresentation: Equatable {
 final class AlbumDetailViewModel: ObservableObject {
     @Published var detail: AlbumDetail?
     @Published var resolvedArtworkURL: String?
+    @Published var resolvedArtworkResource: ResolvedArtworkResource?
     @Published var candidates: [ReleaseCandidate] = []
     @Published var albumInsights: [AlbumInsight] = []
     @Published var favoriteTrackIDs: Set<Int64> = []
@@ -85,6 +87,8 @@ final class AlbumDetailViewModel: ObservableObject {
     private let preferredPlatformStoragePrefix = "soniclens.bridge.preferred_album_ai_platform."
     private let preferredModelStoragePrefix = "soniclens.bridge.preferred_album_ai_model."
     private let legacyPreferredModelStoragePrefix = "soniclens.bridge.preferred_album_ai_model_legacy."
+    private var lastHandledJobPhaseKey: String?
+    private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "AlbumDetailViewModel")
 
     init() {
         favoriteObserver = NotificationCenter.default.addObserver(
@@ -116,7 +120,15 @@ final class AlbumDetailViewModel: ObservableObject {
             detail = loadedDetail
             favoriteTrackIDs = Self.makeFavoriteTrackIDs(detail: loadedDetail, favoriteKeys: favoriteKeys)
             trackPresentation = AlbumTrackPresentation.build(from: loadedDetail.tracks)
-            resolvedArtworkURL = ArtworkURLResolver.resolveArtworkPath(loadedDetail.coverArtURL, artworkBaseURL: server.artworkBaseURL)
+            applyResolvedArtwork(
+                ResolvedArtworkResource(
+                    remoteURL: ArtworkURLResolver.resolveArtworkPath(loadedDetail.coverArtURL, artworkBaseURL: server.artworkBaseURL),
+                    coverArtObjectKey: loadedDetail.coverArtObjectKey
+                )
+            )
+            logger.debug(
+                "专辑详情初始封面已解析 album_id=\(albumID, privacy: .public) 专辑=\(loadedDetail.name, privacy: .public) 封面=\(self.describeArtworkURL(self.resolvedArtworkURL), privacy: .public)"
+            )
             resolveArtworkInBackground(using: server, detail: loadedDetail)
             async let candidateRequest: [ReleaseCandidate] = (try? await client.getJSON(path: "\(APIPath.musicBrainzCandidates)/\(albumID)")) ?? []
             async let insightRequest: [AlbumInsight] = (try? await fetchAlbumInsights(using: client, albumID: albumID)) ?? []
@@ -221,7 +233,11 @@ final class AlbumDetailViewModel: ObservableObject {
         selectedAIModel = resolvePreferredModel(using: server, platformID: normalized, models: models)
     }
 
-    func confirmAlbumInsightGeneration(using server: ServerConfig, albumID: Int64) async {
+    func confirmAlbumInsightGeneration(
+        using server: ServerConfig,
+        coordinator: InsightAnalysisCoordinator,
+        albumID: Int64
+    ) async {
         guard !selectedAIPlatform.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             albumInsightGenerationState = .error
             generationStatusMessage = "请选择平台后再生成"
@@ -238,34 +254,74 @@ final class AlbumDetailViewModel: ObservableObject {
         isModelPickerPresented = false
         albumInsightGenerationState = .generating
 
-        let client = APIClient(baseURL: server.baseURL)
         do {
-            let response: AlbumInsightGenerateResponse = try await client.postJSON(
-                path: APIPath.albumInsight,
-                body: AlbumInsightGenerateRequest(albumID: albumID, provider: selectedAIPlatform, model: selectedAIModel),
-                timeout: 20 * 60
+            logger.info("确认专辑音眸生成 album_id=\(albumID, privacy: .public) 专辑=\(self.detail?.name ?? "", privacy: .public) 封面=\(self.describeArtworkURL(self.resolvedArtworkURL), privacy: .public)")
+            let job = try await coordinator.startAlbumInsightJob(
+                using: server,
+                albumID: albumID,
+                artist: detail?.artist ?? "",
+                album: detail?.name ?? "",
+                artworkResource: resolvedArtworkResource,
+                provider: selectedAIPlatform,
+                model: selectedAIModel
             )
-
-            if !response.insights.isEmpty {
-                albumInsights = response.insights
-            } else {
-                albumInsights = try await fetchAlbumInsights(using: client, albumID: albumID)
-            }
             savePreferredSelections(platformID: selectedAIPlatform, modelID: selectedAIModel, for: server)
-            albumInsightGenerationState = .success
-            generationStatusMessage = response.cached == true ? "已返回缓存解析结果" : "专辑音眸已完成"
+            await syncInsightJob(job, using: server, albumID: albumID, forceRefresh: false)
         } catch {
             albumInsightGenerationState = .error
-            generationStatusMessage = "专辑音眸解析失败，请稍后重试"
+            generationStatusMessage = "专辑音眸任务启动失败，请稍后重试"
+        }
+    }
+
+    func syncInsightJob(
+        _ job: InsightAnalysisJob?,
+        using server: ServerConfig,
+        albumID: Int64,
+        forceRefresh: Bool = false
+    ) async {
+        guard let job, job.matches(albumID: albumID) else {
+            if albumInsightGenerationState == .generating {
+                albumInsightGenerationState = .idle
+            }
+            return
+        }
+
+        let phaseKey = "\(job.id)::\(job.phase.rawValue)"
+        switch job.phase {
+        case .queued, .running:
+            albumInsightGenerationState = .generating
+            generationStatusMessage = "专辑音眸已进入后台任务，切到桌面后可在灵动岛查看进度。"
+        case .completed:
+            albumInsightGenerationState = .success
+            generationStatusMessage = job.resultAvailable ? "专辑音眸已完成" : "专辑音眸任务已完成，当前暂无可展示内容"
+            guard forceRefresh || lastHandledJobPhaseKey != phaseKey else { return }
+            do {
+                let client = APIClient(baseURL: server.baseURL)
+                if let resultInsightID = job.resultInsightID {
+                    let detail = try await fetchAlbumInsightDetail(using: client, id: resultInsightID)
+                    albumInsights = [detail]
+                } else {
+                    albumInsights = try await fetchAlbumInsights(using: client, albumID: albumID)
+                }
+                lastHandledJobPhaseKey = phaseKey
+            } catch {
+                generationStatusMessage = "专辑音眸任务已完成，但刷新内容失败"
+            }
+        case .failed, .canceled:
+            albumInsightGenerationState = .error
+            generationStatusMessage = job.errorMessage?.isEmpty == false ? job.errorMessage : "专辑音眸任务未完成"
+            lastHandledJobPhaseKey = phaseKey
         }
     }
 
     private func resolveArtworkInBackground(using server: ServerConfig, detail: AlbumDetail) {
-        guard resolvedArtworkURL == nil else { return }
+        if let resource = resolvedArtworkResource, resource.remoteURL != nil, resource.coverArtObjectKey != nil {
+            return
+        }
         let requestedAlbumID = detail.id
         Task { [weak self] in
             guard let self else { return }
-            let resolved = await artworkResolveService.resolveArtworkURL(
+            let resolved = await artworkResolveService.resolveArtworkResource(
                 using: server,
                 albumID: detail.id,
                 albumArtist: detail.artist,
@@ -274,8 +330,32 @@ final class AlbumDetailViewModel: ObservableObject {
                 artworkKey: detail.coverArtObjectKey
             )
             guard self.artworkRequestAlbumID == requestedAlbumID else { return }
-            self.resolvedArtworkURL = resolved
+            self.applyResolvedArtwork(resolved)
+            self.logger.debug(
+                "补全专辑封面完成 album_id=\(requestedAlbumID, privacy: .public) 专辑=\(detail.name, privacy: .public) 封面=\(self.describeArtworkURL(resolved?.remoteURL), privacy: .public)"
+            )
         }
+    }
+
+    private func applyResolvedArtwork(_ resource: ResolvedArtworkResource?) {
+        let normalized = resource?.isEmpty == true ? nil : resource
+        resolvedArtworkResource = normalized
+        resolvedArtworkURL = normalized?.remoteURL
+        #if os(iOS)
+        Task {
+            _ = await LiveActivityArtworkStore.shared.prefetch(resource: normalized)
+        }
+        #endif
+    }
+
+    private func describeArtworkURL(_ artworkURL: String?) -> String {
+        guard let artworkURL else { return "空" }
+        let trimmed = artworkURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "空字符串" }
+        guard let url = URL(string: trimmed) else { return "非法地址" }
+        let host = url.host ?? "无主机"
+        let file = url.lastPathComponent.isEmpty ? "无文件名" : url.lastPathComponent
+        return "\(url.scheme ?? "无协议")://\(host)/\(file)"
     }
 
     private func handleFavoriteChange(_ change: LibraryFavoriteChange) {
@@ -317,6 +397,15 @@ final class AlbumDetailViewModel: ObservableObject {
             queryItems: [URLQueryItem(name: "albumID", value: String(albumID))]
         )
         return response.insights
+    }
+
+    private func fetchAlbumInsightDetail(using client: APIClient, id: Int64) async throws -> AlbumInsight {
+        try await client.getJSON(
+            path: APIPath.insightDetail(id: id),
+            queryItems: [
+                URLQueryItem(name: "analysis_target_type", value: InsightTargetType.album.rawValue)
+            ]
+        )
     }
 
     private func fetchAIPlatforms(using server: ServerConfig) async throws -> [AIPlatformOption] {

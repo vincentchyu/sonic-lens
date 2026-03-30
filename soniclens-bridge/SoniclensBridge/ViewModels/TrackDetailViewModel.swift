@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 enum InsightGenerationState: Equatable {
     case idle
@@ -12,6 +13,7 @@ enum InsightGenerationState: Equatable {
 @MainActor
 final class TrackDetailViewModel: ObservableObject {
     @Published var resolvedArtworkURL: String?
+    @Published var resolvedArtworkResource: ResolvedArtworkResource?
     @Published var lyrics: TrackLyricsResponse?
     @Published var lyricLines: [LyricLine] = []
     @Published var insights: [Insight] = []
@@ -29,9 +31,11 @@ final class TrackDetailViewModel: ObservableObject {
     private var artworkRequestKey: String = ""
     private static var aiPlatformCache: [String: [AIPlatformOption]] = [:]
     private static var aiModelCache: [String: [String: [AIModelOption]]] = [:]
+    private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "TrackDetailViewModel")
     private let preferredPlatformStoragePrefix = "soniclens.bridge.preferred_ai_platform."
     private let preferredModelStoragePrefix = "soniclens.bridge.preferred_ai_model."
     private let legacyPreferredModelStoragePrefix = "soniclens.bridge.preferred_ai_model_legacy."
+    private var lastHandledJobPhaseKey: String?
 
     func load(
         using server: ServerConfig,
@@ -47,7 +51,7 @@ final class TrackDetailViewModel: ObservableObject {
         let requestKey = [artist, album ?? "", track, String(trackNumber ?? 0), String(discNumber ?? 0)].joined(separator: "•")
         artworkRequestKey = requestKey
         do {
-            resolvedArtworkURL = nil
+            applyResolvedArtwork(nil)
             resolveArtworkInBackground(
                 using: server,
                 requestKey: requestKey,
@@ -136,11 +140,8 @@ final class TrackDetailViewModel: ObservableObject {
 
     func confirmInsightGeneration(
         using server: ServerConfig,
-        artist: String,
-        album: String?,
-        track: String,
-        trackNumber: Int? = nil,
-        discNumber: Int? = nil
+        coordinator: InsightAnalysisCoordinator,
+        track: Track
     ) async {
         guard !selectedAIPlatform.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             insightGenerationState = .error
@@ -158,40 +159,68 @@ final class TrackDetailViewModel: ObservableObject {
         isModelPickerPresented = false
         insightGenerationState = .generating
 
-        let client = APIClient(baseURL: server.baseURL)
         do {
-            let response: TrackInsightGenerateResponse = try await client.postJSON(
-                path: APIPath.trackInsight,
-                body: TrackInsightGenerateRequest(
-                    artist: artist,
-                    album: album ?? "",
-                    track: track,
-                    trackNumber: trackNumber,
-                    discNumber: discNumber,
-                    provider: selectedAIPlatform,
-                    model: selectedAIModel
-                ),
-                timeout: 20 * 60
+            logger.info("确认曲目音眸生成 曲目=\(track.track, privacy: .public) 封面=\(self.describeArtworkURL(self.resolvedArtworkURL), privacy: .public)")
+            let job = try await coordinator.startTrackInsightJob(
+                using: server,
+                track: track,
+                artworkResource: resolvedArtworkResource,
+                provider: selectedAIPlatform,
+                model: selectedAIModel
             )
-
-            if !response.insights.isEmpty {
-                insights = response.insights
-            } else {
-                insights = try await fetchTrackInsights(
-                    using: client,
-                    artist: artist,
-                    album: album,
-                    track: track,
-                    trackNumber: trackNumber,
-                    discNumber: discNumber
-                )
-            }
             savePreferredSelections(platformID: selectedAIPlatform, modelID: selectedAIModel, for: server)
-            insightGenerationState = .success
-            generationStatusMessage = response.cached == true ? "已返回缓存解析结果" : "音眸解析已完成"
+            await syncInsightJob(job, using: server, track: track, forceRefresh: false)
         } catch {
             insightGenerationState = .error
-            generationStatusMessage = "音眸解析失败，请稍后重试"
+            generationStatusMessage = "音眸任务启动失败，请稍后重试"
+        }
+    }
+
+    func syncInsightJob(
+        _ job: InsightAnalysisJob?,
+        using server: ServerConfig,
+        track: Track,
+        forceRefresh: Bool = false
+    ) async {
+        guard let job, job.matches(track: track) else {
+            if insightGenerationState == .generating {
+                insightGenerationState = .idle
+            }
+            return
+        }
+
+        let phaseKey = "\(job.id)::\(job.phase.rawValue)"
+        switch job.phase {
+        case .queued, .running:
+            insightGenerationState = .generating
+            generationStatusMessage = "音眸分析已进入后台任务，切到桌面后可在灵动岛查看进度。"
+        case .completed:
+            insightGenerationState = .success
+            generationStatusMessage = job.resultAvailable ? "音眸解析已完成" : "音眸任务已完成，当前暂无可展示内容"
+            guard forceRefresh || lastHandledJobPhaseKey != phaseKey else { return }
+            do {
+                let client = APIClient(baseURL: server.baseURL)
+                if let resultInsightID = job.resultInsightID {
+                    let detail = try await fetchTrackInsightDetail(using: client, id: resultInsightID)
+                    insights = [detail]
+                } else {
+                    insights = try await fetchTrackInsights(
+                        using: client,
+                        artist: track.artist,
+                        album: track.album,
+                        track: track.track,
+                        trackNumber: track.trackNumber,
+                        discNumber: track.discNumber
+                    )
+                }
+                lastHandledJobPhaseKey = phaseKey
+            } catch {
+                generationStatusMessage = "音眸任务已完成，但刷新内容失败"
+            }
+        case .failed, .canceled:
+            insightGenerationState = .error
+            generationStatusMessage = job.errorMessage?.isEmpty == false ? job.errorMessage : "音眸任务未完成"
+            lastHandledJobPhaseKey = phaseKey
         }
     }
 
@@ -219,7 +248,7 @@ final class TrackDetailViewModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            let resolved = await artworkResolveService.resolveArtworkURL(
+            let resolved = await artworkResolveService.resolveArtworkResource(
                 using: server,
                 albumID: nil,
                 albumArtist: artist,
@@ -228,8 +257,30 @@ final class TrackDetailViewModel: ObservableObject {
                 artworkKey: nil
             )
             guard self.artworkRequestKey == requestKey else { return }
-            self.resolvedArtworkURL = resolved
+            self.applyResolvedArtwork(resolved)
+            self.logger.debug("解析曲目封面完成 艺人=\(artist, privacy: .public) 专辑=\(album, privacy: .public) 封面=\(self.describeArtworkURL(resolved?.remoteURL), privacy: .public)")
         }
+    }
+
+    private func applyResolvedArtwork(_ resource: ResolvedArtworkResource?) {
+        let normalized = resource?.isEmpty == true ? nil : resource
+        resolvedArtworkResource = normalized
+        resolvedArtworkURL = normalized?.remoteURL
+        #if os(iOS)
+        Task {
+            _ = await LiveActivityArtworkStore.shared.prefetch(resource: normalized)
+        }
+        #endif
+    }
+
+    private func describeArtworkURL(_ artworkURL: String?) -> String {
+        guard let artworkURL else { return "空" }
+        let trimmed = artworkURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "空字符串" }
+        guard let url = URL(string: trimmed) else { return "非法地址" }
+        let host = url.host ?? "无主机"
+        let file = url.lastPathComponent.isEmpty ? "无文件名" : url.lastPathComponent
+        return "\(url.scheme ?? "无协议")://\(host)/\(file)"
     }
 
     private func fetchTrackInsights(
@@ -251,6 +302,15 @@ final class TrackDetailViewModel: ObservableObject {
             ]
         )
         return response.insights
+    }
+
+    private func fetchTrackInsightDetail(using client: APIClient, id: Int64) async throws -> Insight {
+        try await client.getJSON(
+            path: APIPath.insightDetail(id: id),
+            queryItems: [
+                URLQueryItem(name: "analysis_target_type", value: InsightTargetType.track.rawValue)
+            ]
+        )
     }
 
     private func fetchAIPlatforms(using server: ServerConfig) async throws -> [AIPlatformOption] {
