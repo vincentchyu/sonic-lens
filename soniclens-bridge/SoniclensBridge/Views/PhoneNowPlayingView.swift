@@ -13,6 +13,7 @@ private enum PhoneImmersiveMode {
 
 struct PhoneNowPlayingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(FavoriteActionStore.self) private var favoriteActionStore
     @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
@@ -24,16 +25,17 @@ struct PhoneNowPlayingView: View {
     @State private var lyricsFollowMode = true
     @State private var lyricsScrollRequestToken = 0
     @State private var animate = false
+    @State private var favoriteNoticeDismissTask: Task<Void, Never>?
 
     let nowPlaying: NowPlaying
     let onClose: () -> Void
 
     var body: some View {
         GeometryReader { geo in
-        ZStack {
-            liquidBackground
-            content(geo: geo)
-        }
+            ZStack {
+                liquidBackground
+                content(geo: geo)
+            }
         }
         .ignoresSafeArea()
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -53,14 +55,20 @@ struct PhoneNowPlayingView: View {
         .onChange(of: playbackStore.nowPlaying?.artwork) { _, artwork in
             Task { await updatePalette(for: artwork) }
         }
-        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
+        .onChange(of: playbackSyncToken) { _, token in
+            viewModel.syncProgress(
+                position: token.position,
+                positionMs: token.positionMs,
+                receivedAt: token.receivedAt ?? nowPlaying.receivedAt
+            )
         }
-        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: favoriteActionStore.state) { _, state in
+            handleFavoriteActionStateChange(state)
         }
         .onDisappear {
             viewModel.stopProgress()
+            favoriteNoticeDismissTask?.cancel()
+            favoriteNoticeDismissTask = nil
         }
     }
 
@@ -73,8 +81,43 @@ struct PhoneNowPlayingView: View {
         return "\(active.artist)::\(active.album ?? "")::\(active.track)"
     }
 
+    private var playbackSyncToken: PlaybackProgressSyncToken {
+        PlaybackProgressSyncToken(nowPlaying: playbackStore.nowPlaying)
+    }
+
     private var favoriteStatus: NowPlayingFavoriteStatus {
         .init(projection: currentNowPlaying.favoriteProjection)
+    }
+
+    private var favoriteActionLoading: Bool {
+        favoriteActionStore.state.isLoading(matching: currentNowPlaying)
+    }
+
+    private var favoriteActionNotice: FavoriteActionNotice? {
+        favoriteActionStore.state.notice(matching: currentNowPlaying)
+    }
+
+    private var favoriteStatusTagText: String? {
+        if favoriteActionLoading {
+            return "收藏处理中"
+        }
+        return favoriteStatus.badgeTitle
+    }
+
+    private var favoriteStatusTagTone: NowPlayingArtworkStatusTagTone {
+        if favoriteActionLoading {
+            return .loading
+        }
+        switch favoriteStatus {
+        case .full:
+            return .success
+        case .partial:
+            return .warning
+        case .pending, .unfavoritePending:
+            return .loading
+        case .none:
+            return .neutral
+        }
     }
 
     private var liquidBackground: some View {
@@ -92,7 +135,11 @@ struct PhoneNowPlayingView: View {
         let expandedLyricsHeight = max(geo.size.height - topInset - 220, 420)
 
         VStack(spacing: 18) {
-            PhoneNowPlayingTopBar(statusBannerText: viewModel.playbackState.bannerText)
+            PhoneNowPlayingTopBar(
+                statusBannerText: viewModel.playbackState.bannerText,
+                favoriteActionLoading: favoriteActionLoading,
+                favoriteActionNotice: favoriteActionNotice
+            )
                 .padding(.top, topInset)
 
             if immersiveMode == .artworkFocused {
@@ -133,7 +180,13 @@ struct PhoneNowPlayingView: View {
 
     @ViewBuilder
     private func artworkSection(current: NowPlaying) -> some View {
-        NowPlayingArtwork(artworkURL: current.artwork, fallbackTitle: current.album ?? current.track)
+        NowPlayingArtwork(
+            artworkURL: current.artwork,
+            fallbackTitle: current.album ?? current.track,
+            badgeText: current.sampleRateDisplayText,
+            statusTagText: favoriteStatusTagText,
+            statusTagTone: favoriteStatusTagText == nil ? nil : favoriteStatusTagTone
+        )
             .frame(maxWidth: 286)
             .contentShape(Rectangle())
             .highPriorityGesture(dismissGesture)
@@ -219,8 +272,12 @@ struct PhoneNowPlayingView: View {
                     .allowsTightening(true) // 系统会先稍微压紧字符间距，还是不够才继续缩小
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 56)
-                
-                NowPlayingFavoriteButton(status: favoriteStatus, action: toggleFavorite)
+
+                NowPlayingFavoriteButton(
+                    status: favoriteStatus,
+                    isLoading: favoriteActionLoading,
+                    action: toggleFavorite
+                )
             }
 
             Text([current.artist, current.album].compactMap { $0 }.joined(separator: " · "))
@@ -229,10 +286,6 @@ struct PhoneNowPlayingView: View {
                 .multilineTextAlignment(.center)
 
             DiscTrackBadgeRow(discNumber: current.discNumber, trackNumber: current.trackNumber)
-
-            if let badgeTitle = favoriteStatus.badgeTitle {
-                NowPlayingFavoriteStatusBadge(status: favoriteStatus, title: badgeTitle)
-            }
 
             if let insightTeaser = viewModel.insights.primaryInsight?.teaserText, !insightTeaser.isEmpty {
                 Text(insightTeaser)
@@ -267,6 +320,7 @@ struct PhoneNowPlayingView: View {
                     PhoneImmersiveLyricsPanel(
                         lines: viewModel.lyricLines,
                         currentLineID: viewModel.currentLineID,
+                        highlightedIndex: viewModel.currentLineIndex,
                         followMode: $lyricsFollowMode,
                         scrollRequestToken: lyricsScrollRequestToken,
                         scrollEnabled: true,
@@ -312,6 +366,7 @@ struct PhoneNowPlayingView: View {
                 PhoneLyricsPreviewPanel(
                     lines: viewModel.lyricLines,
                     currentLineID: viewModel.currentLineID,
+                    highlightedIndex: viewModel.currentLineIndex,
                     onExpand: {
                         withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.86)) {
                             immersiveMode = .lyricsFocused
@@ -362,6 +417,13 @@ struct PhoneNowPlayingView: View {
         guard let server = store.currentServer else { return }
         let active = currentNowPlaying
 
+        viewModel.startProgress(
+            position: active.position,
+            positionMs: active.positionMs,
+            receivedAt: active.receivedAt
+        )
+        await Task.yield()
+
         await viewModel.load(
             using: server,
             artist: active.artist,
@@ -370,7 +432,6 @@ struct PhoneNowPlayingView: View {
             trackNumber: active.trackNumber,
             discNumber: active.discNumber
         )
-        viewModel.startProgress(position: active.position, positionMs: active.positionMs)
 
         guard forcePaletteRefresh || lastArtworkURL != active.artwork else { return }
         lastArtworkURL = active.artwork
@@ -392,6 +453,20 @@ struct PhoneNowPlayingView: View {
         }
     }
 
+    private func handleFavoriteActionStateChange(_ state: FavoriteActionState) {
+        favoriteNoticeDismissTask?.cancel()
+        favoriteNoticeDismissTask = nil
+
+        guard state.notice(matching: currentNowPlaying) != nil else { return }
+        favoriteNoticeDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                favoriteActionStore.clear()
+            }
+        }
+    }
+
     private var dismissGesture: some Gesture {
         DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onEnded { value in
@@ -405,22 +480,32 @@ struct PhoneNowPlayingView: View {
 
 private struct PhoneNowPlayingTopBar: View {
     let statusBannerText: String?
+    let favoriteActionLoading: Bool
+    let favoriteActionNotice: FavoriteActionNotice?
 
     var body: some View {
-        HStack {
-            Spacer(minLength: 0)
+        VStack(spacing: 8) {
+            HStack {
+                Spacer(minLength: 0)
 
-            HStack(spacing: 10) {
-                Text("正在播放")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
+                HStack(spacing: 10) {
+                    Text("正在播放")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
 
-                if let statusBannerText {
-                    PlaybackStatusBanner(text: statusBannerText)
+                    if let statusBannerText {
+                        PlaybackStatusBanner(text: statusBannerText)
+                    }
                 }
+
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 0)
+            if let favoriteActionNotice {
+                FavoriteActionNoticeBanner(notice: favoriteActionNotice)
+            } else if favoriteActionLoading {
+                PlaybackStatusBanner(text: "收藏处理中")
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -448,6 +533,7 @@ private struct PhoneNowPlayingInsightPanel: View {
 private struct PhoneImmersiveLyricsPanel: View {
     let lines: [LyricLine]
     let currentLineID: UUID?
+    let highlightedIndex: Int?
     @Binding var followMode: Bool
     var scrollRequestToken: Int = 0
     var scrollEnabled: Bool = true
@@ -457,12 +543,9 @@ private struct PhoneImmersiveLyricsPanel: View {
 
     private let visibleRadius = 5
     @State private var didNotifyUserScroll = false
+    @State private var suppressFollowAnimation = true
 
     var body: some View {
-        let highlightedIndex = currentLineID.flatMap { id in
-            lines.firstIndex(where: { $0.id == id })
-        }
-
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .center, spacing: 8) {
@@ -515,9 +598,18 @@ private struct PhoneImmersiveLyricsPanel: View {
             .onChange(of: currentLineID) { _, lineID in
                 guard followMode else { return }
                 guard let lineID else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                if suppressFollowAnimation {
                     proxy.scrollTo(lineID, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(lineID, anchor: .center)
+                    }
                 }
+            }
+            .task {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                guard !Task.isCancelled else { return }
+                suppressFollowAnimation = false
             }
             .onAppear {
                 if let currentLineID, followMode {
@@ -576,6 +668,7 @@ private struct PhoneLyricTypography {
 private struct PhoneLyricsPreviewPanel: View {
     let lines: [LyricLine]
     let currentLineID: UUID?
+    let highlightedIndex: Int?
     let onExpand: () -> Void
 
     private var previewLines: [LyricLine] {
@@ -583,9 +676,10 @@ private struct PhoneLyricsPreviewPanel: View {
         guard !normalized.isEmpty else { return [] }
 
         if let currentLineID,
-           let highlightedIndex = normalized.firstIndex(where: { $0.id == currentLineID }) {
+           let highlightedIndex {
+            let normalizedIndex = normalized.firstIndex(where: { $0.id == currentLineID }) ?? highlightedIndex
             let visibleCount = min(5, normalized.count)
-            let start = min(max(highlightedIndex - 2, 0), max(normalized.count - visibleCount, 0))
+            let start = min(max(normalizedIndex - 2, 0), max(normalized.count - visibleCount, 0))
             let end = min(start + visibleCount, normalized.count)
             return Array(normalized[start..<end])
         }

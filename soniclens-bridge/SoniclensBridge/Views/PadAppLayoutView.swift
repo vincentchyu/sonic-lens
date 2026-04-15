@@ -102,7 +102,7 @@ struct PadAppLayoutView: View {
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
             Group {
-                if let nowPlaying = playbackStore.nowPlaying {
+                if let nowPlaying = playbackStore.nowPlaying, playbackStore.hasActiveNowPlaying {
                     PadNowPlayingView(nowPlaying: nowPlaying) {
                         showNowPlaying = false
                     }
@@ -114,7 +114,7 @@ struct PadAppLayoutView: View {
                         }
                 }
             }
-            .onChange(of: playbackStore.nowPlaying != nil) { oldValue, newValue in
+            .onChange(of: playbackStore.hasActiveNowPlaying) { _, newValue in
                 if !newValue {
                     showNowPlaying = false
                 }
@@ -129,8 +129,12 @@ struct PadAppLayoutView: View {
             Task { await libraryViewModel.load(using: server) }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, let server = store.currentServer else { return }
-            Task { await libraryViewModel.refresh(using: server) }
+            guard phase == .active else { return }
+            Task {
+                await store.performForegroundConnectionHealthCheckIfNeeded()
+                guard let server = store.currentServer, store.isConnectionHealthy else { return }
+                await libraryViewModel.refresh(using: server)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .librarySyncDidUpdate)) { _ in
             guard let server = store.currentServer else { return }
@@ -154,7 +158,7 @@ struct PadAppLayoutView: View {
         switch selection {
         case .home:
             PadHomeView(onOpenNowPlaying: {
-                if playbackStore.nowPlaying != nil {
+                if playbackStore.hasActiveNowPlaying {
                     showNowPlaying = true
                 }
             })

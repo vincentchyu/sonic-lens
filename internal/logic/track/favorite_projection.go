@@ -12,12 +12,13 @@ import (
 
 // FavoriteProjectionInput 描述收藏态投影视图所需的身份与元数据。
 type FavoriteProjectionInput struct {
-	Artist      string
-	Album       string
-	Track       string
-	TrackNumber int8
-	DiscNumber  int8
-	Metadata    model.TrackMetadata
+	Artist        string
+	Album         string
+	AlbumSubtitle string
+	Track         string
+	TrackNumber   int8
+	DiscNumber    int8
+	Metadata      model.TrackMetadata
 }
 
 // TrackFavoriteProjection 表示给 API/WS 统一消费的收藏态只读投影。
@@ -48,18 +49,19 @@ func (s *TrackServiceImpl) buildFavoriteProjection(
 	}
 
 	identity := model.TrackIdentity{
-		Artist:      input.Artist,
-		Album:       input.Album,
-		Track:       input.Track,
-		TrackNumber: input.TrackNumber,
-		DiscNumber:  input.DiscNumber,
+		Artist:        input.Artist,
+		Album:         input.Album,
+		AlbumSubtitle: input.AlbumSubtitle,
+		Track:         input.Track,
+		TrackNumber:   input.TrackNumber,
+		DiscNumber:    input.DiscNumber,
 	}
 
 	trackAppleMusic := false
 	trackLastFM := false
 	if s.canSafelyLookupCurrentTrack(metadata) {
-		currentTrack, err := modelGetTrackByIdentity(
-			ctx, input.Artist, input.Album, input.Track, input.TrackNumber, input.DiscNumber,
+		currentTrack, err := modelGetTrackByIdentityWithSubtitle(
+			ctx, input.Artist, input.Album, input.AlbumSubtitle, input.Track, input.TrackNumber, input.DiscNumber,
 		)
 		if err != nil {
 			log.Debug(
@@ -71,6 +73,28 @@ func (s *TrackServiceImpl) buildFavoriteProjection(
 				zap.String("track", input.Track),
 			)
 		} else if currentTrack != nil {
+			trackAppleMusic = currentTrack.IsAppleMusicFav
+			trackLastFM = currentTrack.IsLastFmFav
+		}
+	} else if canWeaklyResolveFavoriteProjectionTrack(metadata) {
+		currentTrack, resolvedIdentity, err := modelResolveTrackForFavoriteProjection(
+			ctx,
+			input.Artist,
+			input.Album,
+			input.Track,
+			metadata,
+		)
+		if err != nil {
+			log.Debug(
+				ctx,
+				"低信任收藏态弱匹配失败",
+				zap.Error(err),
+				zap.String("artist", input.Artist),
+				zap.String("album", input.Album),
+				zap.String("track", input.Track),
+			)
+		} else if currentTrack != nil {
+			identity = resolvedIdentity
 			trackAppleMusic = currentTrack.IsAppleMusicFav
 			trackLastFM = currentTrack.IsLastFmFav
 		}
@@ -99,6 +123,10 @@ func (s *TrackServiceImpl) buildFavoriteProjection(
 	projection.FavoriteState = aggregateFavoriteState(projection.AppleMusicState, projection.LastFMState)
 
 	return projection, nil
+}
+
+func canWeaklyResolveFavoriteProjectionTrack(metadata model.TrackMetadata) bool {
+	return metadata.Duration > 0 || metadata.UniqueID != "" || metadata.MusicBrainzID != ""
 }
 
 func buildSourceFavoriteState(

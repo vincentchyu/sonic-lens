@@ -235,6 +235,54 @@ func GetTrackAlbumsByAlbumTx(tx *gorm.DB, albumID int64) ([]*TrackAlbum, error) 
 	return results, err
 }
 
+// GetTrackAlbumByTrackAndAlbumIdentityTx 按曲目和专辑身份获取对应绑定，避免跨版本命中首条关联。
+func GetTrackAlbumByTrackAndAlbumIdentityTx(
+	tx *gorm.DB,
+	trackID int64,
+	artist string,
+	album string,
+	albumSubtitle string,
+	trackNumber int8,
+	discNumber int8,
+) (*TrackAlbum, error) {
+	if trackID <= 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	trackNumber, discNumber = normalizeTrackAlbumPosition(trackNumber, discNumber)
+
+	query := tx.Table("track_album AS ta").
+		Select("ta.*").
+		Joins("JOIN album AS a ON a.id = ta.album_id").
+		Where("ta.track_id = ?", trackID).
+		Where("a.artist = ? AND a.name = ? AND COALESCE(a.name_subtitle, '') = ?", artist, album, albumSubtitle)
+	if trackNumber > 0 {
+		query = query.Where("ta.track_number = ? AND ta.disc_number = ?", trackNumber, discNumber)
+	}
+
+	var result TrackAlbum
+	if err := query.Order("ta.id ASC").First(&result).Error; err == nil {
+		return &result, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	// 兼容历史链路：若当前 track 只有唯一一条绑定，允许回退；
+	// 但一旦存在多专辑绑定，就必须要求命中明确的专辑身份，避免串版。
+	var candidates []TrackAlbum
+	fallback := tx.Where("track_id = ?", trackID)
+	if trackNumber > 0 {
+		fallback = fallback.Where("track_number = ? AND disc_number = ?", trackNumber, discNumber)
+	}
+	if err := fallback.Order("id ASC").Limit(2).Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	if len(candidates) == 1 {
+		return &candidates[0], nil
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
 // ClearTrackAlbumMBRecordingIDByAlbumID 清空专辑下全部 TrackAlbum 的 MusicBrainz 录音 ID。
 func ClearTrackAlbumMBRecordingIDByAlbumID(ctx context.Context, albumID int64) error {
 	return ClearTrackAlbumMBRecordingIDByAlbumIDTx(GetDB().WithContext(ctx), albumID)

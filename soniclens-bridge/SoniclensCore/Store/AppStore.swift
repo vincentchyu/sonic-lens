@@ -5,6 +5,7 @@ import OSLog
 extension Notification.Name {
     static let libraryFavoriteDidChange = Notification.Name("libraryFavoriteDidChange")
     static let librarySyncDidUpdate = Notification.Name("librarySyncDidUpdate")
+    static let recentPlaysDidUpdate = Notification.Name("recentPlaysDidUpdate")
 }
 
 struct LibraryFavoriteChange {
@@ -24,11 +25,18 @@ struct LibrarySyncUpdate {
     let version: Int64
 }
 
+struct RecentPlaysUpdate {}
+
 @MainActor
 @Observable
 final class PlaybackStore {
     var nowPlaying: NowPlaying?
     var nowPlayingSource: String?
+
+    var hasActiveNowPlaying: Bool {
+        guard let nowPlaying else { return false }
+        return nowPlaying.playbackActivityState().isActive
+    }
 
     func update(nowPlaying: NowPlaying?, source: String?) {
         self.nowPlaying = nowPlaying
@@ -75,6 +83,8 @@ final class AppStore: ObservableObject {
 
     let playbackStore = PlaybackStore()
     let favoriteStore = FavoriteStore()
+    let favoriteActionStore = FavoriteActionStore()
+    let connectionRecoveryStore = ConnectionRecoveryStore()
     let insightCoordinator = InsightAnalysisCoordinator()
 
     private var nowPlayingService: NowPlayingService?
@@ -82,19 +92,36 @@ final class AppStore: ObservableObject {
     private let recentStore = RecentServerStore()
     private let artworkResolveService = ArtworkResolveService.shared
     private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "AppStore")
-    private var connectionTask: Task<Void, Never>?
+    private var connectionTask: Task<Bool, Never>?
+    private var silentHealthCheckTask: Task<Void, Never>?
     private var currentConnectionAttemptID: UUID?
+    private var lastPrefetchedNowPlayingKey: String?
     private let preferredResolvedHealthCheckTimeout: TimeInterval = 1.5
     private let fallbackHealthCheckTimeout: TimeInterval = 3
+    private let silentHealthCheckInterval: UInt64 = 60 * 1_000_000_000
+    private let autoRestoreLastSuccessfulConnectionKey = "soniclens.autoRestoreLastSuccessfulConnection"
+    private var hasAttemptedBootstrapRestore = false
+    private let favoriteRequestHandler: (URL, FavoriteRequest) async throws -> FavoriteResponse
+
+    init(
+        favoriteRequestHandler: @escaping (URL, FavoriteRequest) async throws -> FavoriteResponse = { baseURL, request in
+            let client = APIClient(baseURL: baseURL)
+            return try await client.postJSON(path: APIPath.favorite, body: request)
+        }
+    ) {
+        self.favoriteRequestHandler = favoriteRequestHandler
+        recentServers = recentStore.load()
+    }
 
     @MainActor
-    func connect(_ server: ServerConfig) async {
+    @discardableResult
+    func connect(_ server: ServerConfig) async -> Bool {
         let targetKey = connectionTargetKey(for: server)
         if let activeConnectionTargetKey {
             if activeConnectionTargetKey == targetKey {
                 logger.info("点击同一连接目标，取消当前连接 \(server.displayName, privacy: .public)")
                 cancelConnection()
-                return
+                return false
             }
             logger.info("切换连接目标，取消旧连接并切到 \(server.displayName, privacy: .public)")
             cancelActiveConnection(announceCancellation: false)
@@ -108,20 +135,24 @@ final class AppStore: ObservableObject {
             message: "正在准备连接...",
             detail: server.displayName
         )
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.runConnectionFlow(server: server, attemptID: attemptID)
+        let task = Task<Bool, Never> { [weak self] in
+            guard let self else { return false }
+            return await self.runConnectionFlow(server: server, attemptID: attemptID)
         }
         connectionTask = task
-        await task.value
+        let success = await task.value
+        return success
     }
 
     func cancelConnection() {
         cancelActiveConnection(announceCancellation: true)
+        if connectionRecoveryStore.isBootstrapping {
+            connectionRecoveryStore.clear()
+        }
     }
 
-    private func runConnectionFlow(server: ServerConfig, attemptID: UUID) async {
-        guard isCurrentConnectionAttempt(attemptID) else { return }
+    private func runConnectionFlow(server: ServerConfig, attemptID: UUID) async -> Bool {
+        guard isCurrentConnectionAttempt(attemptID) else { return false }
 
         let startedAt = CFAbsoluteTimeGetCurrent()
         let connectionDetail = describeConnectionTarget(server)
@@ -147,7 +178,7 @@ final class AppStore: ObservableObject {
                     detail: "health=\(health.status)"
                 )
                 logger.error("服务端健康检查返回异常状态 \(health.status, privacy: .public)")
-                return
+                return false
             }
 
             setConnectionStatus(
@@ -161,15 +192,20 @@ final class AppStore: ObservableObject {
             recentServers = recentStore.load()
             logger.info("服务端连接成功，开始启动播放态监听")
             startNowPlaying(effectiveServer)
+            setAutoRestoreEnabled(true)
+            connectionRecoveryStore.clear()
+            startSilentHealthMonitoring(for: effectiveServer)
             let realtimeElapsed = CFAbsoluteTimeGetCurrent() - realtimeStartedAt
             logger.info("实时连接启动完成，耗时 \(String(format: "%.3f", realtimeElapsed), privacy: .public) 秒")
 
             let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
             finishConnectionSuccess(attemptID: attemptID, server: effectiveServer, elapsed: elapsed)
             logger.info("连接服务端流程完成，耗时 \(String(format: "%.3f", elapsed), privacy: .public) 秒")
+            return true
         } catch is CancellationError {
             logger.info("连接流程已取消 \(server.displayName, privacy: .public)")
             finalizeConnectionAttempt(attemptID: attemptID, resetStatus: false)
+            return false
         } catch {
             finishConnectionFailure(
                 attemptID: attemptID,
@@ -177,20 +213,29 @@ final class AppStore: ObservableObject {
                 detail: error.localizedDescription
             )
             logger.error("连接服务端失败 \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
     func disconnect() {
         logger.info("断开当前服务端连接")
         cancelActiveConnection(announceCancellation: false)
+        stopSilentHealthMonitoring()
+        setAutoRestoreEnabled(false)
         libraryUpdateWorkItem?.cancel()
         libraryUpdateWorkItem = nil
         nowPlayingService?.stop()
         nowPlayingService = nil
         currentServer = nil
         activeConnectionTargetKey = nil
+        connectionRecoveryStore.clear()
+        favoriteActionStore.clear()
         playbackStore.reset()
         favoriteStore.reset()
+        lastPrefetchedNowPlayingKey = nil
+        Task {
+            await NowPlayingPayloadStore.shared.reset()
+        }
         connectionStatus = .idle
     }
 
@@ -199,6 +244,165 @@ final class AppStore: ObservableObject {
         recentServers = recentStore.load()
         let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
         logger.debug("读取最近连接服务端数量 \(self.recentServers.count, privacy: .public)，耗时 \(String(format: "%.3f", elapsed), privacy: .public) 秒")
+    }
+
+    func bootstrapConnectionIfNeeded() async {
+        guard !hasAttemptedBootstrapRestore else { return }
+        guard currentServer == nil else { return }
+        guard connectionRecoveryStore.isIdle else { return }
+
+        loadRecentServers()
+        guard isAutoRestoreEnabled() else {
+            logger.debug("自动恢复上次连接已关闭，跳过启动静默恢复")
+            return
+        }
+        guard let server = recentServers.first else {
+            logger.debug("没有可恢复的最近连接服务端")
+            return
+        }
+
+        hasAttemptedBootstrapRestore = true
+        connectionRecoveryStore.setRestoring(
+            server: server,
+            detail: "正在静默恢复上次连接 \(server.displayName)"
+        )
+        logger.info("启动时尝试静默恢复上次连接 \(server.displayName, privacy: .public)")
+
+        let success = await connect(server)
+        if connectionStatus.phase == .cancelled {
+            connectionRecoveryStore.clear()
+            logger.info("启动静默恢复已被用户取消 \(server.displayName, privacy: .public)")
+            return
+        }
+        if success {
+            connectionRecoveryStore.clear()
+            logger.info("启动静默恢复成功 \(server.displayName, privacy: .public)")
+            return
+        }
+
+        connectionRecoveryStore.setNeedsDecision(
+            server: server,
+            message: "上次连接不可用",
+            detail: connectionStatus.detail ?? server.displayName
+        )
+        logger.warning("启动静默恢复失败，需要用户决策 \(server.displayName, privacy: .public)")
+    }
+
+    func performForegroundConnectionHealthCheckIfNeeded() async {
+        guard connectionRecoveryStore.isIdle else { return }
+        guard let server = currentServer else { return }
+        guard !isConnecting else { return }
+
+        let success = await performSilentHealthCheck(
+            using: server,
+            origin: .foreground
+        )
+        if success {
+            logger.debug("前台健康检查通过 \(server.displayName, privacy: .public)")
+        }
+    }
+
+    private func startSilentHealthMonitoring(for server: ServerConfig) {
+        stopSilentHealthMonitoring()
+        logger.debug("启动静默健康检查定时任务 \(server.displayName, privacy: .public)")
+
+        silentHealthCheckTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: self.silentHealthCheckInterval)
+                guard !Task.isCancelled else { break }
+                guard self.currentServer?.baseURL == server.baseURL else {
+                    self.logger.debug("静默健康检查目标已变化，停止旧任务 \(server.displayName, privacy: .public)")
+                    break
+                }
+                guard self.connectionRecoveryStore.isIdle else {
+                    self.logger.debug("连接已进入待决策状态，暂停静默健康检查 \(server.displayName, privacy: .public)")
+                    break
+                }
+                _ = await self.performSilentHealthCheck(using: server, origin: .background)
+                if !self.connectionRecoveryStore.isIdle {
+                    break
+                }
+            }
+        }
+    }
+
+    private func stopSilentHealthMonitoring() {
+        silentHealthCheckTask?.cancel()
+        silentHealthCheckTask = nil
+    }
+
+    private func performSilentHealthCheck(using server: ServerConfig, origin: ConnectionHealthProbeOrigin) async -> Bool {
+        do {
+            let (effectiveServer, health) = try await resolveReachableServer(from: server)
+            guard health.status == "ok" else {
+                markConnectionRecoveryNeeded(
+                    server: server,
+                    origin: origin,
+                    message: "服务端连接失效",
+                    detail: "health=\(health.status)"
+                )
+                return false
+            }
+
+            if currentServer?.webSocketURL.absoluteString != effectiveServer.webSocketURL.absoluteString {
+                logger.info("健康检查命中可用回退地址，刷新当前连接 \(effectiveServer.baseURL.absoluteString, privacy: .public)")
+                currentServer = effectiveServer
+                recentStore.add(effectiveServer)
+                recentServers = recentStore.load()
+                startNowPlaying(effectiveServer)
+                startSilentHealthMonitoring(for: effectiveServer)
+            }
+            return true
+        } catch {
+            markConnectionRecoveryNeeded(
+                server: server,
+                origin: origin,
+                message: "服务端连接失效",
+                detail: error.localizedDescription
+            )
+            logger.warning("静默健康检查失败 \(server.displayName, privacy: .public)，错误 \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    private func markConnectionRecoveryNeeded(
+        server: ServerConfig,
+        origin: ConnectionHealthProbeOrigin,
+        message: String,
+        detail: String?
+    ) {
+        connectionStatus = .failed(message: message, detail: detail)
+        nowPlayingService?.stop()
+        nowPlayingService = nil
+        switch origin {
+        case .bootstrap:
+            connectionRecoveryStore.setNeedsDecision(
+                server: server,
+                message: "上次连接不可用",
+                detail: detail ?? server.displayName
+            )
+        case .background, .foreground:
+            connectionRecoveryStore.setNeedsDecision(
+                server: currentServer ?? server,
+                message: "连接失效，请处理",
+                detail: detail ?? server.displayName
+            )
+        case .manual:
+            break
+        }
+        stopSilentHealthMonitoring()
+    }
+
+    private func setAutoRestoreEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: autoRestoreLastSuccessfulConnectionKey)
+    }
+
+    private func isAutoRestoreEnabled() -> Bool {
+        guard UserDefaults.standard.object(forKey: autoRestoreLastSuccessfulConnectionKey) != nil else {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: autoRestoreLastSuccessfulConnectionKey)
     }
 
     private func startNowPlaying(_ server: ServerConfig) {
@@ -210,6 +414,7 @@ final class AppStore: ObservableObject {
                 self?.playbackStore.update(nowPlaying: nowPlaying, source: source)
                 self?.syncFavoriteProjection(with: nowPlaying)
                 self?.resolveNowPlayingArtworkIfNeeded(for: nowPlaying)
+                self?.prefetchNowPlayingPayloadIfNeeded(for: nowPlaying, using: server)
             }
         }
         service.onLibraryUpdate = { [weak self] version in
@@ -219,6 +424,14 @@ final class AppStore: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.insightCoordinator.handleWebSocketJobUpdate(job, using: self.currentServer)
+            }
+        }
+        service.onRecentPlaysUpdate = {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .recentPlaysDidUpdate,
+                    object: RecentPlaysUpdate()
+                )
             }
         }
         nowPlayingService = service
@@ -295,8 +508,38 @@ final class AppStore: ObservableObject {
         favorite: Bool,
         source: String? = nil
     ) async {
-        guard let album, !album.isEmpty, let server = currentServer else { return }
-        let resolvedSource = source ?? playbackStore.nowPlayingSource ?? "apple_music"
+        let resolvedSource = source ?? playbackStore.nowPlayingSource ?? "Apple Music"
+        guard let album, !album.isEmpty else {
+            favoriteActionStore.setFailure(
+                FavoriteActionContext(
+                    artist: artist,
+                    album: album ?? "",
+                    track: track,
+                    trackNumber: trackNumber,
+                    discNumber: discNumber,
+                    source: resolvedSource,
+                    favorite: favorite
+                ),
+                message: "缺少专辑信息，无法收藏"
+            )
+            return
+        }
+        guard let server = currentServer else {
+            favoriteActionStore.setFailure(
+                FavoriteActionContext(
+                    artist: artist,
+                    album: album,
+                    track: track,
+                    trackNumber: trackNumber,
+                    discNumber: discNumber,
+                    source: resolvedSource,
+                    favorite: favorite
+                ),
+                message: "尚未连接服务端，无法收藏"
+            )
+            return
+        }
+
         let key = favoriteKey(
             artist: artist,
             album: album,
@@ -314,9 +557,19 @@ final class AppStore: ObservableObject {
             favorite: favorite
         )
 
+        let actionContext = FavoriteActionContext(
+            artist: artist,
+            album: album,
+            track: track,
+            trackNumber: trackNumber,
+            discNumber: discNumber,
+            source: resolvedSource,
+            favorite: favorite
+        )
+        favoriteActionStore.setLoading(actionContext)
+
         do {
-            let client = APIClient(baseURL: server.baseURL)
-            let response: FavoriteResponse = try await client.postJSON(path: APIPath.favorite, body: request)
+            let response = try await favoriteRequestHandler(server.baseURL, request)
             let projection = response.projection
             syncFavoriteProjection(key: key, projection: projection)
             NotificationCenter.default.post(
@@ -342,8 +595,16 @@ final class AppStore: ObservableObject {
                 discNumber: discNumber,
                 projection: projection
             )
+            favoriteActionStore.setSuccess(
+                actionContext,
+                message: Self.favoriteActionSuccessMessage(favorite: favorite, projection: projection)
+            )
         } catch {
-            // ignore favorite errors
+            logger.error("收藏请求失败 \(error.localizedDescription, privacy: .public)")
+            favoriteActionStore.setFailure(
+                actionContext,
+                message: Self.favoriteActionFailureMessage(error)
+            )
         }
     }
 
@@ -381,10 +642,12 @@ final class AppStore: ObservableObject {
         playbackStore.nowPlaying = NowPlaying(
             artist: nowPlaying.artist,
             album: nowPlaying.album,
+            albumSubtitle: nowPlaying.albumSubtitle,
             track: nowPlaying.track,
             duration: nowPlaying.duration,
             position: nowPlaying.position,
             positionMs: nowPlaying.positionMs,
+            sampleRate: nowPlaying.sampleRate,
             artwork: nowPlaying.artwork,
             isAppleMusicFav: projection.appleMusic,
             isLastFmFav: projection.lastfm,
@@ -392,7 +655,8 @@ final class AppStore: ObservableObject {
             lastfmState: projection.lastfmState,
             favoriteState: projection.favoriteState,
             trackNumber: nowPlaying.trackNumber,
-            discNumber: nowPlaying.discNumber
+            discNumber: nowPlaying.discNumber,
+            receivedAt: nowPlaying.receivedAt
         )
     }
 
@@ -414,6 +678,24 @@ final class AppStore: ObservableObject {
         libraryUpdateWorkItem?.cancel()
         libraryUpdateWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: workItem)
+    }
+
+    private func prefetchNowPlayingPayloadIfNeeded(
+        for nowPlaying: NowPlaying?,
+        using server: ServerConfig
+    ) {
+        guard let nowPlaying else {
+            lastPrefetchedNowPlayingKey = nil
+            return
+        }
+
+        let request = NowPlayingPayloadRequest(server: server, nowPlaying: nowPlaying)
+        guard lastPrefetchedNowPlayingKey != request.requestKey else { return }
+        lastPrefetchedNowPlayingKey = request.requestKey
+
+        Task {
+            await NowPlayingPayloadStore.shared.prefetch(using: server, request: request)
+        }
     }
 
     private func resolveNowPlayingArtworkIfNeeded(for nowPlaying: NowPlaying?) {
@@ -447,10 +729,12 @@ final class AppStore: ObservableObject {
                 self.playbackStore.nowPlaying = NowPlaying(
                     artist: current.artist,
                     album: current.album,
+                    albumSubtitle: current.albumSubtitle,
                     track: current.track,
                     duration: current.duration,
                     position: current.position,
                     positionMs: current.positionMs,
+                    sampleRate: current.sampleRate,
                     artwork: resolved,
                     isAppleMusicFav: current.isAppleMusicFav,
                     isLastFmFav: current.isLastFmFav,
@@ -458,10 +742,32 @@ final class AppStore: ObservableObject {
                     lastfmState: current.lastfmState,
                     favoriteState: current.favoriteState,
                     trackNumber: current.trackNumber,
-                    discNumber: current.discNumber
+                    discNumber: current.discNumber,
+                    receivedAt: current.receivedAt
                 )
             }
         }
+    }
+
+    private static func favoriteActionSuccessMessage(
+        favorite: Bool,
+        projection: TrackFavoriteProjection
+    ) -> String {
+        if favorite {
+            if projection.appleMusic && projection.lastfm {
+                return "已同步收藏到 Apple Music 和 Last.fm"
+            }
+            return "收藏成功"
+        }
+        return "已取消收藏"
+    }
+
+    private static func favoriteActionFailureMessage(_ error: Error) -> String {
+        let detail = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if detail.isEmpty {
+            return "收藏失败，请稍后重试"
+        }
+        return "收藏失败：\(detail)"
     }
 
     func isConnecting(to server: ServerConfig) -> Bool {
@@ -470,6 +776,18 @@ final class AppStore: ObservableObject {
 
     var isConnecting: Bool {
         activeConnectionTargetKey != nil
+    }
+
+    var isConnectionHealthy: Bool {
+        currentServer != nil && connectionRecoveryStore.isIdle
+    }
+
+    var shouldShowBootstrappingConnection: Bool {
+        currentServer == nil
+            && connectionRecoveryStore.isIdle
+            && !hasAttemptedBootstrapRestore
+            && isAutoRestoreEnabled()
+            && !recentServers.isEmpty
     }
 
     private func resolveReachableServer(from server: ServerConfig) async throws -> (ServerConfig, HealthResponse) {
@@ -813,4 +1131,11 @@ struct ConnectionStatus: Equatable {
     static func cancelled(message: String, detail: String?) -> ConnectionStatus {
         ConnectionStatus(phase: .cancelled, message: message, detail: detail)
     }
+}
+
+private enum ConnectionHealthProbeOrigin {
+    case manual
+    case bootstrap
+    case background
+    case foreground
 }

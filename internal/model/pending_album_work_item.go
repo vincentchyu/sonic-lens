@@ -34,6 +34,7 @@ type PendingAlbumWorkItem struct {
 	ID                    int64      `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	Artist                string     `gorm:"column:artist;type:varchar(255);not null;index:idx_pawi_identity_key" json:"artist"`
 	Album                 string     `gorm:"column:album;type:varchar(255);not null;index:idx_pawi_identity_key" json:"album"`
+	AlbumSubtitle         string     `gorm:"column:album_subtitle;type:varchar(255)" json:"album_subtitle"`
 	AlbumArtist           string     `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
 	NormalizedIdentityKey string     `gorm:"column:normalized_identity_key;type:varchar(255);not null;index:idx_pawi_identity_key" json:"normalized_identity_key"`
 	PlayRecordIDsJSON     string     `gorm:"column:play_record_ids_json;type:longtext" json:"play_record_ids_json"`
@@ -57,6 +58,7 @@ type PendingAlbumGroup struct {
 	IdentityKey        string    `json:"identity_key"`
 	Artist             string    `json:"artist"`
 	Album              string    `json:"album"`
+	AlbumSubtitle      string    `json:"album_subtitle"`
 	AlbumArtist        string    `json:"album_artist"`
 	PlayRecordCount    int       `json:"play_record_count"`
 	FavoriteEventCount int       `json:"favorite_event_count"`
@@ -90,14 +92,15 @@ type PendingAlbumWorkItemDetail struct {
 	ContextStale   bool                        `json:"context_stale"`
 }
 
-func normalizePendingAlbumIdentity(artist, albumArtist, album string) string {
+func normalizePendingAlbumIdentity(artist, albumArtist, album, albumSubtitle string) string {
 	owner := strings.TrimSpace(albumArtist)
 	if owner == "" {
 		owner = strings.TrimSpace(artist)
 	}
 	owner = strings.ToLower(common.ConversionSimplifiedFx(common.UnityFixAll(owner)))
 	album = strings.ToLower(common.ConversionSimplifiedFx(common.UnityFixAll(strings.TrimSpace(album))))
-	return owner + "||" + album
+	albumSubtitle = strings.ToLower(common.ConversionSimplifiedFx(common.UnityFixAll(strings.TrimSpace(albumSubtitle))))
+	return owner + "||" + album + "||" + albumSubtitle
 }
 
 func encodeInt64Slice(values []int64) string {
@@ -207,16 +210,20 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 	trackNameSets := make(map[string]map[string]struct{})
 	sourceSets := make(map[string]map[string]struct{})
 
-	getGroup := func(key, artist, albumArtist, album string) *PendingAlbumGroup {
+	getGroup := func(key, artist, albumArtist, album, albumSubtitle string) *PendingAlbumGroup {
 		group, ok := groupMap[key]
 		if ok {
+			if group.AlbumSubtitle == "" && albumSubtitle != "" {
+				group.AlbumSubtitle = albumSubtitle
+			}
 			return group
 		}
 		group = &PendingAlbumGroup{
-			IdentityKey: key,
-			Artist:      artist,
-			AlbumArtist: albumArtist,
-			Album:       album,
+			IdentityKey:   key,
+			Artist:        artist,
+			AlbumArtist:   albumArtist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
 		}
 		groupMap[key] = group
 		trackNameSets[key] = make(map[string]struct{})
@@ -225,8 +232,8 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 	}
 
 	for _, record := range playRecords {
-		key := normalizePendingAlbumIdentity(record.Artist, record.AlbumArtist, record.Album)
-		group := getGroup(key, record.Artist, record.AlbumArtist, record.Album)
+		key := normalizePendingAlbumIdentity(record.Artist, record.AlbumArtist, record.Album, record.AlbumSubtitle)
+		group := getGroup(key, record.Artist, record.AlbumArtist, record.Album, record.AlbumSubtitle)
 		group.PlayRecordCount++
 		group.PlayRecordIDs = append(group.PlayRecordIDs, record.ID)
 		if group.LatestPlayTime.IsZero() || record.PlayTime.After(group.LatestPlayTime) {
@@ -244,8 +251,8 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 	}
 
 	for _, event := range favoriteEvents {
-		key := normalizePendingAlbumIdentity(event.Artist, event.AlbumArtist, event.Album)
-		group := getGroup(key, event.Artist, event.AlbumArtist, event.Album)
+		key := normalizePendingAlbumIdentity(event.Artist, event.AlbumArtist, event.Album, event.AlbumSubtitle)
+		group := getGroup(key, event.Artist, event.AlbumArtist, event.Album, event.AlbumSubtitle)
 		group.FavoriteEventCount++
 		group.FavoriteEventIDs = append(group.FavoriteEventIDs, event.ID)
 		if event.Source != "" {
@@ -372,6 +379,7 @@ func CreateOrGetPendingAlbumWorkItem(ctx context.Context, identityKey string) (*
 	item := &PendingAlbumWorkItem{
 		Artist:                selected.Artist,
 		Album:                 selected.Album,
+		AlbumSubtitle:         selected.AlbumSubtitle,
 		AlbumArtist:           selected.AlbumArtist,
 		NormalizedIdentityKey: selected.IdentityKey,
 		PlayRecordIDsJSON:     encodeInt64Slice(selected.PlayRecordIDs),
@@ -575,6 +583,7 @@ func RefreshPendingAlbumWorkItemContext(ctx context.Context, workItemID int64) (
 	fields := map[string]interface{}{
 		"artist":                  liveGroup.Artist,
 		"album":                   liveGroup.Album,
+		"album_subtitle":          liveGroup.AlbumSubtitle,
 		"album_artist":            liveGroup.AlbumArtist,
 		"normalized_identity_key": liveGroup.IdentityKey,
 		"play_record_ids_json":    encodeInt64Slice(liveGroup.PlayRecordIDs),
@@ -591,21 +600,6 @@ func RefreshPendingAlbumWorkItemContext(ctx context.Context, workItemID int64) (
 func ResolveCanonicalAlbumForPendingContextTx(tx *gorm.DB, candidate *Album) (*Album, error) {
 	if tx == nil || candidate == nil {
 		return nil, errors.New("album candidate is nil")
-	}
-
-	var curated Album
-	err := tx.Where("artist = ? AND name = ? AND sync_status = ?", candidate.Artist, candidate.Name, 3).
-		Order("CASE WHEN release_date = '' OR release_date IS NULL THEN 1 ELSE 0 END ASC, id ASC").
-		First(&curated).Error
-	if err == nil {
-		mergeAlbumFields(&curated, candidate)
-		if saveErr := tx.Save(&curated).Error; saveErr != nil {
-			return nil, saveErr
-		}
-		return &curated, nil
-	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
 	}
 
 	working := *candidate

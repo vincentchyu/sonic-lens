@@ -8,6 +8,7 @@ private enum PadNowPlayingTab: String, CaseIterable {
 
 struct PadNowPlayingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(FavoriteActionStore.self) private var favoriteActionStore
     @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
@@ -17,6 +18,7 @@ struct PadNowPlayingView: View {
     @State private var lyricsFollowMode = true
     @State private var selectedTab: PadNowPlayingTab = .lyrics
     @State private var animate = false
+    @State private var favoriteNoticeDismissTask: Task<Void, Never>?
 
     let nowPlaying: NowPlaying
     let onClose: () -> Void
@@ -37,6 +39,8 @@ struct PadNowPlayingView: View {
                 VStack(spacing: landscape ? 28 : 0) {
                     PadNowPlayingTopBar(
                         favoriteStatus: favoriteStatus,
+                        favoriteActionLoading: favoriteActionLoading,
+                        favoriteActionNotice: favoriteActionNotice,
                         lyricsFollowMode: $lyricsFollowMode,
                         selectedTab: $selectedTab,
                         statusBannerText: viewModel.playbackState.bannerText,
@@ -50,7 +54,9 @@ struct PadNowPlayingView: View {
                         HStack(alignment: .center, spacing: 36) {
                             PadNowPlayingArtworkColumn(
                                 nowPlaying: current,
-                                insightTeaser: viewModel.insights.primaryInsight?.teaserText
+                                insightTeaser: viewModel.insights.primaryInsight?.teaserText,
+                                favoriteStatusTagText: favoriteStatusTagText,
+                                favoriteStatusTagTone: favoriteStatusTagTone
                             )
                             .frame(maxWidth: 420)
                             //.offset(x: 80)   // 向右移动 80
@@ -72,7 +78,9 @@ struct PadNowPlayingView: View {
                             VStack(spacing: 24) {
                                 PadNowPlayingArtworkColumn(
                                     nowPlaying: current,
-                                    insightTeaser: viewModel.insights.primaryInsight?.teaserText
+                                    insightTeaser: viewModel.insights.primaryInsight?.teaserText,
+                                    favoriteStatusTagText: favoriteStatusTagText,
+                                    favoriteStatusTagTone: favoriteStatusTagTone
                                 )
                                 PadNowPlayingContentColumn(
                                     viewModel: viewModel,
@@ -114,14 +122,20 @@ struct PadNowPlayingView: View {
         .onChange(of: playbackStore.nowPlaying?.artwork) { _, artwork in
             Task { await updatePalette(for: artwork) }
         }
-        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
+        .onChange(of: playbackSyncToken) { _, token in
+            viewModel.syncProgress(
+                position: token.position,
+                positionMs: token.positionMs,
+                receivedAt: token.receivedAt ?? nowPlaying.receivedAt
+            )
         }
-        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: favoriteActionStore.state) { _, state in
+            handleFavoriteActionStateChange(state)
         }
         .onDisappear {
             viewModel.stopProgress()
+            favoriteNoticeDismissTask?.cancel()
+            favoriteNoticeDismissTask = nil
         }
     }
 
@@ -134,8 +148,43 @@ struct PadNowPlayingView: View {
         return "\(active.artist)::\(active.album ?? "")::\(active.track)"
     }
 
+    private var playbackSyncToken: PlaybackProgressSyncToken {
+        PlaybackProgressSyncToken(nowPlaying: playbackStore.nowPlaying)
+    }
+
     private var favoriteStatus: NowPlayingFavoriteStatus {
         .init(projection: currentNowPlaying.favoriteProjection)
+    }
+
+    private var favoriteActionLoading: Bool {
+        favoriteActionStore.state.isLoading(matching: currentNowPlaying)
+    }
+
+    private var favoriteActionNotice: FavoriteActionNotice? {
+        favoriteActionStore.state.notice(matching: currentNowPlaying)
+    }
+
+    private var favoriteStatusTagText: String? {
+        if favoriteActionLoading {
+            return "收藏处理中"
+        }
+        return favoriteStatus.badgeTitle
+    }
+
+    private var favoriteStatusTagTone: NowPlayingArtworkStatusTagTone? {
+        if favoriteActionLoading {
+            return .loading
+        }
+        switch favoriteStatus {
+        case .full:
+            return .success
+        case .partial:
+            return .warning
+        case .pending, .unfavoritePending:
+            return .loading
+        case .none:
+            return nil
+        }
     }
 
     private var progress: Double {
@@ -163,6 +212,13 @@ struct PadNowPlayingView: View {
         guard let server = store.currentServer else { return }
         let active = currentNowPlaying
 
+        viewModel.startProgress(
+            position: active.position,
+            positionMs: active.positionMs,
+            receivedAt: active.receivedAt
+        )
+        await Task.yield()
+
         await viewModel.load(
             using: server,
             artist: active.artist,
@@ -171,7 +227,6 @@ struct PadNowPlayingView: View {
             trackNumber: active.trackNumber,
             discNumber: active.discNumber
         )
-        viewModel.startProgress(position: active.position, positionMs: active.positionMs)
 
         guard forcePaletteRefresh || lastArtworkURL != active.artwork else { return }
         lastArtworkURL = active.artwork
@@ -192,11 +247,27 @@ struct PadNowPlayingView: View {
             }
         }
     }
+
+    private func handleFavoriteActionStateChange(_ state: FavoriteActionState) {
+        favoriteNoticeDismissTask?.cancel()
+        favoriteNoticeDismissTask = nil
+
+        guard state.notice(matching: currentNowPlaying) != nil else { return }
+        favoriteNoticeDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                favoriteActionStore.clear()
+            }
+        }
+    }
 }
 #endif
 
 private struct PadNowPlayingTopBar: View {
     let favoriteStatus: NowPlayingFavoriteStatus
+    let favoriteActionLoading: Bool
+    let favoriteActionNotice: FavoriteActionNotice?
     @Binding var lyricsFollowMode: Bool
     @Binding var selectedTab: PadNowPlayingTab
     let statusBannerText: String?
@@ -205,59 +276,73 @@ private struct PadNowPlayingTopBar: View {
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
-        HStack(spacing: 14) {
-            HStack(spacing: 10) {
-                Text("正在播放")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    Text("正在播放")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
 
-                if let statusBannerText {
-                    PlaybackStatusBanner(text: statusBannerText)
-                }
-            }
-
-            Spacer()
-
-            Picker("", selection: $selectedTab) {
-                ForEach(PadNowPlayingTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
-
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.16)) {
-                    lyricsFollowMode.toggle()
-                }
-            }) {
-                Label(lyricsFollowMode ? "跟随播放" : "自由浏览", systemImage: lyricsFollowMode ? "dot.radiowaves.left.and.right" : "hand.draw")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.12), in: Capsule())
-            }
-            .buttonStyle(.plain)
-
-            NowPlayingFavoriteButton(status: favoriteStatus, action: onFavorite)
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background {
-                        if performanceModeEnabled {
-                            Circle()
-                                .fill(SonicTheme.card.opacity(0.92))
-                        } else {
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                        }
+                    if let statusBannerText {
+                        PlaybackStatusBanner(text: statusBannerText)
                     }
+                }
+
+                Spacer()
+
+                Picker("", selection: $selectedTab) {
+                    ForEach(PadNowPlayingTab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        lyricsFollowMode.toggle()
+                    }
+                }) {
+                    Label(lyricsFollowMode ? "跟随播放" : "自由浏览", systemImage: lyricsFollowMode ? "dot.radiowaves.left.and.right" : "hand.draw")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                NowPlayingFavoriteButton(
+                    status: favoriteStatus,
+                    isLoading: favoriteActionLoading,
+                    action: onFavorite
+                )
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background {
+                            if performanceModeEnabled {
+                                Circle()
+                                    .fill(SonicTheme.card.opacity(0.92))
+                            } else {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            if let favoriteActionNotice {
+                FavoriteActionNoticeBanner(notice: favoriteActionNotice)
+                    .padding(.leading, 2)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if favoriteActionLoading {
+                PlaybackStatusBanner(text: "收藏处理中")
+            }
         }
     }
 }
@@ -265,10 +350,18 @@ private struct PadNowPlayingTopBar: View {
 private struct PadNowPlayingArtworkColumn: View {
     let nowPlaying: NowPlaying
     let insightTeaser: String?
+    let favoriteStatusTagText: String?
+    let favoriteStatusTagTone: NowPlayingArtworkStatusTagTone?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NowPlayingArtwork(artworkURL: nowPlaying.artwork, fallbackTitle: nowPlaying.album ?? nowPlaying.track)
+            NowPlayingArtwork(
+                artworkURL: nowPlaying.artwork,
+                fallbackTitle: nowPlaying.displayAlbumTitle ?? nowPlaying.track,
+                badgeText: nowPlaying.sampleRateDisplayText,
+                statusTagText: favoriteStatusTagText,
+                statusTagTone: favoriteStatusTagTone
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -277,16 +370,12 @@ private struct PadNowPlayingArtworkColumn: View {
                     .foregroundStyle(.white)
                     .lineLimit(3)
 
-                Text([nowPlaying.artist, nowPlaying.album].compactMap { $0 }.joined(separator: " · "))
+                Text([nowPlaying.artist, nowPlaying.displayAlbumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.white.opacity(0.78))
                     .lineLimit(2)
 
                 DiscTrackBadgeRow(discNumber: nowPlaying.discNumber, trackNumber: nowPlaying.trackNumber)
-
-                if let badgeTitle = NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection).badgeTitle {
-                    NowPlayingFavoriteStatusBadge(status: NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection), title: badgeTitle)
-                }
             }
             .padding(.top, 0)
 
@@ -316,7 +405,7 @@ private struct PadNowPlayingContentColumn: View {
                 NowPlayingLyricsPanel(
                     lines: viewModel.lyricLines,
                     currentLineID: viewModel.currentLineID,
-                    isSimplified: performanceModeEnabled,
+                    highlightedIndex: viewModel.currentLineIndex,
                     followMode: $lyricsFollowMode
                 )
                 .frame(maxWidth: .infinity, minHeight: 560)

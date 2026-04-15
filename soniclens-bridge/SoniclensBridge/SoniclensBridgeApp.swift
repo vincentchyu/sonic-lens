@@ -11,6 +11,8 @@ struct SoniclensBridgeApp: App {
                 .environmentObject(store)
                 .environment(store.playbackStore)
                 .environment(store.favoriteStore)
+                .environment(store.favoriteActionStore)
+                .environment(store.connectionRecoveryStore)
                 .environmentObject(store.insightCoordinator)
         }
     }

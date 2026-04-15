@@ -10,6 +10,7 @@ import (
 
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
+	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -52,6 +53,10 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	originalGetApple := modelGetAppleMusicFavoriteByIdentity
 	originalGetLast := modelGetLastFmFavoriteByIdentity
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
+	originalGoSafe := telemetryGoOnlySafe
+	originalBroadcastRecentPlaysUpdated := websocketBroadcastRecentPlaysUpdated
+	originalGetTrackPlayRecordByID := modelGetTrackPlayRecordByID
+	originalUpdateAlbumTitleMetadataByID := modelUpdateAlbumTitleMetadataByID
 	t.Cleanup(func() {
 		lastfmPushTrackScrobble = originalPush
 		modelInsertTrackPlayRecord = originalInsert
@@ -63,6 +68,10 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 		modelGetAppleMusicFavoriteByIdentity = originalGetApple
 		modelGetLastFmFavoriteByIdentity = originalGetLast
 		modelGetPendingTrackFavoriteSnapshot = originalGetPending
+		telemetryGoOnlySafe = originalGoSafe
+		websocketBroadcastRecentPlaysUpdated = originalBroadcastRecentPlaysUpdated
+		modelGetTrackPlayRecordByID = originalGetTrackPlayRecordByID
+		modelUpdateAlbumTitleMetadataByID = originalUpdateAlbumTitleMetadataByID
 	})
 
 	var capturedReq lastfm.PushTrackScrobbleReq
@@ -84,6 +93,21 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 		processCalled = true
 		require.Equal(t, int64(42), recordID)
 		require.Equal(t, int8(8), metadata.TrackNumber)
+		return nil
+	}
+	recentPlaysUpdated := false
+	telemetryGoOnlySafe = func(ctx context.Context, fn func(context.Context)) {
+		fn(ctx)
+	}
+	websocketBroadcastRecentPlaysUpdated = func(ctx context.Context) {
+		recentPlaysUpdated = true
+	}
+	modelGetTrackPlayRecordByID = func(ctx context.Context, id int64) (*model.TrackPlayRecord, error) {
+		require.Equal(t, int64(42), id)
+		return &model.TrackPlayRecord{ID: id}, nil
+	}
+	modelUpdateAlbumTitleMetadataByID = func(ctx context.Context, albumID int64, metadata *common.AlbumTitleMetadata) error {
+		require.Fail(t, "should not update album title metadata when album_id is missing")
 		return nil
 	}
 
@@ -118,6 +142,89 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	require.Equal(t, "0123456789abcdef0123456789abcdef", insertedRecord.TraceID)
 	require.Equal(t, "89abcdef01234567", insertedRecord.RootSpanID)
 	require.True(t, insertedRecord.TraceSampled)
+	require.True(t, recentPlaysUpdated)
+}
+
+func TestHandleTrackPlaybackThresholdUpdatesAlbumTitleMetadata(t *testing.T) {
+	originalPush := lastfmPushTrackScrobble
+	originalInsert := modelInsertTrackPlayRecord
+	originalProcess := modelProcessTrackPlayRecord
+	originalGetTrackPlayRecordByID := modelGetTrackPlayRecordByID
+	originalUpdateAlbumTitleMetadataByID := modelUpdateAlbumTitleMetadataByID
+	originalEnsureAlbumCover := artworkEnsureAlbumCover
+	originalGoSafe := telemetryGoOnlySafe
+	originalBroadcastRecentPlaysUpdated := websocketBroadcastRecentPlaysUpdated
+	t.Cleanup(func() {
+		lastfmPushTrackScrobble = originalPush
+		modelInsertTrackPlayRecord = originalInsert
+		modelProcessTrackPlayRecord = originalProcess
+		modelGetTrackPlayRecordByID = originalGetTrackPlayRecordByID
+		modelUpdateAlbumTitleMetadataByID = originalUpdateAlbumTitleMetadataByID
+		artworkEnsureAlbumCover = originalEnsureAlbumCover
+		telemetryGoOnlySafe = originalGoSafe
+		websocketBroadcastRecentPlaysUpdated = originalBroadcastRecentPlaysUpdated
+	})
+
+	lastfmPushTrackScrobble = func(ctx context.Context, req *lastfm.PushTrackScrobbleReq) (string, error) {
+		return "ok", nil
+	}
+	modelInsertTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord) error {
+		record.ID = 99
+		return nil
+	}
+	modelProcessTrackPlayRecord = func(ctx context.Context, recordID int64, metadata model.TrackMetadata) error {
+		require.Equal(t, int64(99), recordID)
+		return nil
+	}
+	modelGetTrackPlayRecordByID = func(ctx context.Context, id int64) (*model.TrackPlayRecord, error) {
+		require.Equal(t, int64(99), id)
+		return &model.TrackPlayRecord{ID: id, AlbumID: 123}, nil
+	}
+	artworkEnsureAlbumCover = func(ctx context.Context, input artworklogic.EnsureAlbumCoverInput) error {
+		require.Fail(t, "should not update album cover when cover art is missing")
+		return nil
+	}
+	telemetryGoOnlySafe = func(ctx context.Context, fn func(context.Context)) {
+		fn(ctx)
+	}
+	websocketBroadcastRecentPlaysUpdated = func(ctx context.Context) {}
+
+	metadataCalled := false
+	modelUpdateAlbumTitleMetadataByID = func(ctx context.Context, albumID int64, metadata *common.AlbumTitleMetadata) error {
+		metadataCalled = true
+		require.Equal(t, int64(123), albumID)
+		require.NotNil(t, metadata)
+		require.Equal(t, "Album", metadata.SourceDisplayTitle)
+		require.Equal(t, "Album", metadata.OfficialTitle)
+		require.Len(t, metadata.TitleVersions, 1)
+		require.Equal(t, "Deluxe Edition", metadata.TitleVersions[0].Text)
+		return nil
+	}
+
+	service := &TrackServiceImpl{}
+	service.HandleTrackPlaybackThreshold(context.Background(), PlaybackEventInput{
+		Artist:            "Artist",
+		AlbumArtist:       "Album Artist",
+		Album:             "Album",
+		Track:             "Track",
+		Duration:          245,
+		PlayerSource:      common.PlayerAppleMusic,
+		PlaybackStartedAt: time.Unix(1700000000, 0),
+		AlbumTitleMetadata: &common.AlbumTitleMetadata{
+			SourceDisplayTitle: "Album",
+			OfficialTitle:      "Album",
+			TitleVersions: []common.AlbumTitleVersion{
+				{
+					Text: "Deluxe Edition",
+					Type: common.AlbumTitleVersionTypeEdition,
+				},
+			},
+			NormalizedDisplayTitle: "Album (Deluxe Edition)",
+		},
+		Metadata: model.TrackMetadata{},
+	})
+
+	require.True(t, metadataCalled)
 }
 
 func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {

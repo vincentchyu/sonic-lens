@@ -15,6 +15,7 @@
 - Tracks: GET /api/tracks?limit=50&offset=0
 - Insights: GET /api/insights/all?limit=50&offset=0&analysis_target_type=track|album
 - Insight Detail: GET /api/insights/:id?analysis_target_type=track|album
+- Insight History: GET /api/insights/:id/history?analysis_target_type=track|album&limit=20
 - Insight Logs: GET /api/insights/:id/logs?analysis_target_type=track|album
 - Insight Delete: DELETE /api/insights/:id?analysis_target_type=track|album
 - Unscrobbled: GET /api/unscrobbled-records?limit=50&offset=0

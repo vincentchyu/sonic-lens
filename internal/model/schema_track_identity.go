@@ -16,9 +16,14 @@ func ensureTrackIdentitySchema(ctx context.Context) error {
 			return err
 		}
 	}
-	if !migrator.HasIndex(&Track{}, "uidx_t_aatdntn") {
+	if migrator.HasIndex(&Track{}, "uidx_t_aatdntn") {
+		if err := db.Exec("ALTER TABLE track DROP INDEX uidx_t_aatdntn").Error; err != nil {
+			return err
+		}
+	}
+	if !migrator.HasIndex(&Track{}, "uidx_t_aaastdntn") {
 		if err := db.Exec(
-			"ALTER TABLE track ADD UNIQUE KEY uidx_t_aatdntn (artist, album, track, disc_number, track_number)",
+			"ALTER TABLE track ADD UNIQUE KEY uidx_t_aaastdntn (artist, album, album_subtitle,track, disc_number, track_number)",
 		).Error; err != nil {
 			return err
 		}

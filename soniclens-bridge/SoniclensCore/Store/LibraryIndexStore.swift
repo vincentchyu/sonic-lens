@@ -4,7 +4,7 @@ import SQLite3
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor LibraryIndexStore {
-    static let syncSchemaVersion = 7
+    static let syncSchemaVersion = 8
     private static let databaseFileName = "soniclens-library-index.sqlite"
     private static let appSupportDirectoryName = "SonicLens"
     private static let dataDirectoryName = "data"
@@ -54,6 +54,7 @@ actor LibraryIndexStore {
             CREATE TABLE IF NOT EXISTS album_index (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
+                name_subtitle TEXT,
                 artist TEXT NOT NULL,
                 release_date TEXT,
                 cover_art_url TEXT,
@@ -343,11 +344,12 @@ actor LibraryIndexStore {
     private func upsertAlbums(_ albums: [Album]) throws {
         let sql = """
         INSERT INTO album_index(
-            id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
+            id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
+            name_subtitle = excluded.name_subtitle,
             artist = excluded.artist,
             release_date = excluded.release_date,
             cover_art_url = excluded.cover_art_url,
@@ -368,15 +370,16 @@ actor LibraryIndexStore {
             sqlite3_clear_bindings(statement)
             sqlite3_bind_int64(statement, 1, album.id)
             bindText(album.name, to: 2, in: statement)
-            bindText(album.artist, to: 3, in: statement)
-            bindOptionalText(album.releaseDate, to: 4, in: statement)
-            bindOptionalText(album.coverArtURL, to: 5, in: statement)
-            bindOptionalText(album.coverArtMime, to: 6, in: statement)
-            bindOptionalText(album.coverArtObjectKey, to: 7, in: statement)
-            sqlite3_bind_int(statement, 8, album.hasInsight ? 1 : 0)
-            sqlite3_bind_int64(statement, 9, Int64(album.playCount ?? 0))
-            bindOptionalText(album.createdAt, to: 10, in: statement)
-            bindOptionalText(album.updatedAt, to: 11, in: statement)
+            bindOptionalText(album.nameSubtitle, to: 3, in: statement)
+            bindText(album.artist, to: 4, in: statement)
+            bindOptionalText(album.releaseDate, to: 5, in: statement)
+            bindOptionalText(album.coverArtURL, to: 6, in: statement)
+            bindOptionalText(album.coverArtMime, to: 7, in: statement)
+            bindOptionalText(album.coverArtObjectKey, to: 8, in: statement)
+            sqlite3_bind_int(statement, 9, album.hasInsight ? 1 : 0)
+            sqlite3_bind_int64(statement, 10, Int64(album.playCount ?? 0))
+            bindOptionalText(album.createdAt, to: 11, in: statement)
+            bindOptionalText(album.updatedAt, to: 12, in: statement)
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.executeStatement(sql)
             }
@@ -584,7 +587,7 @@ actor LibraryIndexStore {
 
     private func queryAlbumsUsingFTS(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let sql = """
-        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
+        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
         FROM album_index
         WHERE id IN (
             SELECT rowid FROM album_index_fts WHERE album_index_fts MATCH ?
@@ -598,7 +601,7 @@ actor LibraryIndexStore {
     private func queryAlbumsUsingLIKE(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let hasKeyword = !keyword.isEmpty
         let sql = """
-        SELECT id, name, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
+        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
         FROM album_index
         \(hasKeyword ? "WHERE name LIKE ? OR artist LIKE ?" : "")
         ORDER BY \(albumOrder(sort))
@@ -681,17 +684,18 @@ actor LibraryIndexStore {
                 Album(
                     id: sqlite3_column_int64(statement, 0),
                     name: string(at: 1, in: statement),
-                    artist: string(at: 2, in: statement),
-                    releaseDate: optionalString(at: 3, in: statement),
-                    coverArtURL: optionalString(at: 4, in: statement),
-                    coverArtMime: optionalString(at: 5, in: statement),
-                    coverArtObjectKey: optionalString(at: 6, in: statement),
-                    hasInsight: sqlite3_column_int(statement, 7) != 0,
+                    nameSubtitle: optionalString(at: 2, in: statement),
+                    artist: string(at: 3, in: statement),
+                    releaseDate: optionalString(at: 4, in: statement),
+                    coverArtURL: optionalString(at: 5, in: statement),
+                    coverArtMime: optionalString(at: 6, in: statement),
+                    coverArtObjectKey: optionalString(at: 7, in: statement),
+                    hasInsight: sqlite3_column_int(statement, 8) != 0,
                     genre: nil,
                     totalDiscs: nil,
-                    playCount: Int(sqlite3_column_int(statement, 8)),
-                    createdAt: optionalString(at: 9, in: statement),
-                    updatedAt: optionalString(at: 10, in: statement)
+                    playCount: Int(sqlite3_column_int(statement, 9)),
+                    createdAt: optionalString(at: 10, in: statement),
+                    updatedAt: optionalString(at: 11, in: statement)
                 )
             )
         }
@@ -798,6 +802,7 @@ actor LibraryIndexStore {
     private func ensureAlbumIndexColumns() throws {
         let existingColumns = try existingColumns(in: "album_index")
         let requiredColumns: [(name: String, definition: String)] = [
+            ("name_subtitle", "TEXT"),
             ("release_date", "TEXT"),
             ("cover_art_url", "TEXT"),
             ("cover_art_mime", "TEXT"),

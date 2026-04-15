@@ -153,7 +153,7 @@ func TestTrackTitleWithFeat(t *testing.T) {
 
 	// 获取专辑信息
 	release, err := client.LookupRelease(
-		ctx, "be9260e4-f4df-48c1-b004-3a636fcde6bd", musicbrainzws2.IncludesFilter{
+		ctx, "035aae28-0ce9-4198-820f-c0ceac24eae3", musicbrainzws2.IncludesFilter{
 			Includes: []string{
 				"collections",
 				"labels",

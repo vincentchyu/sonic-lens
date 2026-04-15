@@ -54,7 +54,9 @@ struct AlbumDetailView: View {
                     isSearchingCandidates: viewModel.isSearchingCandidates,
                     onSearch: searchCandidates,
                     onConfirm: confirmCandidate,
-                    onGenerateInsight: startAlbumInsightGeneration
+                    onGenerateInsight: startAlbumInsightGeneration,
+                    selectedInsightIndex: $viewModel.selectedInsightIndex,
+                    insightViewMode: $viewModel.insightViewMode
                 )
             }
 
@@ -161,8 +163,13 @@ struct AlbumDetailView: View {
                 Button("导出：专辑详情") {
                     if let detail = viewModel.detail {
                         exportSnapshotPNG(
-                            AlbumSnapshotView(detail: detail, candidates: viewModel.candidates).padding(32),
-                            suggestedFilename: "\(detail.artist)-\(detail.name)-专辑"
+                            AlbumSnapshotView(
+                                detail: detail,
+                                resolvedArtworkURL: viewModel.resolvedArtworkURL,
+                                candidates: viewModel.candidates
+                            )
+                            .padding(32),
+                            suggestedFilename: "\(detail.artist)-\(detail.displayName)-专辑"
                         )
                     }
                 }
@@ -172,11 +179,11 @@ struct AlbumDetailView: View {
                             AlbumInsightSnapshotView(
                                 detail: detail,
                                 trackPresentation: viewModel.trackPresentation,
-                                insight: viewModel.albumInsights.first,
+                                insight: currentAlbumInsight,
                                 resolvedArtworkURL: viewModel.resolvedArtworkURL
                             )
                             .padding(32),
-                            suggestedFilename: "\(detail.artist)-\(detail.name)-专辑音眸"
+                            suggestedFilename: "\(detail.artist)-\(detail.displayName)-专辑音眸"
                         )
                     }
                 }
@@ -254,10 +261,17 @@ struct AlbumDetailView: View {
         let payload = SharePayloadBuilder.buildAlbum(
             scene: scene,
             albumDetail: detail,
-            albumInsight: viewModel.albumInsights.first,
+            albumInsight: currentAlbumInsight,
             resolvedArtworkURL: viewModel.resolvedArtworkURL
         )
         sharePreviewRequest = SharePreviewRequest(payload: payload)
+    }
+
+    private var currentAlbumInsight: AlbumInsight? {
+        guard viewModel.albumInsights.indices.contains(viewModel.selectedInsightIndex) else {
+            return viewModel.albumInsights.primaryInsight
+        }
+        return viewModel.albumInsights[viewModel.selectedInsightIndex]
     }
 }
 
@@ -277,6 +291,8 @@ private struct AlbumDetailPlatformContainer: View {
     let onSearch: () -> Void
     let onConfirm: (ReleaseCandidate) -> Void
     let onGenerateInsight: () -> Void
+    @Binding var selectedInsightIndex: Int
+    @Binding var insightViewMode: InsightViewMode
 
     var body: some View {
         #if os(iOS)
@@ -296,7 +312,9 @@ private struct AlbumDetailPlatformContainer: View {
                 isSearchingCandidates: isSearchingCandidates,
                 onSearch: onSearch,
                 onConfirm: onConfirm,
-                onGenerateInsight: onGenerateInsight
+                onGenerateInsight: onGenerateInsight,
+                selectedInsightIndex: $selectedInsightIndex,
+                insightViewMode: $insightViewMode
             )
         } else {
             RegularAlbumDetailView(
@@ -314,7 +332,9 @@ private struct AlbumDetailPlatformContainer: View {
                 isSearchingCandidates: isSearchingCandidates,
                 onSearch: onSearch,
                 onConfirm: onConfirm,
-                onGenerateInsight: onGenerateInsight
+                onGenerateInsight: onGenerateInsight,
+                selectedInsightIndex: $selectedInsightIndex,
+                insightViewMode: $insightViewMode
             )
         }
         #else
@@ -333,7 +353,9 @@ private struct AlbumDetailPlatformContainer: View {
             isSearchingCandidates: isSearchingCandidates,
             onSearch: onSearch,
             onConfirm: onConfirm,
-            onGenerateInsight: onGenerateInsight
+            onGenerateInsight: onGenerateInsight,
+            selectedInsightIndex: $selectedInsightIndex,
+            insightViewMode: $insightViewMode
         )
         #endif
     }
@@ -355,27 +377,41 @@ private struct RegularAlbumDetailView: View {
     let onSearch: () -> Void
     let onConfirm: (ReleaseCandidate) -> Void
     let onGenerateInsight: () -> Void
+    @Binding var selectedInsightIndex: Int
+    @Binding var insightViewMode: InsightViewMode
 
     var body: some View {
         ScrollView {
-            AlbumDetailTabContainer(
-                albumID: albumID,
-                detail: detail,
-                resolvedArtworkURL: resolvedArtworkURL,
-                candidates: candidates,
-                favoriteTrackIDs: favoriteTrackIDs,
-                trackPresentation: trackPresentation,
-                albumInsights: albumInsights,
-                albumInsightGenerationState: albumInsightGenerationState,
-                generationStatusMessage: generationStatusMessage,
-                selectedTab: $selectedTab,
-                isCurationExpanded: $isCurationExpanded,
-                isSearchingCandidates: isSearchingCandidates,
-                heroLayout: .regular,
-                onSearch: onSearch,
-                onConfirm: onConfirm,
-                onGenerateInsight: onGenerateInsight
-            )
+            VStack(alignment: .leading, spacing: 20) {
+                AlbumHeroSection(
+                    detail: detail,
+                    resolvedArtworkURL: resolvedArtworkURL,
+                    layout: .regular,
+                    favoriteTrackCount: favoriteTrackIDs.count,
+                    trackCountOverride: trackPresentation.trackCount,
+                    totalDurationOverride: trackPresentation.totalDuration
+                )
+
+                AlbumDetailTabContainer(
+                    albumID: albumID,
+                    detail: detail,
+                    candidates: candidates,
+                    favoriteTrackIDs: favoriteTrackIDs,
+                    trackPresentation: trackPresentation,
+                    albumInsights: albumInsights,
+                    albumInsightGenerationState: albumInsightGenerationState,
+                    generationStatusMessage: generationStatusMessage,
+                    selectedTab: $selectedTab,
+                    isCurationExpanded: $isCurationExpanded,
+                    isSearchingCandidates: isSearchingCandidates,
+                    heroLayout: .regular,
+                    onSearch: onSearch,
+                    onConfirm: onConfirm,
+                    onGenerateInsight: onGenerateInsight,
+                    selectedInsightIndex: $selectedInsightIndex,
+                    insightViewMode: $insightViewMode
+                )
+            }
             .padding(32)
         }
     }
@@ -397,27 +433,41 @@ private struct PhoneAlbumDetailView: View {
     let onSearch: () -> Void
     let onConfirm: (ReleaseCandidate) -> Void
     let onGenerateInsight: () -> Void
+    @Binding var selectedInsightIndex: Int
+    @Binding var insightViewMode: InsightViewMode
 
     var body: some View {
         ScrollView {
-            AlbumDetailTabContainer(
-                albumID: albumID,
-                detail: detail,
-                resolvedArtworkURL: resolvedArtworkURL,
-                candidates: candidates,
-                favoriteTrackIDs: favoriteTrackIDs,
-                trackPresentation: trackPresentation,
-                albumInsights: albumInsights,
-                albumInsightGenerationState: albumInsightGenerationState,
-                generationStatusMessage: generationStatusMessage,
-                selectedTab: $selectedTab,
-                isCurationExpanded: $isCurationExpanded,
-                isSearchingCandidates: isSearchingCandidates,
-                heroLayout: .phone,
-                onSearch: onSearch,
-                onConfirm: onConfirm,
-                onGenerateInsight: onGenerateInsight
-            )
+            VStack(alignment: .leading, spacing: 16) {
+                AlbumHeroSection(
+                    detail: detail,
+                    resolvedArtworkURL: resolvedArtworkURL,
+                    layout: .phone,
+                    favoriteTrackCount: favoriteTrackIDs.count,
+                    trackCountOverride: trackPresentation.trackCount,
+                    totalDurationOverride: trackPresentation.totalDuration
+                )
+
+                AlbumDetailTabContainer(
+                    albumID: albumID,
+                    detail: detail,
+                    candidates: candidates,
+                    favoriteTrackIDs: favoriteTrackIDs,
+                    trackPresentation: trackPresentation,
+                    albumInsights: albumInsights,
+                    albumInsightGenerationState: albumInsightGenerationState,
+                    generationStatusMessage: generationStatusMessage,
+                    selectedTab: $selectedTab,
+                    isCurationExpanded: $isCurationExpanded,
+                    isSearchingCandidates: isSearchingCandidates,
+                    heroLayout: .phone,
+                    onSearch: onSearch,
+                    onConfirm: onConfirm,
+                    onGenerateInsight: onGenerateInsight,
+                    selectedInsightIndex: $selectedInsightIndex,
+                    insightViewMode: $insightViewMode
+                )
+            }
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
         }
@@ -426,23 +476,34 @@ private struct PhoneAlbumDetailView: View {
 
 struct AlbumSnapshotView: View {
     let detail: AlbumDetail
+    let resolvedArtworkURL: String?
     let candidates: [ReleaseCandidate]
 
     var body: some View {
         let favoriteTrackIDs = Set(detail.tracks.filter(\.isFavorited).map(\.id))
-        AlbumDetailContentView(
-            albumID: detail.id,
-            detail: detail,
-            resolvedArtworkURL: ArtworkURLResolver.resolveArtworkPath(detail.coverArtURL, artworkBaseURL: nil),
-            candidates: candidates,
-            favoriteTrackIDs: favoriteTrackIDs,
-            trackPresentation: AlbumTrackPresentation.build(from: detail.tracks),
-            isCurationExpanded: .constant(true),
-            isSearchingCandidates: false,
-            heroLayout: .regular,
-            onSearch: {},
-            onConfirm: { _ in }
-        )
+        VStack(alignment: .leading, spacing: 20) {
+            AlbumHeroSection(
+                detail: detail,
+                resolvedArtworkURL: resolvedArtworkURL ?? ArtworkURLResolver.resolveArtworkPath(detail.coverArtURL, artworkBaseURL: nil),
+                layout: .regular,
+                favoriteTrackCount: favoriteTrackIDs.count,
+                trackCountOverride: detail.tracks.count,
+                totalDurationOverride: detail.tracks.reduce(0) { $0 + ($1.duration ?? 0) }
+            )
+
+            AlbumDetailContentView(
+                albumID: detail.id,
+                detail: detail,
+                candidates: candidates,
+                favoriteTrackIDs: favoriteTrackIDs,
+                trackPresentation: AlbumTrackPresentation.build(from: detail.tracks),
+                isCurationExpanded: .constant(true),
+                isSearchingCandidates: false,
+                heroLayout: .regular,
+                onSearch: {},
+                onConfirm: { _ in }
+            )
+        }
     }
 }
 
@@ -453,23 +514,30 @@ struct AlbumInsightSnapshotView: View {
     let resolvedArtworkURL: String?
 
     var body: some View {
-        AlbumInsightContentView(
-            detail: detail,
-            resolvedArtworkURL: resolvedArtworkURL,
-            trackPresentation: trackPresentation,
-            insight: insight,
-            generationState: .idle,
-            generationStatusMessage: nil,
-            isCompact: false,
-            onGenerateInsight: nil
-        )
+        VStack(alignment: .leading, spacing: 20) {
+            AlbumHeroSection(
+                detail: detail,
+                resolvedArtworkURL: resolvedArtworkURL,
+                layout: .regular,
+                favoriteTrackCount: 0,
+                trackCountOverride: trackPresentation.trackCount,
+                totalDurationOverride: trackPresentation.totalDuration
+            )
+
+            AlbumInsightContentView(
+                insight: insight,
+                generationState: .idle,
+                generationStatusMessage: nil,
+                isCompact: false,
+                onGenerateInsight: nil
+            )
+        }
     }
 }
 
 private struct AlbumDetailTabContainer: View {
     let albumID: Int64
     let detail: AlbumDetail
-    let resolvedArtworkURL: String?
     let candidates: [ReleaseCandidate]
     let favoriteTrackIDs: Set<Int64>
     let trackPresentation: AlbumTrackPresentation
@@ -483,6 +551,8 @@ private struct AlbumDetailTabContainer: View {
     let onSearch: () -> Void
     let onConfirm: (ReleaseCandidate) -> Void
     let onGenerateInsight: () -> Void
+    @Binding var selectedInsightIndex: Int
+    @Binding var insightViewMode: InsightViewMode
 
     var body: some View {
         VStack(alignment: .leading, spacing: heroLayout.sectionSpacing) {
@@ -498,7 +568,6 @@ private struct AlbumDetailTabContainer: View {
                 AlbumDetailContentView(
                     albumID: albumID,
                     detail: detail,
-                    resolvedArtworkURL: resolvedArtworkURL,
                     candidates: candidates,
                     favoriteTrackIDs: favoriteTrackIDs,
                     trackPresentation: trackPresentation,
@@ -509,16 +578,36 @@ private struct AlbumDetailTabContainer: View {
                     onConfirm: onConfirm
                 )
             } else {
-                AlbumInsightContentView(
-                    detail: detail,
-                    resolvedArtworkURL: resolvedArtworkURL,
-                    trackPresentation: trackPresentation,
-                    insight: albumInsights.first,
-                    generationState: albumInsightGenerationState,
-                    generationStatusMessage: generationStatusMessage,
-                    isCompact: heroLayout == .phone,
-                    onGenerateInsight: onGenerateInsight
-                )
+                let currentInsight = albumInsights.indices.contains(selectedInsightIndex)
+                    ? albumInsights[selectedInsightIndex]
+                    : albumInsights.primaryInsight
+                DetailSectionCard(title: "操作", ) {
+                VStack(alignment: .leading, spacing: heroLayout.sectionSpacing) {
+                    AlbumInsightActionCard(
+                        hasInsight: currentInsight != nil,
+                        generationState: albumInsightGenerationState,
+                        generationStatusMessage: generationStatusMessage,
+                        isCompact: heroLayout == .phone,
+                        onGenerateInsight: onGenerateInsight
+                    )
+                    
+                    if let insight = currentInsight {
+                        AlbumInsightDetailView(
+                            insight: insight,
+                            allInsights: albumInsights,
+                            selectedInsightIndex: $selectedInsightIndex,
+                            insightViewMode: $insightViewMode,
+                            showsContextHeader: false
+                        )
+                    } else {
+                        AlbumInsightPrimaryContentView(
+                            insight: nil,
+                            compact: heroLayout == .phone,
+                            emptyTitle: "暂无专辑音眸",
+                            emptySubtitle: "当前专辑还没有可展示的音眸内容，可在此直接触发生成。"
+                        )
+                    }
+                }}
             }
         }
     }
@@ -532,7 +621,6 @@ enum AlbumDetailTab: String, Hashable {
 private struct AlbumDetailContentView: View {
     let albumID: Int64
     let detail: AlbumDetail
-    let resolvedArtworkURL: String?
     let candidates: [ReleaseCandidate]
     let favoriteTrackIDs: Set<Int64>
     let trackPresentation: AlbumTrackPresentation
@@ -543,16 +631,7 @@ private struct AlbumDetailContentView: View {
     let onConfirm: (ReleaseCandidate) -> Void
 
     var body: some View {
-        let favoriteTrackCount = favoriteTrackIDs.count
-
         VStack(alignment: .leading, spacing: heroLayout.sectionSpacing) {
-            AlbumHeroSection(
-                detail: detail,
-                resolvedArtworkURL: resolvedArtworkURL,
-                layout: heroLayout,
-                favoriteTrackCount: favoriteTrackCount
-            )
-
             AlbumTrackListSection(
                 presentation: trackPresentation,
                 isCompact: heroLayout == .phone,
@@ -684,9 +763,6 @@ private struct AlbumInsightRichContentView: View {
 }
 
 private struct AlbumInsightContentView: View {
-    let detail: AlbumDetail
-    let resolvedArtworkURL: String?
-    let trackPresentation: AlbumTrackPresentation
     let insight: AlbumInsight?
     let generationState: InsightGenerationState
     let generationStatusMessage: String?
@@ -712,15 +788,6 @@ private struct AlbumInsightContentView: View {
         VStack(alignment: .leading, spacing: isCompact ? 14 : 18) {
             DetailSectionCard(title: "音眸专辑", compact: isCompact) {
                 VStack(alignment: .leading, spacing: 12) {
-                    AlbumHeroSection(
-                        detail: detail,
-                        resolvedArtworkURL: resolvedArtworkURL,
-                        layout: isCompact ? .phone : .regular,
-                        favoriteTrackCount: 0,
-                        trackCountOverride: trackPresentation.trackCount,
-                        totalDurationOverride: trackPresentation.totalDuration
-                    )
-
                     if let onGenerateInsight {
                         HStack(spacing: 10) {
                             if insight == nil {
@@ -765,6 +832,67 @@ private struct AlbumInsightContentView: View {
                 emptySubtitle: "当前专辑还没有可展示的音眸内容，可在此直接触发生成。"
             )
         }
+    }
+}
+
+private struct AlbumInsightActionCard: View {
+    let hasInsight: Bool
+    let generationState: InsightGenerationState
+    let generationStatusMessage: String?
+    let isCompact: Bool
+    let onGenerateInsight: () -> Void
+
+    private var isActionDisabled: Bool {
+        generationState == .loadingModels || generationState == .generating
+    }
+
+    private var inFlightHint: String? {
+        switch generationState {
+        case .loadingModels:
+            return "正在加载可用模型，请稍候。"
+        case .generating:
+            return "专辑音眸通常需要数分钟，切到桌面后可通过灵动岛继续关注状态。"
+        default:
+            return nil
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                if hasInsight {
+                    Button(action: onGenerateInsight) {
+                        Label("重新生成", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isActionDisabled)
+                } else {
+                    Button(action: onGenerateInsight) {
+                        Label("生成专辑音眸", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isActionDisabled)
+                }
+
+                if generationState == .loadingModels || generationState == .generating {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if let generationStatusMessage {
+                Text(generationStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(generationState == .error ? Color.red : Color.secondary)
+            }
+
+            if let inFlightHint {
+                Text(inFlightHint)
+                    .font(.caption)
+                    .foregroundStyle(Color.orange)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1150,7 +1278,7 @@ private struct AlbumHeroSection: View {
     private var artwork: some View {
         ArtworkSquareView(
             artworkURL: resolvedArtworkURL,
-            fallbackTitle: detail.name,
+            fallbackTitle: detail.displayName,
             size: layout.artworkSize,
             cornerRadius: 18,
             style: .vivid
@@ -1163,7 +1291,7 @@ private struct AlbumHeroSection: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(detail.name)
+            Text(detail.displayName)
                 .font(layout == .phone ? .title3.weight(.semibold) : .title2.weight(.semibold))
             Text(detail.artist)
                 .font(layout == .phone ? .headline : .body)
@@ -1180,7 +1308,10 @@ private struct AlbumHeroSection: View {
                 AlbumMetaChip(title: "总时长", value: formatDuration(totalDurationOverride))
             }
             if let release = detail.releaseDate, !release.isEmpty {
-                AlbumMetaChip(title: "发行日期", value: release)
+                AlbumReleaseDateChip(
+                    releaseDate: release,
+                    originalReleaseDate: detail.originalReleaseDate
+                )
             }
             if let genre = detail.genre, !genre.isEmpty {
                 AlbumMetaChip(title: "流派", value: genre)
@@ -1249,6 +1380,106 @@ struct AlbumMetaChip: View {
         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 }
+
+private struct AlbumReleaseDateChip: View {
+    let releaseDate: String
+    let originalReleaseDate: String?
+    @State private var isOriginalReleasePopoverPresented = false
+
+    private var trimmedOriginalReleaseDate: String? {
+        originalReleaseDate?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shouldShowOriginalReleaseHint: Bool {
+        guard let original = trimmedOriginalReleaseDate, !original.isEmpty else {
+            return false
+        }
+        return original != releaseDate.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var originalReleaseHintText: String {
+        guard let original = trimmedOriginalReleaseDate, !original.isEmpty else {
+            return ""
+        }
+        return "原始发行时间：\(original)"
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("发行日期")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(releaseDate)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+
+            #if os(macOS)
+            if shouldShowOriginalReleaseHint {
+                OriginalReleaseHintButton(
+                    isPresented: $isOriginalReleasePopoverPresented,
+                    helpText: originalReleaseHintText
+                )
+                .popover(isPresented: $isOriginalReleasePopoverPresented, arrowEdge: .top) {
+                    OriginalReleasePopoverContent(
+                        releaseDate: releaseDate,
+                        originalReleaseDate: trimmedOriginalReleaseDate ?? ""
+                    )
+                    .padding(14)
+                    .frame(width: 220)
+                }
+            }
+            #endif
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+#if os(macOS)
+private struct OriginalReleaseHintButton: View {
+    @Binding var isPresented: Bool
+    let helpText: String
+
+    var body: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 7, height: 7)
+                .frame(width: 14, height: 14, alignment: .center)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("点击查看原始发行时间")
+        .accessibilityLabel(helpText)
+    }
+}
+
+private struct OriginalReleasePopoverContent: View {
+    let releaseDate: String
+    let originalReleaseDate: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("原始发行时间")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(originalReleaseDate)
+                .font(.subheadline.weight(.semibold))
+            Divider()
+            Text("当前发行时间")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(releaseDate)
+                .font(.subheadline)
+        }
+    }
+}
+#endif
 
 struct AlbumTrackRow: View {
     let track: Track

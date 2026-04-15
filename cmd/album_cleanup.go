@@ -27,6 +27,7 @@ func NewCleanupDuplicateAlbumsCommand() *cobra.Command {
 	return command
 }
 
+// cleanupDuplicateAlbums 标记过期
 func cleanupDuplicateAlbums(cmd *cobra.Command, args []string) error {
 	if err := model.InitDB(config.ConfigObj.Database.Path, nil); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)

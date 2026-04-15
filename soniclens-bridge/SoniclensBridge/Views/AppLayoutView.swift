@@ -75,63 +75,73 @@ struct AppLayoutView: View {
     @State private var trackQuery: String = ""
     @StateObject private var libraryViewModel = LibraryViewModel()
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled: Bool = false
-    @State private var windowChromeBackup: WindowChromeBackup?
+    @State private var playbackOverlayController = PlaybackBarWindowOverlayController()
+    @State private var nowPlayingOverlayController = NowPlayingWindowOverlayController()
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            NavigationSplitView {
-                SidebarView(selection: $selection)
-            } detail: {
-                NavigationStack {
-                    contentView
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(AppWindowBackground(useMaterial: false))
-                        .toolbar {
-                            ToolbarItemGroup(placement: .principal) {
-                                ToolbarTitleSubtitleView(
-                                    title: selection.title,
-                                    subtitle: toolbarSubtitle
-                                )
-                                .equatable()
-                            }
-                            ToolbarItemGroup(placement: .automatic) {
-                                if store.currentServer != nil {
-                                    Button {
-                                        store.disconnect()
-                                    } label: {
-                                        Image(systemName: "power")
-                                    }
-                                    .help("断开当前服务端")
-                                }
-                                Toggle("性能模式", isOn: $performanceModeEnabled)
-                                    .toggleStyle(.switch)
-                                    .help("降低动效/材质/阴影开销，提升长时间运行稳定性")
-                                toolbarContent
-                            }
+        NavigationSplitView {
+            SidebarView(selection: $selection)
+        } detail: {
+            NavigationStack {
+                contentView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AppWindowBackground(useMaterial: false))
+                    .toolbar {
+                        ToolbarItemGroup(placement: .principal) {
+                            ToolbarTitleSubtitleView(
+                                title: selection.title,
+                                subtitle: toolbarSubtitle
+                            )
+                            .equatable()
                         }
-                }
+                        ToolbarItemGroup(placement: .automatic) {
+                            if store.currentServer != nil {
+                                Button {
+                                    store.disconnect()
+                                } label: {
+                                    Image(systemName: "power")
+                                }
+                                .help("断开当前服务端")
+                            }
+                            Toggle("性能模式", isOn: $performanceModeEnabled)
+                                .toggleStyle(.switch)
+                                .help("降低动效/材质/阴影开销，提升长时间运行稳定性")
+                            toolbarContent
+                        }
+                    }
             }
-            .navigationSplitViewStyle(.balanced)
-            // .padding(.bottom, PlaybackBarView.regularHeight)
-
-            PlaybackBarView(isExpanded: $showNowPlaying)
         }
+        .navigationSplitViewStyle(.balanced)
         .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
         .background(
-            WindowAccessor { window in
-                configureWindowChrome(window)
-            }
+            PlaybackBarWindowOverlayBridge(
+                controller: playbackOverlayController,
+                nowPlaying: playbackStore.nowPlaying,
+                performanceModeEnabled: performanceModeEnabled,
+                isVisible: !showNowPlaying,
+                style: .regular,
+                onActivate: {
+                    guard playbackStore.hasActiveNowPlaying else { return }
+                    showNowPlaying = true
+                }
+            )
         )
-        .overlay {
-            if showNowPlaying, let nowPlaying = playbackStore.nowPlaying {
-                NowPlayingView(nowPlaying: nowPlaying) {
+        .background(
+            NowPlayingWindowOverlayBridge(
+                controller: nowPlayingOverlayController,
+                nowPlaying: playbackStore.nowPlaying,
+                appStore: store,
+                playbackStore: playbackStore,
+                isVisible: showNowPlaying,
+                onClose: {
                     showNowPlaying = false
                 }
-                .ignoresSafeArea()
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
+            )
+        )
+        .onChange(of: playbackStore.nowPlaying != nil) { _, hasNowPlaying in
+            guard !hasNowPlaying else { return }
+            showNowPlaying = false
         }
-        .animation(.easeInOut(duration: 0.35), value: showNowPlaying)
         .task {
             guard let server = store.currentServer else { return }
             await libraryViewModel.load(using: server)
@@ -143,8 +153,9 @@ struct AppLayoutView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            guard let server = store.currentServer else { return }
             Task {
+                await store.performForegroundConnectionHealthCheckIfNeeded()
+                guard let server = store.currentServer, store.isConnectionHealthy else { return }
                 await libraryViewModel.refresh(using: server)
             }
         }
@@ -154,39 +165,11 @@ struct AppLayoutView: View {
                 await libraryViewModel.refresh(using: server)
             }
         }
+        .onDisappear {
+            playbackOverlayController.detach()
+            nowPlayingOverlayController.detach()
+        }
         .frame(minWidth: 1100, minHeight: 720)
-    }
-
-    private func configureWindowChrome(_ window: NSWindow?) {
-        guard let window else { return }
-
-        if showNowPlaying {
-            if windowChromeBackup == nil {
-                windowChromeBackup = WindowChromeBackup(
-                    titlebarAppearsTransparent: window.titlebarAppearsTransparent,
-                    titleVisibility: window.titleVisibility,
-                    toolbarVisible: window.toolbar?.isVisible ?? true,
-                    hasFullSizeContentView: window.styleMask.contains(.fullSizeContentView)
-                )
-            }
-
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.toolbar?.isVisible = false
-            window.styleMask.insert(.fullSizeContentView)
-            return
-        }
-
-        guard let backup = windowChromeBackup else { return }
-        window.titlebarAppearsTransparent = backup.titlebarAppearsTransparent
-        window.titleVisibility = backup.titleVisibility
-        window.toolbar?.isVisible = backup.toolbarVisible
-        if backup.hasFullSizeContentView {
-            window.styleMask.insert(.fullSizeContentView)
-        } else {
-            window.styleMask.remove(.fullSizeContentView)
-        }
-        windowChromeBackup = nil
     }
 
     @ViewBuilder
@@ -241,31 +224,6 @@ struct AppLayoutView: View {
             ToolbarSearchField(text: $trackQuery)
         default:
             EmptyView()
-        }
-    }
-}
-
-private struct WindowChromeBackup {
-    let titlebarAppearsTransparent: Bool
-    let titleVisibility: NSWindow.TitleVisibility
-    let toolbarVisible: Bool
-    let hasFullSizeContentView: Bool
-}
-
-private struct WindowAccessor: NSViewRepresentable {
-    let onWindowChange: (NSWindow?) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            onWindowChange(view.window)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            onWindowChange(nsView.window)
         }
     }
 }
@@ -502,7 +460,7 @@ struct UnreportedRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.track)
                     .font(.body)
-                Text("\(record.artist) · \(record.album)")
+                Text("\(record.artist) · \(record.displayAlbum)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

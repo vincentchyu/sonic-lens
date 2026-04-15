@@ -73,6 +73,8 @@ final class AlbumDetailViewModel: ObservableObject {
     @Published var isSearchingCandidates: Bool = false
     @Published var errorMessage: String?
     @Published var albumInsightGenerationState: InsightGenerationState = .idle
+    @Published var selectedInsightIndex: Int = 0
+    @Published var insightViewMode: InsightViewMode = .current
     @Published var availableAIPlatforms: [AIPlatformOption] = []
     @Published var availableAIModels: [AIModelOption] = []
     @Published var selectedAIPlatform: String = ""
@@ -127,13 +129,19 @@ final class AlbumDetailViewModel: ObservableObject {
                 )
             )
             logger.debug(
-                "专辑详情初始封面已解析 album_id=\(albumID, privacy: .public) 专辑=\(loadedDetail.name, privacy: .public) 封面=\(self.describeArtworkURL(self.resolvedArtworkURL), privacy: .public)"
+                "专辑详情初始封面已解析 album_id=\(albumID, privacy: .public) 专辑=\(loadedDetail.displayName, privacy: .public) 封面=\(self.describeArtworkURL(self.resolvedArtworkURL), privacy: .public)"
             )
             resolveArtworkInBackground(using: server, detail: loadedDetail)
             async let candidateRequest: [ReleaseCandidate] = (try? await client.getJSON(path: "\(APIPath.musicBrainzCandidates)/\(albumID)")) ?? []
-            async let insightRequest: [AlbumInsight] = (try? await fetchAlbumInsights(using: client, albumID: albumID)) ?? []
+            async let insightRequest: AlbumInsightResponse? = (try? await fetchAlbumInsights(using: client, albumID: albumID))
             candidates = await candidateRequest
-            albumInsights = await insightRequest
+            let insightResponse = await insightRequest
+            albumInsights = insightResponse?.insights ?? []
+            selectedInsightIndex = Self.recommendedInsightIndex(
+                in: albumInsights,
+                recommendedInsightID: insightResponse?.recommendedInsightID
+            )
+            insightViewMode = .current
             isLoading = false
         } catch {
             errorMessage = "专辑详情加载失败"
@@ -146,7 +154,12 @@ final class AlbumDetailViewModel: ObservableObject {
     func loadAlbumInsights(using server: ServerConfig, albumID: Int64) async {
         let client = APIClient(baseURL: server.baseURL)
         do {
-            albumInsights = try await fetchAlbumInsights(using: client, albumID: albumID)
+            let response = try await fetchAlbumInsights(using: client, albumID: albumID)
+            albumInsights = response.insights
+            selectedInsightIndex = Self.recommendedInsightIndex(
+                in: albumInsights,
+                recommendedInsightID: response.recommendedInsightID
+            )
         } catch {
             albumInsights = []
         }
@@ -300,8 +313,14 @@ final class AlbumDetailViewModel: ObservableObject {
                 if let resultInsightID = job.resultInsightID {
                     let detail = try await fetchAlbumInsightDetail(using: client, id: resultInsightID)
                     albumInsights = [detail]
+                    selectedInsightIndex = 0
                 } else {
-                    albumInsights = try await fetchAlbumInsights(using: client, albumID: albumID)
+                    let response = try await fetchAlbumInsights(using: client, albumID: albumID)
+                    albumInsights = response.insights
+                    selectedInsightIndex = Self.recommendedInsightIndex(
+                        in: albumInsights,
+                        recommendedInsightID: response.recommendedInsightID
+                    )
                 }
                 lastHandledJobPhaseKey = phaseKey
             } catch {
@@ -332,7 +351,7 @@ final class AlbumDetailViewModel: ObservableObject {
             guard self.artworkRequestAlbumID == requestedAlbumID else { return }
             self.applyResolvedArtwork(resolved)
             self.logger.debug(
-                "补全专辑封面完成 album_id=\(requestedAlbumID, privacy: .public) 专辑=\(detail.name, privacy: .public) 封面=\(self.describeArtworkURL(resolved?.remoteURL), privacy: .public)"
+                "补全专辑封面完成 album_id=\(requestedAlbumID, privacy: .public) 专辑=\(detail.displayName, privacy: .public) 封面=\(self.describeArtworkURL(resolved?.remoteURL), privacy: .public)"
             )
         }
     }
@@ -391,12 +410,22 @@ final class AlbumDetailViewModel: ObservableObject {
         })
     }
 
-    private func fetchAlbumInsights(using client: APIClient, albumID: Int64) async throws -> [AlbumInsight] {
-        let response: AlbumInsightResponse = try await client.getJSON(
+    private func fetchAlbumInsights(using client: APIClient, albumID: Int64) async throws -> AlbumInsightResponse {
+        try await client.getJSON(
             path: APIPath.albumInsight,
             queryItems: [URLQueryItem(name: "albumID", value: String(albumID))]
         )
-        return response.insights
+    }
+
+    private static func recommendedInsightIndex(
+        in insights: [AlbumInsight],
+        recommendedInsightID: Int64?
+    ) -> Int {
+        guard let recommendedInsightID,
+              let index = insights.firstIndex(where: { $0.id == recommendedInsightID }) else {
+            return 0
+        }
+        return index
     }
 
     private func fetchAlbumInsightDetail(using client: APIClient, id: Int64) async throws -> AlbumInsight {

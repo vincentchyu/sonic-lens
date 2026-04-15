@@ -287,23 +287,25 @@ func (r *cacheResponseRecorder) statusOrDefault() int {
 	return r.status
 }
 
-func defaultRedisCacheKey(c *gin.Context) string {
-	requestURL := c.Request.URL
-	query := normalizeQuery(requestURL.Query())
+func buildRedisCacheKey(method, path string, query url.Values, accept string) string {
 	raw := strings.Builder{}
-	raw.WriteString(c.Request.Method)
+	raw.WriteString(method)
 	raw.WriteString(":")
-	raw.WriteString(requestURL.Path)
-	if query != "" {
+	raw.WriteString(path)
+	if normalizedQuery := normalizeQuery(query); normalizedQuery != "" {
 		raw.WriteString("?")
-		raw.WriteString(query)
+		raw.WriteString(normalizedQuery)
 	}
-	if accept := strings.TrimSpace(c.GetHeader("Accept")); accept != "" {
+	if accept = strings.TrimSpace(accept); accept != "" {
 		raw.WriteString("|accept=")
 		raw.WriteString(accept)
 	}
 	sum := sha256.Sum256([]byte(raw.String()))
 	return redisCacheKeyPrefix + fmt.Sprintf("%x", sum[:])
+}
+
+func defaultRedisCacheKey(c *gin.Context) string {
+	return buildRedisCacheKey(c.Request.Method, c.Request.URL.Path, c.Request.URL.Query(), c.GetHeader("Accept"))
 }
 
 func normalizeQuery(values url.Values) string {

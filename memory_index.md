@@ -1,6 +1,70 @@
 # 记忆索引
 
+## 2026-04-11
+
+- **日期**: 2026-04-11
+    - **特性摘要**: Bridge 端为 `now_playing` 快照补充 `receivedAt` 新鲜度事实源，暂停后即便缺失新的 WS 事件，也不会再把旧快照重新当成活跃播放来推进进度或允许进入正在播放页
+    - **链接**: [Bridge 暂停静默播放态守卫修复清单](memory/2026-04-11/bridge_pause_stale_now_playing_guard_manifest.md)
+
+- **日期**: 2026-04-11
+    - **特性摘要**: Bridge macOS mini 播放条正式改为窗口级 AppKit 玻璃宿主，`NSVisualEffectView` 不再作为 SwiftUI 背景补丁层使用，前后台切换时的实色退化问题转由稳定窗口宿主闭环解决
+    - **链接**: [Bridge macOS Mini 播放条窗口级玻璃宿主闭环](memory/2026-04-11/bridge_mac_mini_player_window_overlay_manifest.md)
+
+## 2026-04-10
+
+- **日期**: 2026-04-10
+    - **特性摘要**: 专辑原始发布日期正式拆分为 `album.original_release_date` 独立事实字段，MusicBrainz、Audirvana/exiftool、手动维护与资料库同步链路统一透传但不参与专辑身份匹配
+    - **链接**: [专辑原始发布日期落库特性清单](memory/2026-04-10/original_release_date_lakehouse_manifest.md)
+
+## 2026-04-10
+
+- **日期**: 2026-04-10
+    - **特性摘要**: 专辑与曲目副标题身份索引正式补齐，`album`、`track`、`track_favorite_event`、`track_play_records` 以及资料库/最近播放 fallback join 统一改为 subtitle-aware，同时保留 `release_date` 作为专辑版本身份的一部分，避免不同版本继续串绑
+    - **链接**: [subtitle 身份索引闭环特性清单](memory/2026-04-10/subtitle_identity_index_closure_manifest.md)
+
+## 2026-04-09
+
+- **日期**: 2026-04-09
+    - **特性摘要**: 专辑副标题从原始标题字符串里正式拆出并贯通到资料库、播放流水、待归因专辑、排行榜、D1 同步与 Bridge 展示，`album_subtitle` / `name_subtitle` 成为稳定数据契约
+    - **链接**: [专辑副标题贯通闭环特性清单](memory/2026-04-09/album_subtitle_end_to_end_closure_manifest.md)
+
+## 2026-04-08
+
+- **日期**: 2026-04-08
+    - **特性摘要**: 音眸曲目、专辑与历史版本统一返回 `recommended_insight_id`，客户端与 Web 改为显式按该字段选中默认推荐版本，不再依赖第一条的隐式顺序
+    - **链接**: [音眸推荐版本 ID 统一闭环特性清单](memory/2026-04-08/recommended_insight_id_unification_manifest.md)
+
+## 2026-04-07
+
+- **日期**: 2026-04-07
+    - **特性摘要**: 音眸反馈原因枚举正式下沉到后端 `common`，`reason_codes` 白名单、`top_reason_codes` 汇总和 prompt 负反馈上下文统一改为基于同一套枚举归一
+    - **链接**: [音眸反馈原因枚举对齐特性清单](memory/2026-04-07/insight_feedback_reason_enum_alignment_manifest.md)
+
+## 2026-04-05
+
+- **日期**: 2026-04-05
+    - **特性摘要**: 单用户音眸反馈升级为“历史反馈 + 结构化问题 + 再生成纠偏”闭环，Bridge 列表/详情统一展示 `未评价 / 已认可 / 待修正` 语义
+    - **链接**: [单用户音眸反馈历史与再生成闭环](memory/2026-04-05/insight_feedback_single_user_history_manifest.md)
+
+- **日期**: 2026-04-05
+    - **特性摘要**: 专辑音眸新增独立反馈闭环，`album_insight_feedbacks` 与曲目反馈分表，专辑分析会注入历史差评上下文，API 补齐专辑反馈写入与读取入口
+    - **链接**: [专辑音眸反馈闭环特性清单](memory/2026-04-05/album_insight_feedback_closure_manifest.md)
+
+## 2026-04-03
+
+- **日期**: 2026-04-03
+    - **特性摘要**: 曲目 MB 深度维护与精选回写链路统一做繁简与标点归一，避免 `track` 表在 MusicBrainz 写回时再次落入繁体标题，并为旧有简体存量行补了回退匹配
+    - **链接**: [曲目 MB 深度维护简体写入闭环特性清单](memory/2026-04-03/track_mb_simplified_storage_closure_manifest.md)
+
+- **日期**: 2026-04-03
+    - **特性摘要**: 首页最近播放补齐封面路径落库与封面优先渲染，`track_play_records` 新增 `cover_art_path`，Bridge 端最近播放头部与时间标签一并收敛到更统一的首页样式
+    - **链接**: [最近播放封面路径与首页视觉对齐特性清单](memory/2026-04-03/recent_play_cover_path_home_alignment_manifest.md)
+
 ## 2026-04-02
+
+- **日期**: 2026-04-02
+    - **特性摘要**: Bridge 连接链路新增“静默恢复 + 周期健康检查 + 失效待决策”策略，启动后默认尝试恢复上次成功连接，失败时由用户决定退出或重连
+    - **链接**: [Bridge 连接恢复与静默健康检查策略特性清单](memory/2026-04-02/bridge_connection_restore_silent_healthcheck_manifest.md)
 
 - **日期**: 2026-04-02
     - **特性摘要**: Bridge 实现音眸异步任务闭环与 iOS Live Activity 支持；Web Dashboard 新增艺人管理、待处理专辑手动维护及上下文陈旧检测

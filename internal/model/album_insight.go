@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/vincentchyu/sonic-lens/common"
 )
 
 // AlbumInsight 存储专辑级 AI 深度分析结果。
@@ -157,6 +159,16 @@ func DeleteAlbumInsight(ctx context.Context, id uint64) error {
 			if err := tx.First(&insight, id).Error; err != nil {
 				return err
 			}
+
+			if err := deleteLLMCallLogsByTargetTx(
+				tx,
+				common.AnalysisTargetTypeAlbum,
+				BuildLLMCallLogAlbumKey(insight.AlbumID),
+				insight.Artist+" - "+insight.Album,
+			); err != nil {
+				return err
+			}
+
 			if err := tx.Delete(&insight).Error; err != nil {
 				return err
 			}

@@ -20,6 +20,8 @@ final class TrackDetailViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var insightGenerationState: InsightGenerationState = .idle
+    @Published var selectedInsightIndex: Int = 0
+    @Published var insightViewMode: InsightViewMode = .current
     @Published var availableAIPlatforms: [AIPlatformOption] = []
     @Published var availableAIModels: [AIModelOption] = []
     @Published var selectedAIPlatform: String = ""
@@ -70,7 +72,7 @@ final class TrackDetailViewModel: ObservableObject {
                 ]
             )
             lyricLines = LRCParser.parseLyrics(lyrics?.lyrics ?? "", hasLRC: lyrics?.hasLRC ?? false)
-            insights = try await fetchTrackInsights(
+            let insightResponse = try await fetchTrackInsights(
                 using: client,
                 artist: artist,
                 album: album,
@@ -78,6 +80,12 @@ final class TrackDetailViewModel: ObservableObject {
                 trackNumber: trackNumber,
                 discNumber: discNumber
             )
+            insights = insightResponse.insights
+            selectedInsightIndex = Self.recommendedInsightIndex(
+                in: insights,
+                recommendedInsightID: insightResponse.recommendedInsightID
+            )
+            insightViewMode = .current
             isLoading = false
         } catch {
             errorMessage = "曲目详情加载失败"
@@ -203,14 +211,20 @@ final class TrackDetailViewModel: ObservableObject {
                 if let resultInsightID = job.resultInsightID {
                     let detail = try await fetchTrackInsightDetail(using: client, id: resultInsightID)
                     insights = [detail]
+                    selectedInsightIndex = 0
                 } else {
-                    insights = try await fetchTrackInsights(
+                    let response = try await fetchTrackInsights(
                         using: client,
                         artist: track.artist,
                         album: track.album,
                         track: track.track,
                         trackNumber: track.trackNumber,
                         discNumber: track.discNumber
+                    )
+                    insights = response.insights
+                    selectedInsightIndex = Self.recommendedInsightIndex(
+                        in: insights,
+                        recommendedInsightID: response.recommendedInsightID
                     )
                 }
                 lastHandledJobPhaseKey = phaseKey
@@ -290,8 +304,8 @@ final class TrackDetailViewModel: ObservableObject {
         track: String,
         trackNumber: Int?,
         discNumber: Int?
-    ) async throws -> [Insight] {
-        let response: TrackInsightResponse = try await client.getJSON(
+    ) async throws -> TrackInsightResponse {
+        try await client.getJSON(
             path: APIPath.trackInsight,
             queryItems: [
                 URLQueryItem(name: "artist", value: artist),
@@ -301,7 +315,14 @@ final class TrackDetailViewModel: ObservableObject {
                 URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
             ]
         )
-        return response.insights
+    }
+
+    private static func recommendedInsightIndex(in insights: [Insight], recommendedInsightID: Int64?) -> Int {
+        guard let recommendedInsightID,
+              let index = insights.firstIndex(where: { $0.id == recommendedInsightID }) else {
+            return 0
+        }
+        return index
     }
 
     private func fetchTrackInsightDetail(using client: APIClient, id: Int64) async throws -> Insight {

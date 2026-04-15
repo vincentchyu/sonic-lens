@@ -60,6 +60,10 @@ type WsLibraryUpdate struct {
 	Version int64  `json:"version"`
 }
 
+type WsRecentPlaysUpdated struct {
+	Type string `json:"type"`
+}
+
 type WsInsightJobUpdate struct {
 	Type string           `json:"type"`
 	Data WsInsightJobData `json:"data"`
@@ -106,6 +110,7 @@ type libraryUpdateBatcher struct {
 type WsTrackData struct {
 	Title           string                    `json:"title"`
 	Album           string                    `json:"album"`
+	AlbumSubtitle   string                    `json:"album_subtitle"`
 	Artist          string                    `json:"artist"`
 	AppleMusic      bool                      `json:"apple_music"`
 	LastFM          bool                      `json:"lastfm"`
@@ -115,6 +120,7 @@ type WsTrackData struct {
 	Duration        int64                     `json:"duration"`      // 歌曲时长，单位秒
 	Position        int64                     `json:"position"`      // 歌曲当前播放位置，单位秒
 	PositionMs      int64                     `json:"position_ms"`   // 歌曲当前播放位置，单位毫秒
+	SampleRate      int64                     `json:"sample_rate"`   // 采样率，单位 Hz
 	TrackNumber     int8                      `json:"track_number"`  // 曲目号
 	DiscNumber      int8                      `json:"disc_number"`   // 盘号
 	CoverArtURL     string                    `json:"cover_art_url"` // 专辑封面访问地址
@@ -148,6 +154,14 @@ func BroadcastInsightJobUpdate(ctx context.Context, data *WsInsightJobData) {
 		ctx, &WsInsightJobUpdate{
 			Type: "insight_job_updated",
 			Data: *data,
+		},
+	)
+}
+
+func BroadcastRecentPlaysUpdated(ctx context.Context) {
+	broadcastJSON(
+		ctx, &WsRecentPlaysUpdated{
+			Type: "recent_plays_updated",
 		},
 	)
 }

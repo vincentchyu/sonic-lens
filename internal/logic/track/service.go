@@ -13,25 +13,32 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/applemusic"
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
+	corews "github.com/vincentchyu/sonic-lens/core/websocket"
 	artistprofilesvc "github.com/vincentchyu/sonic-lens/internal/logic/artistprofile"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
 var (
-	appleMusicSetFavorite                = applemusic.SetFavorite
-	lastfmSetFavorite                    = lastfm.SetFavorite
-	modelGetTrackByIdentity              = model.GetTrackByIdentity
-	modelInsertTrackPlayRecord           = model.InsertTrackPlayRecord
-	modelProcessTrackPlayRecord          = model.ProcessTrackPlayRecord
-	modelSetAppleMusicFavorite           = model.SetAppleMusicFavorite
-	modelSetLastFmFavorite               = model.SetLastFmFavorite
-	modelGetAppleMusicFavorite           = model.GetAppleMusicFavorite
-	modelGetAppleMusicFavoriteByIdentity = model.GetAppleMusicFavoriteByIdentity
-	modelGetLastFmFavorite               = model.GetLastFmFavorite
-	modelGetLastFmFavoriteByIdentity     = model.GetLastFmFavoriteByIdentity
-	modelGetPendingTrackFavoriteSnapshot = model.GetPendingTrackFavoriteSnapshot
-	modelGetTrackPlayRecordByID          = model.GetTrackPlayRecordByID
-	favoriteProjectionVersion            atomic.Uint64
+	appleMusicSetFavorite                  = applemusic.SetFavorite
+	lastfmSetFavorite                      = lastfm.SetFavorite
+	modelGetTrackByIdentity                = model.GetTrackByIdentity
+	modelGetTrackByIdentityWithSubtitle    = model.GetTrackByIdentityWithSubtitle
+	modelInsertTrackPlayRecord             = model.InsertTrackPlayRecord
+	modelProcessTrackPlayRecord            = model.ProcessTrackPlayRecord
+	modelSetAppleMusicFavorite             = model.SetAppleMusicFavorite
+	modelSetLastFmFavorite                 = model.SetLastFmFavorite
+	modelGetAppleMusicFavorite             = model.GetAppleMusicFavorite
+	modelGetAppleMusicFavoriteByIdentity   = model.GetAppleMusicFavoriteByIdentity
+	modelGetLastFmFavorite                 = model.GetLastFmFavorite
+	modelGetLastFmFavoriteByIdentity       = model.GetLastFmFavoriteByIdentity
+	modelGetPendingTrackFavoriteSnapshot   = model.GetPendingTrackFavoriteSnapshot
+	modelResolveTrackForFavoriteProjection = model.ResolveTrackForFavoriteProjection
+	modelGetTrackPlayRecordByID            = model.GetTrackPlayRecordByID
+	modelUpdateAlbumTitleMetadataByID      = model.UpdateAlbumTitleMetadataByID
+	telemetryGoOnlySafe                    = telemetry.GoOnlySafe
+	websocketBroadcastRecentPlaysUpdated   = corews.BroadcastRecentPlaysUpdated
+	favoriteProjectionVersion              atomic.Uint64
 )
 
 // TrackService 定义曲目相关服务接口
@@ -417,12 +424,13 @@ func (s *TrackServiceImpl) SetTrackFavorite(
 		TrackMetadata: metadata,
 	}
 	projectionInput := FavoriteProjectionInput{
-		Artist:      artist,
-		Album:       album,
-		Track:       track,
-		TrackNumber: metadata.TrackNumber,
-		DiscNumber:  metadata.DiscNumber,
-		Metadata:    metadata,
+		Artist:        artist,
+		Album:         album,
+		AlbumSubtitle: metadata.AlbumSubtitle,
+		Track:         track,
+		TrackNumber:   metadata.TrackNumber,
+		DiscNumber:    metadata.DiscNumber,
+		Metadata:      metadata,
 	}
 
 	var callErr error

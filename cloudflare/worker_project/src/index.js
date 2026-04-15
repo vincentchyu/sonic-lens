@@ -345,7 +345,7 @@ router.get('/api/recent-plays', async (req, env) => {
             const url = new URL(req.url);
             const limit = parseInt(url.searchParams.get("limit") || "10");
             const offset = parseInt(url.searchParams.get("offset") || "0");
-            const {results} = await db.prepare("SELECT artist, album, track, play_time, source FROM track_play_records ORDER BY play_time DESC LIMIT ? OFFSET ?").bind(limit, offset).all();
+            const {results} = await db.prepare("SELECT artist, album, track, play_time, source, cover_art_path FROM track_play_records ORDER BY play_time DESC LIMIT ? OFFSET ?").bind(limit, offset).all();
             return jsonResponse(results);
         } catch (err) {
             return errorResponse(err.message);

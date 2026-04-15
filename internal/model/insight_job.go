@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -38,6 +39,17 @@ type InsightJob struct {
 	UpdatedAt             time.Time                 `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
+// InsightJobListQuery 定义任务列表查询条件。
+type InsightJobListQuery struct {
+	Limit         int
+	Offset        int
+	Keyword       string
+	Status        common.InsightJobPhase
+	HasStatus     bool
+	TargetType    common.AnalysisTargetType
+	HasTargetType bool
+}
+
 // TableName 返回音眸任务表名。
 func (InsightJob) TableName() string {
 	return "insight_job"
@@ -72,6 +84,55 @@ func GetInsightJobByID(ctx context.Context, jobID string) (*InsightJob, error) {
 		return nil, err
 	}
 	return &job, nil
+}
+
+// ListInsightJobs 分页查询音眸任务，供管理端列表使用。
+func ListInsightJobs(ctx context.Context, query InsightJobListQuery) ([]*InsightJob, int64, error) {
+	limit := query.Limit
+	switch {
+	case limit <= 0:
+		limit = 20
+	case limit > 200:
+		limit = 200
+	}
+
+	offset := query.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	db := GetDB().WithContext(ctx).Model(&InsightJob{})
+	if query.HasStatus {
+		db = db.Where("status = ?", query.Status)
+	}
+	if query.HasTargetType {
+		db = db.Where("analysis_target_type = ?", query.TargetType)
+	}
+	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where(
+			`id LIKE ? OR target_key LIKE ? OR artist LIKE ? OR album LIKE ? OR track LIKE ? OR provider LIKE ? OR model LIKE ?`,
+			like,
+			like,
+			like,
+			like,
+			like,
+			like,
+			like,
+		)
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var jobs []*InsightJob
+	if err := db.Order("updated_at DESC").Order("created_at DESC").Limit(limit).Offset(offset).Find(&jobs).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return jobs, total, nil
 }
 
 // GetLatestActiveInsightJobByTarget 查询同目标、同模型的最新活跃任务，用于避免重复创建。
@@ -116,6 +177,70 @@ func UpdateInsightJobLiveActivityToken(ctx context.Context, jobID, token string)
 		jobID,
 		map[string]interface{}{
 			"live_activity_push_token": strings.TrimSpace(token),
+		},
+	)
+}
+
+// CancelInsightJob 将任务标记为取消，供管理端手动维护生命周期。
+func CancelInsightJob(ctx context.Context, jobID, reason string) (*InsightJob, error) {
+	job, err := GetInsightJobByID(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if job.Status == common.InsightJobPhaseCanceled {
+		return job, nil
+	}
+
+	now := time.Now()
+	fields := map[string]interface{}{
+		"status":            common.InsightJobPhaseCanceled,
+		"finished_at":       now,
+		"error_message":     strings.TrimSpace(reason),
+		"result_available":  false,
+		"result_insight_id": nil,
+	}
+	if err := UpdateInsightJobFields(ctx, jobID, fields); err != nil {
+		return nil, err
+	}
+
+	job.Status = common.InsightJobPhaseCanceled
+	job.FinishedAt = &now
+	job.ErrorMessage = strings.TrimSpace(reason)
+	job.ResultAvailable = false
+	job.ResultInsightID = nil
+	job.UpdatedAt = now
+	return job, nil
+}
+
+// DeleteInsightJob 删除失败或已取消的音眸任务，并同步清理其关联调用流水。
+func DeleteInsightJob(ctx context.Context, jobID string) error {
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			var job InsightJob
+			if err := tx.First(&job, "id = ?", strings.TrimSpace(jobID)).Error; err != nil {
+				return err
+			}
+			if job.Status != common.InsightJobPhaseFailed && job.Status != common.InsightJobPhaseCanceled {
+				return errors.New("仅允许删除失败或已取消的任务")
+			}
+
+			legacyTrackInfo := ""
+			switch job.AnalysisTargetType {
+			case common.AnalysisTargetTypeAlbum:
+				legacyTrackInfo = strings.TrimSpace(job.Artist) + " - " + strings.TrimSpace(job.Album)
+			default:
+				legacyTrackInfo = strings.TrimSpace(job.Artist) + " - " + strings.TrimSpace(job.Track)
+			}
+			if err := deleteLLMCallLogsByTargetTx(
+				tx,
+				job.AnalysisTargetType,
+				job.TargetKey,
+				legacyTrackInfo,
+			); err != nil {
+				return err
+			}
+
+			return tx.Delete(&job).Error
 		},
 	)
 }

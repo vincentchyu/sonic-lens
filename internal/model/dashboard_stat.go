@@ -66,14 +66,15 @@ func (TopArtistStat) TableName() string {
 }
 
 type TopAlbumStat struct {
-	ID         int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodDays int       `gorm:"column:period_days;type:int;not null" json:"period_days"`
-	AlbumID    int64     `gorm:"column:album_id;type:bigint;index" json:"album_id"` // 新增关联
-	Album      string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
-	Artist     string    `gorm:"column:artist;type:varchar(255);default:''" json:"artist"`
-	PlayCount  int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
-	Rank       int       `gorm:"column:rank;type:int;not null" json:"rank"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	ID            int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	PeriodDays    int       `gorm:"column:period_days;type:int;not null" json:"period_days"`
+	AlbumID       int64     `gorm:"column:album_id;type:bigint;index" json:"album_id"` // 新增关联
+	Album         string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
+	AlbumSubtitle string    `gorm:"column:album_subtitle;type:varchar(255)" json:"album_subtitle"`
+	Artist        string    `gorm:"column:artist;type:varchar(255);default:''" json:"artist"`
+	PlayCount     int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
+	Rank          int       `gorm:"column:rank;type:int;not null" json:"rank"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 func (TopAlbumStat) TableName() string {
@@ -583,20 +584,24 @@ func refreshTopArtistStats(tx *gorm.DB, topN int) error {
 
 func refreshTopAlbumStats(tx *gorm.DB, topN int) error {
 	type topAlbumRow struct {
-		AlbumID   int64
-		Album     string
-		Artist    string
-		PlayCount int64
+		AlbumID       int64
+		Album         string
+		AlbumSubtitle string
+		Artist        string
+		PlayCount     int64
 	}
 	now := time.Now()
 
 	for _, days := range dashboardAlbumPeriods {
 		startTime := now.AddDate(0, 0, -days)
 		var rows []topAlbumRow
-		if err := tx.Model(&TrackPlayRecord{}).
+		if err := tx.Table("track_play_records AS tpr").
 			Where("play_time >= ?", startTime).
-			Select("album_id, MIN(album) as album, MIN(artist) as artist, COUNT(*) as play_count").
-			Group("album_id").
+			Select(
+				"tpr.album_id, MIN(tpr.album) as album, MIN(COALESCE(a.name_subtitle, tpr.album_subtitle, '')) as album_subtitle, MIN(tpr.artist) as artist, COUNT(*) as play_count",
+			).
+			Joins("LEFT JOIN album AS a ON a.id = tpr.album_id").
+			Group("tpr.album_id").
 			Having("album_id > 0").
 			Order("play_count DESC").
 			Limit(topN).
@@ -616,12 +621,13 @@ func refreshTopAlbumStats(tx *gorm.DB, topN int) error {
 			items = append(
 				items,
 				TopAlbumStat{
-					PeriodDays: days,
-					AlbumID:    row.AlbumID,
-					Album:      row.Album,
-					Artist:     row.Artist,
-					PlayCount:  row.PlayCount,
-					Rank:       i + 1,
+					PeriodDays:    days,
+					AlbumID:       row.AlbumID,
+					Album:         row.Album,
+					AlbumSubtitle: row.AlbumSubtitle,
+					Artist:        row.Artist,
+					PlayCount:     row.PlayCount,
+					Rank:          i + 1,
 				},
 			)
 		}
@@ -1253,6 +1259,7 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 	type topAlbumRow struct {
 		AlbumID           int64
 		Album             string
+		AlbumSubtitle     string
 		Artist            string
 		PlayCount         int64
 		CoverArtURL       string
@@ -1263,7 +1270,7 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 	if err := GetDB().WithContext(ctx).
 		Table("top_album_stat AS tas").
 		Select(
-			"tas.album_id, tas.album, tas.artist, tas.play_count, "+
+			"tas.album_id, tas.album, COALESCE(a.name_subtitle, tas.album_subtitle, '') AS album_subtitle, tas.artist, tas.play_count, "+
 				"COALESCE(a.cover_art_url, '') AS cover_art_url, "+
 				"COALESCE(a.cover_art_mime, '') AS cover_art_mime, "+
 				"COALESCE(a.cover_art_object_key, '') AS cover_art_object_key",
@@ -1283,6 +1290,7 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 			&TopAlbum{
 				AlbumID:           row.AlbumID,
 				Album:             row.Album,
+				AlbumSubtitle:     row.AlbumSubtitle,
 				Artist:            row.Artist,
 				PlayCount:         int(row.PlayCount),
 				CoverArtURL:       row.CoverArtURL,

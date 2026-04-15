@@ -31,6 +31,14 @@ func (a *AudirvanaTrackInfoWrapper) GetAlbum() string {
 	return a.baseWrapper.ConversionSimplified(a.MataDataHandle.GetAlbum())
 }
 
+func (a *AudirvanaTrackInfoWrapper) GetAlbumSubtitle() string {
+	return ""
+}
+
+func (a *AudirvanaTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMetadata {
+	return &common.AlbumTitleMetadata{}
+}
+
 func (a *AudirvanaTrackInfoWrapper) GetArtist() string {
 	return a.baseWrapper.ConversionSimplified(a.MataDataHandle.GetArtist())
 }
@@ -41,6 +49,16 @@ func (a *AudirvanaTrackInfoWrapper) GetPosition() float64 {
 
 func (a *AudirvanaTrackInfoWrapper) GetDuration() int64 {
 	return a.Duration
+}
+
+func (a *AudirvanaTrackInfoWrapper) GetSampleRate() int64 {
+	if a == nil {
+		return 0
+	}
+	if a.MataDataHandle != nil {
+		return a.MataDataHandle.GetSampleRate()
+	}
+	return 0
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetUrl() string {
@@ -76,6 +94,14 @@ func (a *AudirvanaTrackInfoWrapper) GetComposer() string {
 func (a *AudirvanaTrackInfoWrapper) GetReleaseDate() string {
 	// Audirvana没有直接提供发布日期
 	return a.MataDataHandle.GetReleaseDate()
+}
+
+func (a *AudirvanaTrackInfoWrapper) GetOriginalReleaseDate() string {
+	// 只有文件元数据明确提供原始发布日期时才保留，避免把当前发行日误写为首发日期。
+	if a.MataDataHandle == nil {
+		return ""
+	}
+	return a.MataDataHandle.GetOriginalReleaseDate()
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetMusicBrainzID() string {

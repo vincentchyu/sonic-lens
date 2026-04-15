@@ -24,7 +24,17 @@ func (a *AppleMusicTrackInfoWrapper) GetTitle() string {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetAlbum() string {
-	return a.baseWrapper.ConversionSimplified(a.Album)
+	name, _ := common.ParseAlbumTitleAndSubtitle(a.Album)
+	return a.baseWrapper.ConversionSimplified(name)
+}
+
+func (a *AppleMusicTrackInfoWrapper) GetAlbumSubtitle() string {
+	_, subtitle := common.ParseAlbumTitleAndSubtitle(a.Album)
+	return a.baseWrapper.ConversionSimplified(subtitle)
+}
+func (a *AppleMusicTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMetadata {
+	titleMetadata := common.ParseAlbumTitleMetadata(a.Album)
+	return &titleMetadata
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetArtist() string {
@@ -37,6 +47,10 @@ func (a *AppleMusicTrackInfoWrapper) GetPosition() float64 {
 
 func (a *AppleMusicTrackInfoWrapper) GetDuration() int64 {
 	return a.Duration
+}
+
+func (a *AppleMusicTrackInfoWrapper) GetSampleRate() int64 {
+	return int64(a.SampleRate)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetUrl() string {
@@ -64,6 +78,10 @@ func (a *AppleMusicTrackInfoWrapper) GetReleaseDate() string {
 	if !a.ReleaseDate.IsZero() {
 		return a.ReleaseDate.Format("2006-01-02")
 	}
+	return ""
+}
+
+func (a *AppleMusicTrackInfoWrapper) GetOriginalReleaseDate() string {
 	return ""
 }
 

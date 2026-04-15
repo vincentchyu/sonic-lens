@@ -276,9 +276,13 @@ func startClientSpan(
 		spanName,
 		trace.WithSpanKind(trace.SpanKindClient),
 	)
-	span.SetAttributes(append([]attribute.KeyValue{
-		attribute.String("external.system", "lastfm"),
-	}, attrs...)...)
+	span.SetAttributes(
+		append(
+			[]attribute.KeyValue{
+				attribute.String("external.system", "lastfm"),
+			}, attrs...,
+		)...,
+	)
 	return spanCtx, span
 }
 
@@ -396,6 +400,10 @@ func IsFavorite(ctx context.Context, artist, track string) (bool, error) {
 	if _redisClient != nil {
 		if val, err := _redisClient.Get(ctx, redisKey).Result(); err == nil {
 			// Cache hit
+			if val == "not_found" {
+				alog.Info(ctx, "Track NOT found on Last.fm (from negative cache)", zap.String("artist", artist), zap.String("track", track))
+				return false, nil
+			}
 			isLoved := val == "true"
 			alog.Info(ctx, "Track loved status (from cache)", zap.Bool("isLoved", isLoved))
 			return isLoved, nil
@@ -436,6 +444,19 @@ func IsFavorite(ctx context.Context, artist, track string) (bool, error) {
 		res,
 	)
 	if err != nil {
+		// 检查是否为 "Track not found" 错误（Last.fm Error Code 6）
+		// LastfmError 结构体来自 github.com/shkh/lastfm-go/lastfm，其 Error() 方法输出类似 "LastfmError[6]: Track not found"
+		if strings.Contains(err.Error(), "Track not found") || strings.Contains(err.Error(), "LastfmError[6]") {
+			alog.Info(ctx, "Track not found on Last.fm, caching negative result", zap.String("artist", artist), zap.String("track", track))
+			if _redisClient != nil {
+				// 设置 24 小时的负缓存
+				if setErr := _redisClient.Set(ctx, redisKey, "not_found", 24*time.Hour).Err(); setErr != nil {
+					alog.Warn(ctx, "Failed to cache negative favorite status", zap.Error(setErr))
+				}
+			}
+			return false, nil
+		}
+
 		alog.Warn(spanCtx, "Failed to get track info", zap.Error(err))
 		markSpanError(span, err)
 		return false, err

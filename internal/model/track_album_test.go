@@ -39,7 +39,10 @@ func newTrackAlbumTestDB(t *testing.T, name string) *gorm.DB {
 			CREATE TABLE album (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				name TEXT NOT NULL,
+				name_subtitle TEXT,
+				title_metadata TEXT,
 				artist TEXT NOT NULL,
+				original_release_date TEXT,
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,

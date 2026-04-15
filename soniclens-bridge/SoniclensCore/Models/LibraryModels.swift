@@ -3,6 +3,7 @@ import Foundation
 struct Album: Codable, Identifiable, Hashable {
     let id: Int64
     let name: String
+    let nameSubtitle: String?
     let artist: String
     let releaseDate: String?
     let coverArtURL: String?
@@ -18,6 +19,7 @@ struct Album: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case nameSubtitle = "name_subtitle"
         case artist
         case releaseDate = "release_date"
         case coverArtURL = "cover_art_url"
@@ -35,6 +37,7 @@ struct Album: Codable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Int64.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
+        nameSubtitle = try container.decodeIfPresent(String.self, forKey: .nameSubtitle)
         artist = try container.decode(String.self, forKey: .artist)
         releaseDate = try container.decodeIfPresent(String.self, forKey: .releaseDate)
         coverArtURL = try container.decodeIfPresent(String.self, forKey: .coverArtURL)
@@ -51,6 +54,7 @@ struct Album: Codable, Identifiable, Hashable {
     init(
         id: Int64,
         name: String,
+        nameSubtitle: String? = nil,
         artist: String,
         releaseDate: String?,
         coverArtURL: String? = nil,
@@ -65,6 +69,7 @@ struct Album: Codable, Identifiable, Hashable {
     ) {
         self.id = id
         self.name = name
+        self.nameSubtitle = nameSubtitle
         self.artist = artist
         self.releaseDate = releaseDate
         self.coverArtURL = coverArtURL
@@ -76,6 +81,12 @@ struct Album: Codable, Identifiable, Hashable {
         self.playCount = playCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    var displayName: String {
+        let subtitle = nameSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !subtitle.isEmpty else { return name }
+        return "\(name) (\(subtitle))"
     }
 }
 
@@ -158,6 +169,13 @@ struct PaginatedTracks: Codable {
 enum InsightTargetType: String, Codable, Hashable {
     case track
     case album
+}
+
+enum InsightViewMode: String, CaseIterable, Identifiable {
+    case current = "当前版本"
+    case history = "历史版本"
+
+    var id: String { rawValue }
 }
 
 struct ResolveArtworkResponse: Codable {
@@ -290,6 +308,15 @@ struct PaginatedInsights: Codable {
     let total: Int64
     let limit: Int
     let offset: Int
+    let recommendedInsightID: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case insights
+        case total
+        case limit
+        case offset
+        case recommendedInsightID = "recommended_insight_id"
+    }
 }
 
 struct InsightSummary: Codable, Identifiable, Hashable {
@@ -302,6 +329,9 @@ struct InsightSummary: Codable, Identifiable, Hashable {
     let track: String
     let analysisSummary: String?
     let llmProvider: String?
+    let likeCount: Int?
+    let dislikeCount: Int?
+    let latestFeedbackScore: Int?
     let createdAt: String?
     let isDisabled: Bool?
 
@@ -315,6 +345,9 @@ struct InsightSummary: Codable, Identifiable, Hashable {
         case track
         case analysisSummary = "analysis_summary"
         case llmProvider = "llm_provider"
+        case likeCount = "like_count"
+        case dislikeCount = "dislike_count"
+        case latestFeedbackScore = "latest_feedback_score"
         case createdAt = "created_at"
         case isDisabled = "is_disabled"
     }
@@ -330,6 +363,9 @@ struct InsightSummary: Codable, Identifiable, Hashable {
         track = try container.decode(String.self, forKey: .track)
         analysisSummary = try container.decodeIfPresent(String.self, forKey: .analysisSummary)
         llmProvider = try container.decodeIfPresent(String.self, forKey: .llmProvider)
+        likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount)
+        dislikeCount = try container.decodeIfPresent(Int.self, forKey: .dislikeCount)
+        latestFeedbackScore = try container.decodeIfPresent(Int.self, forKey: .latestFeedbackScore)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
         isDisabled = try container.decodeIfPresent(Bool.self, forKey: .isDisabled)
     }
@@ -353,12 +389,27 @@ struct InsightSummary: Codable, Identifiable, Hashable {
     var badgeText: String {
         isAlbum ? "专辑" : "曲目"
     }
+
+    var feedbackStatusText: String {
+        if latestFeedbackScore == -1 {
+            return "待修正"
+        }
+        if latestFeedbackScore == 1 {
+            return "已认可"
+        }
+        return "未评价"
+    }
+
+    var totalScore: Int {
+        (likeCount ?? 0) - (dislikeCount ?? 0)
+    }
 }
 
 struct UnscrobbledRecord: Codable, Identifiable {
     let id: Int64
     let artist: String
     let album: String
+    let albumSubtitle: String?
     let track: String
     let playTime: String
     let source: String
@@ -367,9 +418,16 @@ struct UnscrobbledRecord: Codable, Identifiable {
         case id
         case artist
         case album
+        case albumSubtitle = "album_subtitle"
         case track
         case playTime = "play_time"
         case source
+    }
+
+    var displayAlbum: String {
+        let subtitle = albumSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !subtitle.isEmpty else { return album }
+        return "\(album) (\(subtitle))"
     }
 }
 
@@ -625,6 +683,12 @@ enum InsightTaggedContentParser {
 
 extension Collection where Element == Insight {
     var primaryInsight: Insight? {
+        first
+    }
+}
+
+extension Collection where Element == AlbumInsight {
+    var primaryInsight: AlbumInsight? {
         first
     }
 }

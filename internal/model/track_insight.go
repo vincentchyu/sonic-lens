@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/vincentchyu/sonic-lens/common"
 )
 
 // TrackInsight 存储单首歌曲的 AI 歌词解析结果
@@ -111,8 +113,11 @@ type TrackInsightFeedback struct {
 	ID        int64 `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	InsightID int64 `gorm:"column:insight_id;type:bigint;index" json:"insight_id"`
 	// 评分：+1 点赞，-1 点踩
-	Score   int    `gorm:"column:score;type:int" json:"score"`
-	Comment string `gorm:"column:comment;type:text" json:"comment"`
+	Score          int         `gorm:"column:score;type:int" json:"score"`
+	Comment        string      `gorm:"column:comment;type:text" json:"comment"`
+	ReasonCodes    StringArray `gorm:"column:reason_codes;type:text" json:"reason_codes"`
+	SectionKey     string      `gorm:"column:section_key;type:varchar(128)" json:"section_key"`
+	SourcePlatform string      `gorm:"column:source_platform;type:varchar(64)" json:"source_platform"`
 
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
@@ -209,7 +214,25 @@ func GetAllTrackInsightSummaries(ctx context.Context, limit, offset int, keyword
 
 // DeleteTrackInsight 删除解析记录
 func DeleteTrackInsight(ctx context.Context, id uint64) error {
-	return GetDB().WithContext(ctx).Delete(&TrackInsight{}, id).Error
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			var insight TrackInsight
+			if err := tx.First(&insight, id).Error; err != nil {
+				return err
+			}
+
+			if err := deleteLLMCallLogsByTargetTx(
+				tx,
+				common.AnalysisTargetTypeTrack,
+				BuildLLMCallLogTrackKey(insight.Artist, insight.Album, insight.Track),
+				insight.Artist+" - "+insight.Track,
+			); err != nil {
+				return err
+			}
+
+			return tx.Delete(&insight).Error
+		},
+	)
 }
 
 func CreateTrackInsightFeedback(ctx context.Context, feedback *TrackInsightFeedback) error {
@@ -221,7 +244,22 @@ func GetTrackInsightFeedbacks(ctx context.Context, insightID int64) ([]*TrackIns
 	var feedbacks []*TrackInsightFeedback
 	err := GetDB().WithContext(ctx).
 		Where("insight_id = ?", insightID).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
+		Find(&feedbacks).Error
+	return feedbacks, err
+}
+
+// GetTrackInsightFeedbacksLimited 获取某次解析的最近若干条反馈，默认按时间倒序返回。
+func GetTrackInsightFeedbacksLimited(ctx context.Context, insightID int64, limit int) ([]*TrackInsightFeedback, error) {
+	if limit <= 0 {
+		return GetTrackInsightFeedbacks(ctx, insightID)
+	}
+
+	var feedbacks []*TrackInsightFeedback
+	err := GetDB().WithContext(ctx).
+		Where("insight_id = ?", insightID).
+		Order("created_at DESC, id DESC").
+		Limit(limit).
 		Find(&feedbacks).Error
 	return feedbacks, err
 }
@@ -278,6 +316,39 @@ func GetNegativeFeedbacksByLookup(ctx context.Context, lookup TrackInsightLookup
 		return nil, err
 	}
 	return feedbacks, nil
+}
+
+// GetTrackInsightLatestFeedbackScores 获取指定曲目音眸的最新反馈分值，供列表轻量状态展示。
+func GetTrackInsightLatestFeedbackScores(ctx context.Context, insightIDs []int64) (map[int64]int, error) {
+	result := make(map[int64]int)
+	if len(insightIDs) == 0 {
+		return result, nil
+	}
+
+	type latestFeedbackRow struct {
+		InsightID int64 `gorm:"column:insight_id"`
+		Score     int   `gorm:"column:score"`
+	}
+
+	var rows []latestFeedbackRow
+	err := GetDB().WithContext(ctx).
+		Model(&TrackInsightFeedback{}).
+		Select("insight_id, score").
+		Where("insight_id IN ?", insightIDs).
+		Order("created_at DESC, id DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		if _, ok := result[row.InsightID]; ok {
+			continue
+		}
+		result[row.InsightID] = row.Score
+	}
+
+	return result, nil
 }
 
 func GetNegativeFeedbacksByTrack(ctx context.Context, artist, album, track string) ([]*TrackInsightFeedback, error) {

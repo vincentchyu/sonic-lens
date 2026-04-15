@@ -42,6 +42,16 @@
             --source-applemusic: #f43f5e;
             --source-audirvana: #a855f7;
             --source-roon: #64748b;
+            --queue-surface: rgba(255, 255, 255, 0.7);
+            --queue-subtle-surface: rgba(255, 255, 255, 0.5);
+            --queue-strong-border: rgba(148, 163, 184, 0.24);
+            --queue-divider: rgba(148, 163, 184, 0.18);
+            --queue-accent: #2563eb;
+            --queue-running: #f59e0b;
+            --queue-failed: #ef4444;
+            --queue-canceled: #64748b;
+            --queue-success: #10b981;
+            --queue-muted: #64748b;
         }
 
         /* AI Insight Tabs */
@@ -128,6 +138,15 @@
             --source-applemusic: #ff6b6b;
             --source-audirvana: #c084fc;
             --source-roon: #94a3b8;
+            --queue-surface: rgba(15, 19, 28, 0.82);
+            --queue-subtle-surface: rgba(15, 19, 28, 0.58);
+            --queue-strong-border: rgba(148, 163, 184, 0.18);
+            --queue-divider: rgba(148, 163, 184, 0.14);
+            --queue-accent: #60a5fa;
+            --queue-running: #fbbf24;
+            --queue-failed: #f87171;
+            --queue-success: #34d399;
+            --queue-muted: #94a3b8;
         }
 
         /* Watermark Logo */
@@ -483,6 +502,823 @@
             color: var(--text-primary);
             line-height: 1.6;
             min-height: 100vh;
+        }
+
+        .queue-dashboard {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            padding: 22px 24px 24px;
+            border-radius: 28px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.04)),
+                var(--queue-surface);
+            border: 1px solid var(--queue-strong-border);
+            box-shadow: 0 22px 45px rgba(15, 23, 42, 0.08);
+        }
+
+        .dark-mode .queue-dashboard {
+            box-shadow: 0 24px 52px rgba(2, 6, 23, 0.34);
+        }
+
+        .queue-toolbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .queue-heading {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .queue-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--queue-accent);
+        }
+
+        .queue-kicker::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: currentColor;
+            box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.28);
+            animation: queue-pulse 1.8s ease-out infinite;
+        }
+
+        .queue-heading h2 {
+            font-size: 1.5rem;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        .queue-heading p {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            max-width: 54ch;
+        }
+
+        .queue-toolbar-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .queue-search {
+            position: relative;
+        }
+
+        .queue-search input {
+            width: 240px;
+            padding: 10px 14px 10px 36px;
+            border-radius: 999px;
+            border: 1px solid var(--queue-strong-border);
+            background: var(--queue-subtle-surface);
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .queue-search span {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0.5;
+        }
+
+        .queue-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 42px;
+            padding: 0 14px;
+            border-radius: 999px;
+            border: 1px solid var(--queue-strong-border);
+            background: var(--queue-subtle-surface);
+            color: var(--text-primary);
+            font-size: 0.88rem;
+        }
+
+        .queue-chip-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--queue-muted);
+            flex-shrink: 0;
+        }
+
+        .queue-chip-live .queue-chip-dot {
+            background: var(--queue-success);
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.28);
+            animation: queue-pulse 1.8s ease-out infinite;
+        }
+
+        .queue-chip-polling .queue-chip-dot {
+            background: var(--queue-running);
+        }
+
+        .queue-summary-bar {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        /* 音眸任务 Tab 样式 */
+        .insight-job-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 0 0 2px 0;
+            padding: 0 2px 8px;
+            border-bottom: 1px solid var(--queue-divider);
+        }
+
+        .insight-job-tab {
+            position: relative;
+            padding: 9px 16px 11px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            border-radius: 999px;
+            transition: color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+            user-select: none;
+        }
+
+        .insight-job-tab:hover {
+            background: var(--queue-subtle-surface);
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+
+        .insight-job-tab.active {
+            color: var(--queue-accent);
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        .insight-job-tab.active::after {
+            content: "";
+            position: absolute;
+            left: 16px;
+            right: 16px;
+            bottom: -9px;
+            height: 2px;
+            background: var(--queue-accent);
+            border-radius: 999px;
+        }
+
+        /* 任务队列工作区 */
+        .queue-workspace {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.95fr);
+            gap: 16px;
+            align-items: stretch;
+            min-height: 0;
+            height: var(--insight-job-workspace-height, auto);
+        }
+
+        .queue-workspace.is-monitor {
+            grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+        }
+
+        .queue-workspace.is-list {
+            grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.95fr);
+        }
+
+        .queue-workspace-monitor {
+            display: flex;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .queue-priority-strip-vertical {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            max-height: calc(var(--insight-job-workspace-height, 640px));
+        }
+
+        .queue-priority-strip-vertical .queue-priority-lane {
+            flex: none;
+            width: 100%;
+            background: var(--queue-subtle-surface);
+            border: 1px solid var(--queue-divider);
+            border-radius: 20px;
+            padding: 16px;
+        }
+
+        .queue-priority-strip-vertical .queue-priority-list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .queue-priority-strip-vertical .queue-priority-item {
+            margin-bottom: 0;
+            border: 1px solid var(--queue-divider);
+        }
+
+        /* 工具栏控制 */
+        .queue-toolbar-controls.is-hidden {
+            display: none !important;
+        }
+
+        .queue-summary-card {
+            padding: 14px 16px;
+            border-radius: 20px;
+            border: 1px solid var(--queue-divider);
+            background: var(--queue-subtle-surface);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-height: 104px;
+            /* max-width: 120px ; */
+        }
+
+        .queue-summary-label {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        .queue-summary-value {
+            font-size: 1.7rem;
+            line-height: 1;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            color: var(--text-primary);
+        }
+
+        .queue-summary-note {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        .queue-summary-card[data-tone="running"] .queue-summary-value {
+            color: var(--queue-running);
+        }
+
+        .queue-summary-card[data-tone="failed"] .queue-summary-value {
+            color: var(--queue-failed);
+        }
+
+        .queue-summary-card[data-tone="canceled"] .queue-summary-value {
+            color: var(--queue-canceled);
+        }
+
+        .queue-summary-card[data-tone="success"] .queue-summary-value {
+            color: var(--queue-success);
+        }
+
+        .queue-priority-strip {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .queue-priority-lane {
+            border-radius: 22px;
+            border: 1px solid var(--queue-divider);
+            background: var(--queue-subtle-surface);
+            overflow: hidden;
+        }
+
+        .queue-priority-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--queue-divider);
+        }
+
+        .queue-priority-head strong {
+            font-size: 0.98rem;
+        }
+
+        .queue-priority-head span {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        .queue-priority-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .queue-priority-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            align-items: center;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--queue-divider);
+        }
+
+        .queue-priority-item:last-child {
+            border-bottom: none;
+        }
+
+        .queue-priority-meta {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .queue-priority-title {
+            font-weight: 700;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .queue-priority-subtitle {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .queue-priority-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .queue-feed {
+            border-radius: 24px;
+            border: 1px solid var(--queue-divider);
+            background: var(--queue-subtle-surface);
+            overflow: hidden;
+            min-height: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .queue-feed-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) minmax(160px, 0.85fr) minmax(170px, 0.9fr) minmax(180px, 0.85fr);
+            gap: 14px;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--queue-divider);
+            font-size: 0.78rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .queue-feed-body {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .queue-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .queue-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) minmax(160px, 0.85fr) minmax(170px, 0.9fr) minmax(180px, 0.85fr);
+            gap: 14px;
+            align-items: center;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--queue-divider);
+            transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+        }
+
+        .queue-row:last-child {
+            border-bottom: none;
+        }
+
+        .queue-row:hover {
+            background: rgba(148, 163, 184, 0.08);
+        }
+
+        .queue-row.is-selected {
+            background: rgba(37, 99, 235, 0.08);
+            box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+        }
+
+        .queue-row.is-updated {
+            animation: queue-row-highlight 1.2s ease-out;
+        }
+
+        .queue-row-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .queue-row-topline,
+        .queue-row-subline,
+        .queue-row-meta,
+        .queue-status-block,
+        .queue-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .queue-row-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .queue-row-subtitle,
+        .queue-row-meta,
+        .queue-meta-block,
+        .queue-status-note {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+        }
+
+        .queue-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.76rem;
+            opacity: 0.68;
+        }
+
+        .queue-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+
+        .queue-badge-track {
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--queue-success);
+        }
+
+        .queue-badge-album {
+            background: rgba(99, 102, 241, 0.14);
+            color: #818cf8;
+        }
+
+        .queue-phase-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .queue-phase-badge[data-phase="queued"] {
+            background: rgba(59, 130, 246, 0.14);
+            color: #60a5fa;
+        }
+
+        .queue-phase-badge[data-phase="running"] {
+            background: rgba(245, 158, 11, 0.14);
+            color: var(--queue-running);
+        }
+
+        .queue-phase-badge[data-phase="completed"] {
+            background: rgba(16, 185, 129, 0.14);
+            color: var(--queue-success);
+        }
+
+        .queue-phase-badge[data-phase="failed"] {
+            background: rgba(239, 68, 68, 0.14);
+            color: var(--queue-failed);
+        }
+
+        .queue-phase-badge[data-phase="canceled"] {
+            background: rgba(148, 163, 184, 0.18);
+            color: var(--queue-muted);
+        }
+
+        .queue-result-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.14);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
+        .queue-result-badge.is-ready {
+            background: rgba(16, 185, 129, 0.14);
+            color: var(--queue-success);
+        }
+
+        .queue-meta-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .queue-meta-strong {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .queue-status-block {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .queue-actions {
+            justify-content: flex-end;
+        }
+
+        .queue-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 0 12px;
+            border-radius: 999px;
+            border: 1px solid var(--queue-strong-border);
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .queue-btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(37, 99, 235, 0.32);
+            color: var(--queue-accent);
+        }
+
+        .queue-btn-primary {
+            background: rgba(37, 99, 235, 0.12);
+            color: var(--queue-accent);
+            border-color: rgba(37, 99, 235, 0.18);
+        }
+
+        .queue-btn-danger {
+            color: var(--queue-failed);
+            border-color: rgba(239, 68, 68, 0.2);
+            background: rgba(239, 68, 68, 0.08);
+        }
+
+        .queue-btn[disabled] {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .queue-inspector {
+            border-radius: 24px;
+            border: 1px solid var(--queue-divider);
+            background: var(--queue-subtle-surface);
+            min-height: 420px;
+            overflow: hidden;
+            position: relative;
+            height: 100%;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .queue-inspector-shell {
+            padding: 18px 18px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .queue-inspector-empty {
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 42px 22px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .queue-inspector-top {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .queue-inspector-title {
+            font-size: 1.18rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .queue-inspector-subtitle {
+            color: var(--text-secondary);
+        }
+
+        .queue-inspector-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .queue-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-top: 4px;
+        }
+
+        .queue-section-title {
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--text-secondary);
+        }
+
+        .queue-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .queue-timeline-item {
+            display: grid;
+            grid-template-columns: 16px minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        .queue-timeline-dot {
+            width: 10px;
+            height: 10px;
+            margin-top: 6px;
+            border-radius: 999px;
+            background: var(--queue-muted);
+            position: relative;
+        }
+
+        .queue-timeline-dot::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 12px;
+            bottom: -18px;
+            width: 1px;
+            background: var(--queue-divider);
+            transform: translateX(-50%);
+        }
+
+        .queue-timeline-item:last-child .queue-timeline-dot::after {
+            display: none;
+        }
+
+        .queue-timeline-dot[data-tone="success"] {
+            background: var(--queue-success);
+        }
+
+        .queue-timeline-dot[data-tone="running"] {
+            background: var(--queue-running);
+        }
+
+        .queue-timeline-dot[data-tone="failed"] {
+            background: var(--queue-failed);
+        }
+
+        .queue-timeline-label {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .queue-timeline-time {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+        }
+
+        .queue-kv-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .queue-kv-card {
+            padding: 12px 13px;
+            border-radius: 16px;
+            border: 1px solid var(--queue-divider);
+            background: rgba(148, 163, 184, 0.06);
+        }
+
+        .queue-kv-card strong {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .queue-kv-card span,
+        .queue-error-box {
+            word-break: break-word;
+            color: var(--text-primary);
+        }
+
+        .queue-error-box {
+            padding: 14px 15px;
+            border-radius: 18px;
+            border: 1px solid rgba(239, 68, 68, 0.16);
+            background: rgba(239, 68, 68, 0.08);
+            white-space: pre-wrap;
+            line-height: 1.65;
+        }
+
+        @keyframes queue-pulse {
+            0% {
+                box-shadow: 0 0 0 0 currentColor;
+            }
+            70% {
+                box-shadow: 0 0 0 10px transparent;
+            }
+            100% {
+                box-shadow: 0 0 0 0 transparent;
+            }
+        }
+
+        @keyframes queue-row-highlight {
+            0% {
+                background: rgba(37, 99, 235, 0.18);
+            }
+            100% {
+                background: transparent;
+            }
+        }
+
+        @media (max-width: 1180px) {
+            .queue-summary-bar,
+            .queue-priority-strip,
+            .queue-workspace,
+            .queue-kv-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .queue-workspace.is-monitor,
+            .queue-workspace.is-list {
+                grid-template-columns: 1fr;
+            }
+
+            .queue-inspector {
+                display: none;
+            }
+        }
+
+        @media (max-width: 920px) {
+            .queue-dashboard {
+                padding: 18px;
+            }
+
+            .queue-feed-head {
+                display: none;
+            }
+
+            .queue-row {
+                grid-template-columns: 1fr;
+            }
+
+            .queue-actions {
+                justify-content: flex-start;
+            }
+
+            .queue-search input {
+                width: min(100%, 280px);
+            }
         }
 
         body.floating-dragging #nowPlaying,
@@ -2830,6 +3666,7 @@
                         
                         <!-- 分项: 音眸 -->
                         <li><a href="#" id="insightListTab" class="side-nav-sublink">音眸</a></li>
+                        <li><a href="#" id="insightJobListTab" class="side-nav-sublink">音眸任务</a></li>
 
                         <!-- 分组 B: 曲目 + 未上报 -->
                         <div class="tree-line-group">
@@ -3202,6 +4039,87 @@
             </div>
         </div>
     </div>
+
+    <div id="insightJobListContainer" style="display: none">
+        <div class="queue-dashboard">
+            <div class="queue-toolbar">
+                <div class="queue-heading">
+                    <div class="queue-kicker">Queue Console</div>
+                    <h2>音眸任务队列</h2>
+                    <p>聚焦运行中、失败/已取消待清理和最近完成的音眸任务，实时回看任务状态与结果跳转。</p>
+                </div>
+                <div class="queue-toolbar-controls is-hidden">
+                    <label class="queue-search">
+                        <input type="text" id="insightJobSearchInput" placeholder="按任务、曲目、模型搜索..." />
+                        <span>🔍</span>
+                    </label>
+                    <select id="insightJobStatusFilter" class="time-filter" style="min-width: 128px;">
+                        <option value="">全部状态</option>
+                        <option value="queued">已排队</option>
+                        <option value="running">运行中</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                        <option value="canceled">已取消</option>
+                    </select>
+                    <select id="insightJobTargetFilter" class="time-filter" style="min-width: 128px;">
+                        <option value="">全部对象</option>
+                        <option value="track">曲目任务</option>
+                        <option value="album">专辑任务</option>
+                    </select>
+                    <button id="refreshInsightJobListBtn" class="time-filter">刷新</button>
+                    <div id="insightJobRealtimeIndicator" class="queue-chip queue-chip-polling">
+                        <span class="queue-chip-dot"></span>
+                        <span>实时通道连接中...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="insightJobSummaryBar" class="queue-summary-bar">
+                <div class="queue-summary-card">
+                    <div class="queue-summary-label">全部任务</div>
+                    <div class="queue-summary-value">-</div>
+                    <div class="queue-summary-note">最近状态快照</div>
+                </div>
+            </div>
+
+            <div class="insight-job-tabs">
+                <div class="insight-job-tab active" data-tab="monitor" onclick="switchInsightJobTab('monitor')">执行监控</div>
+                <div class="insight-job-tab" data-tab="list" onclick="switchInsightJobTab('list')">全部任务</div>
+            </div>
+
+            <div class="queue-workspace is-monitor" id="insightJobWorkspace">
+                <!-- Tab 1: 监控内容 (正在执行 + 失败/取消待处理) -->
+                <div id="insightJobMonitorView" class="queue-workspace-monitor">
+                    <div id="insightJobPriorityStrip" class="queue-priority-strip-vertical">
+                        <!-- 由 JS 填充 renderInsightJobPriorityStrip -->
+                    </div>
+                </div>
+
+                <!-- Tab 2: 任务对象列表 (全部任务) -->
+                <div id="insightJobListView" class="queue-feed" style="display: none; flex: 1; overflow-y: auto;">
+                    <div class="queue-feed-head">
+                        <div>任务对象</div>
+                        <div>执行环境</div>
+                        <div>状态与时间</div>
+                        <div>操作</div>
+                    </div>
+                    <div id="insightJobListContent" class="queue-feed-body">
+                        <div class="queue-empty">加载中...</div>
+                    </div>
+                    <div id="insightJobPagination" style="display: flex; justify-content: center; margin-top: 20px; padding-bottom: 20px;">
+                        <button id="insightJobPrevPage" class="time-filter" disabled>上一页</button>
+                        <span id="insightJobPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                        <button id="insightJobNextPage" class="time-filter">下一页</button>
+                    </div>
+                </div>
+
+                <!-- 共享详情区 -->
+                <aside id="insightJobInspector" class="queue-inspector">
+                    <div class="queue-inspector-empty">选择一条任务后，这里会显示状态时间线、错误信息和结果跳转。</div>
+                </aside>
+            </div>
+        </div>
+    </div>
     </div>
 </div>
 
@@ -3219,14 +4137,46 @@
     </div>
 </div>
 
+<div id="insightJobModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 920px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h3 id="insightJobModalTitle">音眸任务详情</h3>
+            <span class="close-modal" id="closeInsightJobModal">&times;</span>
+        </div>
+        <div class="modal-body" id="insightJobModalContent">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+</div>
+
 <script>
     // WebSocket连接
     let ws = null;
     let hasDashboardBootstrapped = false;
+    let currentSectionID = "dashboard";
+    let insightJobWSConnected = false;
 
     let currentInsightKeyword = "";
     let insightSearchTimeout = null;
     let currentInsightTargetType = "track";
+    let currentInsightJobPage = 1;
+    let insightJobPageSize = 20;
+    let totalInsightJobs = 0;
+    let currentInsightJobKeyword = "";
+    let insightJobSearchTimeout = null;
+    let currentInsightJobStatus = "";
+    let currentInsightJobTargetType = "";
+    let currentInsightJobTab = "monitor";
+    let currentInsightJobDetail = null;
+    let currentInsightJobRows = [];
+    let currentInsightJobSummaryRows = [];
+    let selectedInsightJobID = "";
+    let highlightedInsightJobID = "";
+    let insightJobRefreshTimer = null;
+    let insightJobDurationTicker = null;
+    let insightJobListCache = {};
+    let insightJobDetailViewState = {};
 
     // 专辑列表分页及搜索变量
     let currentAlbumPage = 1;
@@ -3449,6 +4399,8 @@
         // 连接打开时的处理
         ws.onopen = function (event) {
             console.log("WebSocket连接已建立");
+            insightJobWSConnected = true;
+            updateInsightJobRealtimeIndicator();
         };
 
         // 收到消息时的处理
@@ -3478,12 +4430,16 @@
                 positionAnchorPerf = performance.now();
                 trackDuration = 0;
                 trackDurationMs = 0;
+            } else if (data.type === "insight_job_updated") {
+                handleInsightJobRealtimeUpdate(data.data);
             }
         };
 
         // 连接关闭时的处理
         ws.onclose = function (event) {
             console.log("WebSocket连接已关闭");
+            insightJobWSConnected = false;
+            updateInsightJobRealtimeIndicator();
             // 清除进度更新定时器
             if (progressInterval) {
                 clearInterval(progressInterval);
@@ -3496,6 +4452,8 @@
         // 连接错误时的处理
         ws.onerror = function (error) {
             console.log("WebSocket连接出错:", error);
+            insightJobWSConnected = false;
+            updateInsightJobRealtimeIndicator();
             // 清除进度更新定时器
             if (progressInterval) {
                 clearInterval(progressInterval);
@@ -4607,8 +5565,9 @@
                 return response.json().then(data => {
                     if (!response.ok) throw new Error(data.error || "分析失败");
                     const insights = data.insights || (data.insight ? [data.insight] : []);
+                    const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
                     console.log("POST analysis logic success, calling handleInsightResponse");
-                    handleInsightResponse(insights, true, contextType);
+                    handleInsightResponse(insights, true, contextType, recommendedInsightID);
                 });
             }).catch(err => {
                 console.error("POST analysis fetch error:", err);
@@ -4623,8 +5582,9 @@
                 const data = await response.json();
 
                 const insights = data.insights || [];
+                const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
                 if (insights.length > 0) {
-                    handleInsightResponse(insights, false, contextType);
+                    handleInsightResponse(insights, false, contextType, recommendedInsightID);
                 } else {
                     handleNoInsight(contextType);
                 }
@@ -4635,15 +5595,18 @@
     }
 
     // 辅助：处理解析成功响应
-    function handleInsightResponse(insights, isFromForce, contextType) {
+    function handleInsightResponse(insights, isFromForce, contextType, recommendedInsightID = 0) {
         const aiButton = document.getElementById("aiInsightButton");
         const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
         const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
 
         configureInsightModal(contextType, 'track');
-        insightStates[contextType].insight = insights[0];
+        const recommendedInsight = recommendedInsightID > 0
+            ? insights.find((item) => Number(item.id || 0) === recommendedInsightID)
+            : null;
+        insightStates[contextType].insight = recommendedInsight || insights[0];
         insightStates[contextType].allInsights = insights;
-        currentTrackInsight = insights[0]; // 保持兼容
+        currentTrackInsight = insightStates[contextType].insight || insights[0]; // 保持兼容
 
         renderInsight(insights, contextType);
         
@@ -5487,16 +6450,21 @@
             }
 
             const insights = data.insights || (data.insight ? [data.insight] : []);
+            const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
             albumInsightState.insights = insights;
             const focusInsightID = Number(albumInsightState.focusInsightID || 0);
+            const recommendedInsight = recommendedInsightID > 0
+                ? insights.find((item) => Number(item.id || 0) === recommendedInsightID)
+                : null;
             const focusedInsight = focusInsightID > 0
                 ? insights.find((item) => Number(item.id || 0) === focusInsightID)
                 : null;
-            albumInsightState.insight = focusedInsight || insights[0] || null;
+            albumInsightState.insight = focusedInsight || recommendedInsight || insights[0] || null;
             albumInsightState.focusInsightID = Number(albumInsightState.insight ? albumInsightState.insight.id : 0);
             albumInsightState.view = albumInsightState.view || 'summary';
             window.currentAlbumDetailData = window.currentAlbumDetailData || {};
             window.currentAlbumDetailData.insights = insights;
+            window.currentAlbumDetailData.recommendedInsightID = recommendedInsightID;
         } catch (error) {
             if (albumInsightState.albumID !== albumID) {
                 return;
@@ -7630,7 +8598,7 @@
     async function loadInsightList() {
         const content = document.getElementById("insightListContent");
         content.innerHTML = '<div class="loading">加载中...</div>';
-        
+
         // 实时从输入框获取最新关键词，确保刷新按钮点击时也能带上
         const searchInput = document.getElementById("insightSearchInput");
         if (searchInput) {
@@ -7642,7 +8610,7 @@
             const url = `/api/insights/all?limit=${insightPageSize}&offset=${offset}&keyword=${encodeURIComponent(currentInsightKeyword)}&analysis_target_type=${encodeURIComponent(currentInsightTargetType)}`;
             const response = await fetch(url);
             const data = await response.json();
-            
+
             totalInsights = data.total;
             renderInsightList(data.insights || []);
             updateInsightPagination();
@@ -7733,6 +8701,992 @@
         info.textContent = `第 ${currentInsightPage} 页 / 共 ${totalPages} 页 (${totalInsights} 条 ${targetLabel})`;
         document.getElementById("insightPrevPage").disabled = currentInsightPage === 1;
         document.getElementById("insightNextPage").disabled = currentInsightPage >= totalPages;
+    }
+
+    function normalizeInsightJobStatus(status) {
+        return String(status || "queued").toLowerCase();
+    }
+
+    function renderInsightJobPhaseBadge(status) {
+        const normalized = normalizeInsightJobStatus(status);
+        const textMap = {
+            queued: "已排队",
+            running: "运行中",
+            completed: "已完成",
+            failed: "失败",
+            canceled: "已取消"
+        };
+        return `<span class="queue-phase-badge" data-phase="${normalized}">${textMap[normalized] || "已排队"}</span>`;
+    }
+
+    function renderInsightJobTargetBadge(targetType) {
+        if (targetType === "album") {
+            return '<span class="queue-badge queue-badge-album">专辑</span>';
+        }
+        return '<span class="queue-badge queue-badge-track">曲目</span>';
+    }
+
+    function mergeInsightJobSnapshot(job) {
+        if (!job || !job.id) return job;
+        return {
+            ...(insightJobListCache[job.id] || {}),
+            ...(currentInsightJobDetail && currentInsightJobDetail.id === job.id ? currentInsightJobDetail : {}),
+            ...job
+        };
+    }
+
+    function getInsightJobDetailStateKey(jobID, target) {
+        return `${jobID || ""}::${target || "inspector"}`;
+    }
+
+    function captureInsightJobDetailViewState(jobID, target) {
+        if (!jobID) return;
+        const normalizedTarget = target === "modal" ? "modal" : "inspector";
+        const container = normalizedTarget === "modal"
+            ? document.getElementById("insightJobModalContent")
+            : document.getElementById("insightJobInspector");
+        if (!container) return;
+
+        const openDetails = [];
+        container.querySelectorAll("details[data-detail-key]").forEach((item) => {
+            if (item.open) {
+                openDetails.push(item.dataset.detailKey);
+            }
+        });
+
+        insightJobDetailViewState[getInsightJobDetailStateKey(jobID, normalizedTarget)] = {
+            scrollTop: container.scrollTop || 0,
+            openDetails
+        };
+    }
+
+    function restoreInsightJobDetailViewState(jobID, target) {
+        if (!jobID) return;
+        const normalizedTarget = target === "modal" ? "modal" : "inspector";
+        const container = normalizedTarget === "modal"
+            ? document.getElementById("insightJobModalContent")
+            : document.getElementById("insightJobInspector");
+        if (!container) return;
+
+        const state = insightJobDetailViewState[getInsightJobDetailStateKey(jobID, normalizedTarget)];
+        if (!state) return;
+
+        const openSet = new Set(Array.isArray(state.openDetails) ? state.openDetails : []);
+        container.querySelectorAll("details[data-detail-key]").forEach((item) => {
+            item.open = openSet.has(item.dataset.detailKey);
+        });
+
+        if (typeof state.scrollTop === "number" && state.scrollTop > 0) {
+            container.scrollTop = state.scrollTop;
+        }
+    }
+
+    function getCurrentInsightJobDetailTarget() {
+        const modal = document.getElementById("insightJobModal");
+        if (modal && modal.style.display === "block") {
+            return "modal";
+        }
+        return "inspector";
+    }
+
+    function formatInsightJobSubject(job) {
+        if (!job) return { title: "-", subtitle: "-" };
+        if (job.analysis_target_type === "album") {
+            return {
+                title: job.album || `专辑 #${job.album_id || 0}`,
+                subtitle: `${job.artist || "-"} · album_id=${job.album_id || 0}`
+            };
+        }
+        return {
+            title: job.track || "-",
+            subtitle: `${job.artist || "-"} · ${job.album || "-"}`
+        };
+    }
+
+    function parseJobDate(value) {
+        if (!value) return null;
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatJobDateTime(value) {
+        const date = parseJobDate(value);
+        return date ? date.toLocaleString("zh-CN") : "-";
+    }
+
+    function formatDurationBetween(startValue, endValue) {
+        const start = parseJobDate(startValue);
+        const end = parseJobDate(endValue) || new Date();
+        if (!start || !end) return "未记录";
+        const diffMs = Math.max(0, end.getTime() - start.getTime());
+        const totalSeconds = Math.floor(diffMs / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        if (minutes > 0) return `${minutes}m ${seconds}s`;
+        return `${seconds}s`;
+    }
+
+    function deriveInsightJobMetrics(job) {
+        const status = normalizeInsightJobStatus(job.status);
+        const createdAt = parseJobDate(job.created_at);
+        const startedAt = parseJobDate(job.started_at);
+        const finishedAt = parseJobDate(job.finished_at);
+        const updatedAt = parseJobDate(job.updated_at);
+        const now = new Date();
+        const queuedEndValue = status === "queued" ? now : (updatedAt || now);
+        const runningEndValue = status === "running" ? now : (finishedAt || updatedAt || now);
+        const waitDurationText = startedAt
+            ? formatDurationBetween(job.created_at, job.started_at)
+            : status === "queued"
+                ? `${formatDurationBetween(job.created_at, queuedEndValue)} 待分配`
+                : "未开始";
+        const runDurationText = startedAt
+            ? formatDurationBetween(job.started_at, runningEndValue)
+            : "未执行";
+        const finalTimeText = finishedAt
+            ? `${formatJobDateTime(job.finished_at)} 结束`
+            : updatedAt
+                ? `${formatJobDateTime(job.updated_at)} 最近更新`
+                : "暂无时间";
+        const displayPhaseGroup = status === "running"
+            ? "active"
+            : status === "failed"
+                ? "blocked"
+                : status === "queued"
+                    ? "queued"
+                    : "done";
+        return {
+            createdAt,
+            startedAt,
+            finishedAt,
+            updatedAt,
+            waitDurationText,
+            runDurationText,
+            finalTimeText,
+            displayPhaseGroup,
+            isActionable: status === "queued" || status === "running" || status === "failed"
+        };
+    }
+
+    function getInsightJobSortWeight(job) {
+        const status = normalizeInsightJobStatus(job.status);
+        if (status === "running") return 0;
+        if (status === "failed") return 1;
+        if (status === "queued") return 2;
+        return 3;
+    }
+
+    function compareInsightJobs(a, b) {
+        const weightDiff = getInsightJobSortWeight(a) - getInsightJobSortWeight(b);
+        if (weightDiff !== 0) return weightDiff;
+        const aTime = parseJobDate(a.updated_at)?.getTime() || 0;
+        const bTime = parseJobDate(b.updated_at)?.getTime() || 0;
+        return bTime - aTime;
+    }
+
+    function isInsightJobInspectorAvailable() {
+        return window.matchMedia("(min-width: 1181px)").matches;
+    }
+
+    function updateInsightJobTabLayout() {
+        const workspace = document.getElementById("insightJobWorkspace");
+        const monitorView = document.getElementById("insightJobMonitorView");
+        const listView = document.getElementById("insightJobListView");
+        const toolbarControls = document.querySelector(".queue-toolbar-controls");
+
+        document.querySelectorAll(".insight-job-tab").forEach(tab => {
+            tab.classList.toggle("active", tab.dataset.tab === currentInsightJobTab);
+        });
+
+        if (workspace) {
+            workspace.classList.toggle("is-monitor", currentInsightJobTab === "monitor");
+            workspace.classList.toggle("is-list", currentInsightJobTab === "list");
+        }
+
+        if (monitorView) {
+            monitorView.style.display = currentInsightJobTab === "monitor" ? "flex" : "none";
+        }
+
+        if (listView) {
+            listView.style.display = currentInsightJobTab === "list" ? "flex" : "none";
+        }
+
+        if (toolbarControls) {
+            toolbarControls.classList.toggle("is-hidden", currentInsightJobTab !== "list");
+        }
+    }
+
+    function switchInsightJobTab(tabName) {
+        if (!tabName || tabName === currentInsightJobTab) {
+            updateInsightJobTabLayout();
+            syncInsightJobWorkspaceHeight();
+            return;
+        }
+        currentInsightJobTab = tabName;
+        updateInsightJobTabLayout();
+        syncInsightJobWorkspaceHeight();
+    }
+
+    function insightJobNeedsLiveTick(job) {
+        const status = normalizeInsightJobStatus(job && job.status);
+        return status === "queued" || status === "running";
+    }
+
+    function refreshInsightJobDurationsLocally() {
+        if (currentSectionID !== "insightJobList") {
+            return;
+        }
+        const hasLiveJobs = currentInsightJobRows.some(insightJobNeedsLiveTick)
+            || currentInsightJobSummaryRows.some(insightJobNeedsLiveTick)
+            || (currentInsightJobDetail && insightJobNeedsLiveTick(currentInsightJobDetail));
+        if (!hasLiveJobs) {
+            return;
+        }
+        renderInsightJobList(currentInsightJobRows);
+        renderInsightJobPriorityStrip(currentInsightJobSummaryRows);
+        if (selectedInsightJobID) {
+            const selected = (currentInsightJobDetail && currentInsightJobDetail.id === selectedInsightJobID)
+                ? currentInsightJobDetail
+                : insightJobListCache[selectedInsightJobID];
+            if (selected) {
+                renderInsightJobDetail(selected, {
+                    target: isInsightJobInspectorAvailable() ? "inspector" : "modal"
+                });
+            }
+        }
+    }
+
+    function updateInsightJobRealtimeIndicator() {
+        const indicator = document.getElementById("insightJobRealtimeIndicator");
+        if (!indicator) return;
+        indicator.classList.toggle("queue-chip-live", insightJobWSConnected);
+        indicator.classList.toggle("queue-chip-polling", !insightJobWSConnected);
+        indicator.innerHTML = `
+            <span class="queue-chip-dot"></span>
+            <span>${insightJobWSConnected ? "实时通道在线，状态会自动回流" : "实时通道断开，当前降级为轮询"}</span>
+        `;
+    }
+
+    function scheduleInsightJobListRefresh() {
+        if (currentSectionID !== "insightJobList") {
+            return;
+        }
+        if (insightJobRefreshTimer) {
+            clearTimeout(insightJobRefreshTimer);
+        }
+        insightJobRefreshTimer = setTimeout(() => {
+            loadInsightJobList(currentInsightJobPage);
+        }, 250);
+    }
+
+    async function loadInsightJobSummarySnapshot() {
+        try {
+            const params = new URLSearchParams({
+                limit: "200",
+                offset: "0"
+            });
+            const response = await fetch(`/api/insight-jobs?${params.toString()}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            currentInsightJobSummaryRows = Array.isArray(data.jobs) ? data.jobs.slice() : [];
+            renderInsightJobSummaryBar(currentInsightJobSummaryRows, data.total || currentInsightJobSummaryRows.length);
+            renderInsightJobPriorityStrip(currentInsightJobSummaryRows);
+        } catch (error) {
+            console.error("加载音眸任务摘要失败:", error);
+        }
+    }
+
+    async function loadInsightJobList(page = 1) {
+        currentInsightJobPage = page;
+        const content = document.getElementById("insightJobListContent");
+        if (!content) return;
+        content.innerHTML = '<div class="queue-empty">加载中...</div>';
+
+        const searchInput = document.getElementById("insightJobSearchInput");
+        const statusFilter = document.getElementById("insightJobStatusFilter");
+        const targetFilter = document.getElementById("insightJobTargetFilter");
+        if (searchInput) currentInsightJobKeyword = searchInput.value.trim();
+        if (statusFilter) currentInsightJobStatus = statusFilter.value;
+        if (targetFilter) currentInsightJobTargetType = targetFilter.value;
+
+        try {
+            const offset = (currentInsightJobPage - 1) * insightJobPageSize;
+            const params = new URLSearchParams({
+                limit: String(insightJobPageSize),
+                offset: String(offset)
+            });
+            if (currentInsightJobKeyword) params.set("keyword", currentInsightJobKeyword);
+            if (currentInsightJobStatus) params.set("status", currentInsightJobStatus);
+            if (currentInsightJobTargetType) params.set("analysis_target_type", currentInsightJobTargetType);
+
+            const response = await fetch(`/api/insight-jobs?${params.toString()}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            totalInsightJobs = data.total || 0;
+            currentInsightJobRows = (data.jobs || []).map((job) => mergeInsightJobSnapshot(job)).slice().sort(compareInsightJobs);
+            currentInsightJobRows.forEach((job) => {
+                insightJobListCache[job.id] = job;
+            });
+            renderInsightJobList(currentInsightJobRows);
+            updateInsightJobPagination();
+            updateInsightJobRealtimeIndicator();
+            await loadInsightJobSummarySnapshot();
+
+            if (selectedInsightJobID) {
+                const selected = (currentInsightJobDetail && currentInsightJobDetail.id === selectedInsightJobID)
+                    ? mergeInsightJobSnapshot(currentInsightJobDetail)
+                    : insightJobListCache[selectedInsightJobID];
+                if (selected) {
+                    renderInsightJobDetail(selected, { target: isInsightJobInspectorAvailable() ? "inspector" : "modal" });
+                }
+            }
+        } catch (error) {
+            console.error("加载音眸任务失败:", error);
+            content.innerHTML = `<div class="error">加载失败: ${escapeHtmlText(error.message)}</div>`;
+        }
+    }
+
+    function renderInsightJobSummaryBar(jobs, totalCount) {
+        const container = document.getElementById("insightJobSummaryBar");
+        if (!container) return;
+        const counts = {
+            all: totalCount || jobs.length,
+            queued: 0,
+            running: 0,
+            failed: 0,
+            canceled:0,
+            completed: 0
+        };
+        jobs.forEach((job) => {
+            const status = normalizeInsightJobStatus(job.status);
+            if (status === "queued") counts.queued += 1;
+            else if (status === "running") counts.running += 1;
+            else if (status === "failed") counts.failed += 1;
+            else if (status === "canceled") counts.canceled += 1;
+            else if (status === "completed") counts.completed += 1;
+        });
+
+        container.innerHTML = `
+            <div class="queue-summary-card">
+                <div class="queue-summary-label">全部任务</div>
+                <div class="queue-summary-value">${counts.all}</div>
+                <div class="queue-summary-note">当前检索视图共 ${totalInsightJobs} 条</div>
+            </div>
+            <div class="queue-summary-card" data-tone="queued">
+                <div class="queue-summary-label">排队中</div>
+                <div class="queue-summary-value">${counts.queued}</div>
+                <div class="queue-summary-note">等待 worker 处理</div>
+            </div>
+            <div class="queue-summary-card" data-tone="running">
+                <div class="queue-summary-label">运行中</div>
+                <div class="queue-summary-value">${counts.running}</div>
+                <div class="queue-summary-note">优先跟进超时或阻塞</div>
+            </div>
+            <div class="queue-summary-card" data-tone="failed">
+                <div class="queue-summary-label">失败待处理</div>
+                <div class="queue-summary-value">${counts.failed}</div>
+                <div class="queue-summary-note">建议优先重试或排障</div>
+            </div>
+             <div class="queue-summary-card" data-tone="canceled">
+                <div class="queue-summary-label">已取消</div>
+                <div class="queue-summary-value">${counts.canceled}</div>
+                <div class="queue-summary-note">不建议重启</div>
+            </div>
+            <div class="queue-summary-card" data-tone="success">
+                <div class="queue-summary-label">已完成</div>
+                <div class="queue-summary-value">${counts.completed}</div>
+                <div class="queue-summary-note">结果可回看与跳转</div>
+            </div>
+        `;
+    }
+
+    function renderInsightJobPriorityLane(title, note, jobs, emptyText) {
+        if (!jobs.length) {
+            return `
+                <div class="queue-priority-lane">
+                    <div class="queue-priority-head">
+                        <strong>${title}</strong>
+                        <span>${note}</span>
+                    </div>
+                    <div class="queue-priority-list">
+                        <div class="queue-empty">${emptyText}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        const items = jobs.map((job) => {
+            const subject = formatInsightJobSubject(job);
+            const metrics = deriveInsightJobMetrics(job);
+            const status = normalizeInsightJobStatus(job.status);
+            const hasResult = !!job.result_insight_id && !!job.result_available;
+            const canDelete = status === "failed" || status === "canceled";
+            const secondary = normalizeInsightJobStatus(job.status) === "running"
+                ? `执行 ${metrics.runDurationText}`
+                : `最近更新 ${formatJobDateTime(job.updated_at)}`;
+            return `
+                <div class="queue-priority-item">
+                    <div class="queue-priority-meta">
+                        <div class="queue-row-topline">
+                            ${renderInsightJobTargetBadge(job.analysis_target_type)}
+                            ${renderInsightJobPhaseBadge(job.status)}
+                        </div>
+                        <div class="queue-priority-title" title="${escapeHtmlText(subject.title)}">${escapeHtmlText(subject.title)}</div>
+                        <div class="queue-priority-subtitle" title="${escapeHtmlText(subject.subtitle)}">${escapeHtmlText(subject.subtitle)} · ${escapeHtmlText(secondary)}</div>
+                    </div>
+                    <div class="queue-priority-actions">
+                        <button class="queue-btn" onclick="showInsightJobDetails('${esc(job.id)}')">详情</button>
+                        ${hasResult
+                            ? `<button class="queue-btn queue-btn-primary" onclick="openInsightJobResult('${esc(job.id)}')">结果</button>`
+                            : status === "failed"
+                                ? `<button class="queue-btn" onclick="retryInsightJob('${esc(job.id)}')">重试</button>${canDelete ? `<button class="queue-btn queue-btn-danger" onclick="deleteInsightJob('${esc(job.id)}')">删除</button>` : ""}`
+                                : status === "running" || status === "queued"
+                                    ? `<button class="queue-btn queue-btn-danger" onclick="cancelInsightJob('${esc(job.id)}')">取消</button>`
+                                    : canDelete
+                                        ? `<button class="queue-btn queue-btn-danger" onclick="deleteInsightJob('${esc(job.id)}')">删除</button>`
+                                        : `<button class="queue-btn" disabled>等待</button>`
+                        }
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        return `
+            <div class="queue-priority-lane">
+                <div class="queue-priority-head">
+                    <strong>${title}</strong>
+                    <span>${note}</span>
+                </div>
+                <div class="queue-priority-list">${items}</div>
+            </div>
+        `;
+    }
+
+    function renderInsightJobPriorityStrip(jobs) {
+        const container = document.getElementById("insightJobPriorityStrip");
+        if (!container) return;
+        const sorted = jobs.slice().sort(compareInsightJobs);
+        const running = sorted.filter((job) => normalizeInsightJobStatus(job.status) === "running").slice(0, 5);
+        const failed = sorted.filter((job) => normalizeInsightJobStatus(job.status) === "failed").slice(0, 5);
+        const canceled = sorted.filter((job) => normalizeInsightJobStatus(job.status) === "canceled").slice(0, 5);
+
+        container.innerHTML = `
+            ${renderInsightJobPriorityLane("正在执行", "优先观察长时运行与结果回流", running, "暂无运行中的任务")}
+            ${renderInsightJobPriorityLane("失败待处理", "优先恢复阻塞任务", failed, "暂无失败任务")}
+            ${renderInsightJobPriorityLane("已取消待清理", "可直接删除无效任务记录", canceled, "暂无已取消任务")}
+        `;
+    }
+
+    function syncInsightJobWorkspaceHeight() {
+        const workspace = document.getElementById("insightJobWorkspace");
+        const listContent = document.getElementById("insightJobListContent");
+        const monitorContent = document.getElementById("insightJobPriorityStrip");
+        const inspector = document.getElementById("insightJobInspector");
+        if (!workspace) return;
+
+        const minHeight = 640;
+        const maxHeight = Math.max(minHeight, window.innerHeight - 240);
+        const activeContent = currentInsightJobTab === "list" ? listContent : monitorContent;
+        const contentHeight = activeContent ? (activeContent.scrollHeight || activeContent.offsetHeight || 0) : 0;
+        const inspectorHeight = inspector ? (inspector.scrollHeight || inspector.offsetHeight || 0) : 0;
+        const nextHeight = Math.min(Math.max(Math.max(contentHeight, inspectorHeight) + 140, minHeight), maxHeight);
+        workspace.style.setProperty("--insight-job-workspace-height", `${nextHeight}px`);
+    }
+
+    function renderInsightJobRow(job) {
+        const subject = formatInsightJobSubject(job);
+        const metrics = deriveInsightJobMetrics(job);
+        const hasResult = !!job.result_insight_id && !!job.result_available;
+        const canCancel = normalizeInsightJobStatus(job.status) === "queued" || normalizeInsightJobStatus(job.status) === "running";
+        const canDelete = normalizeInsightJobStatus(job.status) === "failed" || normalizeInsightJobStatus(job.status) === "canceled";
+        const provider = escapeHtmlText(job.provider_display_name || job.provider || "-");
+        const model = escapeHtmlText(job.model_display_name || job.model || "-");
+        const clientPlatform = escapeHtmlText(job.client_platform || "-");
+        const resultBadge = hasResult
+            ? '<span class="queue-result-badge is-ready">结果可查看</span>'
+            : '<span class="queue-result-badge">结果未就绪</span>';
+        const statusLine = normalizeInsightJobStatus(job.status) === "queued"
+            ? `已等待 ${metrics.waitDurationText}`
+            : normalizeInsightJobStatus(job.status) === "running"
+                ? `执行时长 ${metrics.runDurationText}`
+                : metrics.finalTimeText;
+
+        return `
+            <div
+                class="queue-row${selectedInsightJobID === job.id ? " is-selected" : ""}${highlightedInsightJobID === job.id ? " is-updated" : ""}"
+                data-job-id="${escapeHtmlText(job.id)}"
+            >
+                <div class="queue-row-main">
+                    <div class="queue-row-topline">
+                        ${renderInsightJobTargetBadge(job.analysis_target_type)}
+                        <span class="queue-id">${escapeHtmlText(job.id || "-")}</span>
+                    </div>
+                    <div class="queue-row-title" title="${escapeHtmlText(subject.title)}">${escapeHtmlText(subject.title)}</div>
+                    <div class="queue-row-subtitle" title="${escapeHtmlText(subject.subtitle)}">${escapeHtmlText(subject.subtitle)}</div>
+                    <div class="queue-row-meta">
+                        ${job.error_message ? `<span style="color: var(--queue-failed);" title="${escapeHtmlText(job.error_message)}">错误已记录</span>` : '<span>无异常</span>'}
+                    </div>
+                </div>
+                <div class="queue-meta-block">
+                    <div class="queue-meta-strong">${model}</div>
+                    <div>${provider}</div>
+                    <div>${clientPlatform}</div>
+                </div>
+                <div class="queue-status-block">
+                    <div class="queue-status-note">
+                        ${renderInsightJobPhaseBadge(job.status)}
+                        ${resultBadge}
+                    </div>
+                    <div class="queue-status-note">${escapeHtmlText(statusLine)}</div>
+                    <div class="queue-status-note">最近更新 ${escapeHtmlText(formatJobDateTime(job.updated_at))}</div>
+                </div>
+                <div class="queue-actions">
+                    <button class="queue-btn" onclick="showInsightJobDetails('${esc(job.id)}')">详情</button>
+                    ${hasResult
+                        ? `<button class="queue-btn queue-btn-primary" onclick="openInsightJobResult('${esc(job.id)}')">查看结果</button>`
+                        : `<button class="queue-btn" onclick="retryInsightJob('${esc(job.id)}')">重试</button>`
+                    }
+                    ${canCancel
+                        ? `<button class="queue-btn queue-btn-danger" onclick="cancelInsightJob('${esc(job.id)}')">取消</button>`
+                        : `<button class="queue-btn" disabled>取消</button>`
+                    }
+                    ${canDelete
+                        ? `<button class="queue-btn queue-btn-danger" onclick="deleteInsightJob('${esc(job.id)}')">删除</button>`
+                        : `<button class="queue-btn" disabled>删除</button>`
+                    }
+                </div>
+            </div>
+        `;
+    }
+
+    function bindInsightJobRowEvents() {
+        document.querySelectorAll("#insightJobListContent .queue-row").forEach((row) => {
+            if (row.dataset.bound === "1") return;
+            row.addEventListener("click", (event) => {
+                if (event.target.closest("button")) return;
+                const jobID = row.dataset.jobId;
+                if (jobID) {
+                    showInsightJobDetails(jobID, { preferModal: false });
+                }
+            });
+            row.dataset.bound = "1";
+        });
+    }
+
+    function renderInsightJobList(jobs) {
+        const content = document.getElementById("insightJobListContent");
+        if (!content) return;
+        if (!jobs || jobs.length === 0) {
+            content.innerHTML = '<div class="queue-empty">暂无符合条件的音眸任务</div>';
+            renderInsightJobInspectorEmpty();
+            syncInsightJobWorkspaceHeight();
+            return;
+        }
+        content.innerHTML = jobs.map((job) => renderInsightJobRow(job)).join("");
+        bindInsightJobRowEvents();
+        syncInsightJobWorkspaceHeight();
+        if (highlightedInsightJobID) {
+            window.setTimeout(() => {
+                highlightedInsightJobID = "";
+                renderInsightJobList(currentInsightJobRows);
+            }, 1200);
+        }
+    }
+
+    function updateInsightJobPagination() {
+        const totalPages = Math.max(1, Math.ceil(totalInsightJobs / insightJobPageSize));
+        const info = document.getElementById("insightJobPageInfo");
+        if (info) {
+            info.textContent = `第 ${currentInsightJobPage} 页 / 共 ${totalPages} 页 (${totalInsightJobs} 条任务)`;
+        }
+        const prev = document.getElementById("insightJobPrevPage");
+        const next = document.getElementById("insightJobNextPage");
+        if (prev) prev.disabled = currentInsightJobPage <= 1;
+        if (next) next.disabled = currentInsightJobPage >= totalPages;
+    }
+
+    function buildInsightJobTimeline(job) {
+        const status = normalizeInsightJobStatus(job.status);
+        const items = [
+            { label: "任务创建", time: formatJobDateTime(job.created_at), tone: "success", note: "任务已写入队列" },
+            { label: "等待执行", time: job.started_at ? `${formatJobDateTime(job.started_at)} 开始` : `${deriveInsightJobMetrics(job).waitDurationText}`, tone: "queued", note: "等待 worker 获取任务" }
+        ];
+        if (job.started_at) {
+            items.push({
+                label: "开始运行",
+                time: formatJobDateTime(job.started_at),
+                tone: "running",
+                note: `执行时长 ${deriveInsightJobMetrics(job).runDurationText}`
+            });
+        }
+        if (status === "completed" || status === "failed" || status === "canceled") {
+            items.push({
+                label: status === "completed" ? "执行完成" : status === "failed" ? "执行失败" : "任务已取消",
+                time: formatJobDateTime(job.finished_at || job.updated_at),
+                tone: status === "completed" ? "success" : status === "failed" ? "failed" : "queued",
+                note: status === "completed"
+                    ? (job.result_available ? "结果已可查看" : "任务完成但暂无结果")
+                    : status === "failed"
+                        ? "查看错误信息后可直接重试"
+                        : "任务被手动或系统取消"
+            });
+        } else {
+            items.push({
+                label: "持续跟进",
+                time: formatJobDateTime(job.updated_at),
+                tone: status === "running" ? "running" : "queued",
+                note: "队列仍在推进"
+            });
+        }
+        return items.map((item) => `
+            <div class="queue-timeline-item">
+                <div class="queue-timeline-dot" data-tone="${item.tone}"></div>
+                <div>
+                    <div class="queue-timeline-label">${item.label}</div>
+                    <div class="queue-timeline-time">${escapeHtmlText(item.time)}</div>
+                    <div class="queue-timeline-time">${escapeHtmlText(item.note)}</div>
+                </div>
+            </div>
+        `).join("");
+    }
+
+    function buildInsightCallLogCard(log) {
+        if (!log) return "";
+        const time = formatJobDateTime(log.created_at);
+        const isError = log.status !== "success" && log.status !== "ok";
+        const statusColor = isError ? "#e74c3c" : "#2ecc71";
+        const targetType = log.analysis_target_type || "track";
+        const targetKey = escapeHtmlText(log.target_key || log.track_info || "-");
+        const targetMetadata = prettyJsonLike(log.target_metadata);
+        const requestJson = prettyJsonLike(log.request_json);
+        const responseJson = prettyJsonLike(log.response_json);
+        const requestSize = log.request_json ? String(log.request_json.length) : "0";
+        const responseSize = log.response_json ? String(log.response_json.length) : "0";
+        const objectBadge = targetType === "album"
+            ? '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>'
+            : '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(16,185,129,0.16);color:#34d399;font-size:0.75em;font-weight:700;">曲目</span>';
+
+        return `
+            <div style="border: 1px solid #444; border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.03); box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
+                    <div style="min-width: 0;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                            <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtmlText(log.provider)} (${escapeHtmlText(log.model)})</span>
+                            ${objectBadge}
+                        </div>
+                        <div style="font-size: 0.8em; opacity: 0.72;">${escapeHtmlText(time)}</div>
+                    </div>
+                    <div style="text-align: right; font-size: 0.82em; line-height: 1.5; opacity: 0.86;">
+                        <div>状态: <span style="color: ${statusColor}; font-weight: 700;">${escapeHtmlText(log.status || "-")}</span> | 耗时: ${escapeHtmlText(String(log.duration_ms || 0))}ms</div>
+                        <div>请求 ${escapeHtmlText(requestSize)} 字符 | 响应 ${escapeHtmlText(responseSize)} 字符</div>
+                    </div>
+                </div>
+                <div style="margin-bottom: 10px; font-size: 0.85em; opacity: 0.84; word-break: break-all;">
+                    对象键: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">${targetKey}</span>
+                </div>
+                ${targetMetadata ? `
+                <details data-detail-key="log-${escapeHtmlText(String(log.id || 0))}-metadata" style="margin-bottom: 10px;">
+                    <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">对象元数据</summary>
+                    <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
+                </details>` : ""}
+                ${log.error_msg ? `<div style="margin-bottom: 10px; color: #e74c3c; font-size: 0.86em; line-height: 1.6;">错误: ${escapeHtmlText(log.error_msg)}</div>` : ""}
+                <details data-detail-key="log-${escapeHtmlText(String(log.id || 0))}-payload">
+                    <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">查看原始请求与响应</summary>
+                    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 0.8em;">
+                        <div>
+                            <div style="font-weight: 700; margin-bottom: 6px;">Request</div>
+                            <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; margin-bottom: 6px;">Response</div>
+                            <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        `;
+    }
+
+    function renderInsightCallLogList(logs, emptyText = "暂无关联流水记录") {
+        if (!Array.isArray(logs) || logs.length === 0) {
+            return `<div class="queue-empty">${escapeHtmlText(emptyText)}</div>`;
+        }
+        return `<div style="display: flex; flex-direction: column; gap: 15px;">${logs.map((log) => buildInsightCallLogCard(log)).join("")}</div>`;
+    }
+
+    function buildInsightJobDetailHtml(job, options = {}) {
+        const subject = formatInsightJobSubject(job);
+        const hasResult = !!job.result_insight_id && !!job.result_available;
+        const canCancel = normalizeInsightJobStatus(job.status) === "queued" || normalizeInsightJobStatus(job.status) === "running";
+        const canDelete = normalizeInsightJobStatus(job.status) === "failed" || normalizeInsightJobStatus(job.status) === "canceled";
+        const metrics = deriveInsightJobMetrics(job);
+        const includeClose = options.includeClose === true;
+        const callLogs = Array.isArray(job.call_logs) ? job.call_logs : [];
+        return `
+            <div class="queue-inspector-shell">
+                <div class="queue-inspector-top">
+                    <div class="queue-row-topline">
+                        ${renderInsightJobTargetBadge(job.analysis_target_type)}
+                        ${renderInsightJobPhaseBadge(job.status)}
+                        ${hasResult ? '<span class="queue-result-badge is-ready">结果可查看</span>' : '<span class="queue-result-badge">结果未就绪</span>'}
+                    </div>
+                    <div class="queue-inspector-title">${escapeHtmlText(subject.title)}</div>
+                    <div class="queue-inspector-subtitle">${escapeHtmlText(subject.subtitle)}</div>
+                    <div class="queue-inspector-actions">
+                        <button class="queue-btn" onclick="retryInsightJob('${esc(job.id)}')">重试</button>
+                        ${canCancel ? `<button class="queue-btn queue-btn-danger" onclick="cancelInsightJob('${esc(job.id)}')">取消</button>` : ""}
+                        ${canDelete ? `<button class="queue-btn queue-btn-danger" onclick="deleteInsightJob('${esc(job.id)}')">删除</button>` : ""}
+                        ${hasResult ? `<button class="queue-btn queue-btn-primary" onclick="openInsightJobResult('${esc(job.id)}')">查看结果</button>` : ""}
+                        ${includeClose ? `<button class="queue-btn" onclick="hideModal('insightJobModal')">关闭</button>` : ""}
+                    </div>
+                </div>
+
+                <div class="queue-section">
+                    <div class="queue-section-title">状态时间线</div>
+                    <div class="queue-timeline">${buildInsightJobTimeline(job)}</div>
+                </div>
+
+                <div class="queue-section">
+                    <div class="queue-section-title">诊断信息</div>
+                    <div class="queue-kv-grid">
+                        <div class="queue-kv-card">
+                            <strong>任务 ID</strong>
+                            <span class="queue-id">${escapeHtmlText(job.id || "-")}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>目标键</strong>
+                            <span>${escapeHtmlText(job.target_key || "-")}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>模型</strong>
+                            <span>${escapeHtmlText(job.provider_display_name || job.provider || "-")} / ${escapeHtmlText(job.model_display_name || job.model || "-")}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>客户端</strong>
+                            <span>${escapeHtmlText(job.client_platform || "-")}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>等待时长</strong>
+                            <span>${escapeHtmlText(metrics.waitDurationText)}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>执行时长</strong>
+                            <span>${escapeHtmlText(metrics.runDurationText)}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>创建时间</strong>
+                            <span>${escapeHtmlText(formatJobDateTime(job.created_at))}</span>
+                        </div>
+                        <div class="queue-kv-card">
+                            <strong>最近更新时间</strong>
+                            <span>${escapeHtmlText(formatJobDateTime(job.updated_at))}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="queue-section">
+                    <div class="queue-section-title">错误信息</div>
+                    <div class="queue-error-box">${escapeHtmlText(job.error_message || "无")}</div>
+                </div>
+
+                <div class="queue-section">
+                    <div class="queue-section-title">关联流水</div>
+                    ${renderInsightCallLogList(callLogs)}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderInsightJobInspectorEmpty() {
+        const inspector = document.getElementById("insightJobInspector");
+        if (!inspector) return;
+        inspector.innerHTML = '<div class="queue-inspector-empty">选择一条任务后，这里会显示状态时间线、关联流水、错误信息和结果跳转。</div>';
+    }
+
+    function renderInsightJobDetail(job, options = {}) {
+        const previousTarget = getCurrentInsightJobDetailTarget();
+        if (currentInsightJobDetail && currentInsightJobDetail.id) {
+            captureInsightJobDetailViewState(currentInsightJobDetail.id, previousTarget);
+        }
+        currentInsightJobDetail = job;
+        selectedInsightJobID = job.id;
+        const target = options.target || (isInsightJobInspectorAvailable() && options.preferModal !== true ? "inspector" : "modal");
+        if (target === "modal") {
+            const content = document.getElementById("insightJobModalContent");
+            const title = document.getElementById("insightJobModalTitle");
+            if (!content || !title) return;
+            title.textContent = `音眸任务详情 · ${formatInsightJobSubject(job).title}`;
+            content.innerHTML = buildInsightJobDetailHtml(job, { includeClose: true });
+            showModal("insightJobModal");
+            restoreInsightJobDetailViewState(job.id, "modal");
+        } else {
+            const inspector = document.getElementById("insightJobInspector");
+            if (!inspector) return;
+            inspector.innerHTML = buildInsightJobDetailHtml(job);
+            const modal = document.getElementById("insightJobModal");
+            if (modal) modal.style.display = "none";
+            restoreInsightJobDetailViewState(job.id, "inspector");
+        }
+        renderInsightJobList(currentInsightJobRows);
+        syncInsightJobWorkspaceHeight();
+    }
+
+    async function showInsightJobDetails(jobID, options = {}) {
+        if (!jobID) return;
+        const preferModal = options.preferModal === true || !isInsightJobInspectorAvailable();
+        if (preferModal) {
+            const content = document.getElementById("insightJobModalContent");
+            if (content) {
+                content.innerHTML = '<div class="queue-empty">加载中...</div>';
+            }
+            showModal("insightJobModal");
+        }
+
+        try {
+            const response = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            const detailJob = {
+                ...(data.job || {}),
+                call_logs: Array.isArray(data.call_logs) ? data.call_logs : []
+            };
+            insightJobListCache[jobID] = detailJob;
+            renderInsightJobDetail(detailJob, { target: preferModal ? "modal" : "inspector", preferModal });
+        } catch (error) {
+            console.error("加载音眸任务详情失败:", error);
+            if (preferModal) {
+                const content = document.getElementById("insightJobModalContent");
+                if (content) {
+                    content.innerHTML = `<div class="error">加载失败: ${escapeHtmlText(error.message)}</div>`;
+                }
+            } else {
+                const inspector = document.getElementById("insightJobInspector");
+                if (inspector) {
+                    inspector.innerHTML = `<div class="queue-inspector-empty">加载失败: ${escapeHtmlText(error.message)}</div>`;
+                }
+            }
+        }
+    }
+
+    async function cancelInsightJob(jobID) {
+        if (!jobID) return;
+        if (!confirm("确定要取消这个音眸任务吗？后台中的已发起调用不会立刻回滚，但任务状态会收敛为已取消。")) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}/cancel`, { method: "POST" });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP ${response.status}`);
+            }
+            insightJobListCache[jobID] = data.job;
+            if (selectedInsightJobID === jobID || document.getElementById("insightJobModal").style.display === "block") {
+                renderInsightJobDetail(data.job, { target: isInsightJobInspectorAvailable() ? "inspector" : "modal" });
+            }
+            scheduleInsightJobListRefresh();
+        } catch (error) {
+            console.error("取消音眸任务失败:", error);
+            alert(`取消失败: ${error.message}`);
+        }
+    }
+
+    async function deleteInsightJob(jobID) {
+        if (!jobID) return;
+        if (!confirm("确定要删除这条失败或已取消的任务吗？这会同时清理该任务关联的调用流水，且无法恢复。")) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}`, { method: "DELETE" });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP ${response.status}`);
+            }
+
+            delete insightJobListCache[jobID];
+            if (selectedInsightJobID === jobID) {
+                selectedInsightJobID = "";
+                currentInsightJobDetail = null;
+                renderInsightJobInspectorEmpty();
+            }
+            await loadInsightJobList(currentInsightJobPage);
+        } catch (error) {
+            console.error("删除音眸任务失败:", error);
+            alert(`删除失败: ${error.message}`);
+        }
+    }
+
+    async function retryInsightJob(jobID) {
+        if (!jobID) return;
+        try {
+            const response = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}/retry`, { method: "POST" });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP ${response.status}`);
+            }
+            insightJobListCache[jobID] = data.job;
+            if (selectedInsightJobID === jobID || document.getElementById("insightJobModal").style.display === "block") {
+                renderInsightJobDetail(data.job, { target: isInsightJobInspectorAvailable() ? "inspector" : "modal" });
+            }
+            scheduleInsightJobListRefresh();
+        } catch (error) {
+            console.error("重试音眸任务失败:", error);
+            alert(`重试失败: ${error.message}`);
+        }
+    }
+
+    function openInsightJobResult(jobID) {
+        if (!jobID) return;
+        const job = currentInsightJobDetail && currentInsightJobDetail.id === jobID
+            ? currentInsightJobDetail
+            : insightJobListCache[jobID];
+        if (!job || !job.result_insight_id) {
+            alert("当前任务还没有可查看的结果");
+            return;
+        }
+        hideModal("insightJobModal");
+        showInsightDetailsById(job.result_insight_id, job.analysis_target_type || "track");
+    }
+
+    function handleInsightJobRealtimeUpdate(job) {
+        if (!job) return;
+        const mergedJob = mergeInsightJobSnapshot(job);
+        insightJobListCache[job.id] = mergedJob;
+        highlightedInsightJobID = job.id;
+        const index = currentInsightJobRows.findIndex((item) => item.id === job.id);
+        if (index >= 0) {
+            currentInsightJobRows.splice(index, 1, mergedJob);
+            currentInsightJobRows.sort(compareInsightJobs);
+            renderInsightJobList(currentInsightJobRows);
+        }
+        const summaryIndex = currentInsightJobSummaryRows.findIndex((item) => item.id === job.id);
+        if (summaryIndex >= 0) {
+            currentInsightJobSummaryRows.splice(summaryIndex, 1, mergedJob);
+        } else {
+            currentInsightJobSummaryRows.unshift(mergedJob);
+        }
+        currentInsightJobSummaryRows = currentInsightJobSummaryRows
+            .slice()
+            .sort(compareInsightJobs)
+            .slice(0, 200);
+        renderInsightJobSummaryBar(currentInsightJobSummaryRows, Math.max(totalInsightJobs, currentInsightJobSummaryRows.length));
+        renderInsightJobPriorityStrip(currentInsightJobSummaryRows);
+        if (selectedInsightJobID === job.id) {
+            renderInsightJobDetail(mergedJob, { target: isInsightJobInspectorAvailable() ? "inspector" : "modal" });
+        }
+        if (currentSectionID === "insightJobList" && index < 0) {
+            scheduleInsightJobListRefresh();
+        }
+        syncInsightJobWorkspaceHeight();
     }
 
     function switchInsightListTarget(targetType) {
@@ -7866,12 +9820,19 @@
 
     // 删除解析记录
     async function deleteInsight(id, targetType = currentInsightTargetType) {
-        if (!confirm("确定要永久删除这条解析记录吗？此操作不可撤销。")) return;
+        const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
+        const targetLabel = normalizedTargetType === 'album' ? '专辑' : '曲目';
+        const confirmed = confirm(
+            `确定要永久删除这条${targetLabel}解析吗？\n\n删除后将同时清空这条解析对应的调用流水，且无法恢复。`
+        );
+        if (!confirmed) return;
         
         try {
-            const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
             const res = await fetch(`/api/insights/${id}?analysis_target_type=${encodeURIComponent(normalizedTargetType)}`, { method: 'DELETE' });
             if (res.ok) {
+                if (document.getElementById("listInsightModal")?.style.display === "block") {
+                    hideModal("listInsightModal");
+                }
                 loadInsightList();
             } else {
                 const data = await res.json();
@@ -7896,69 +9857,7 @@
             const normalizedTargetType = targetType === 'album' ? 'album' : 'track';
             const res = await fetch(`/api/insights/${id}/logs?analysis_target_type=${encodeURIComponent(normalizedTargetType)}`);
             const data = await res.json();
-            
-            if (!data.logs || data.logs.length === 0) {
-                content.innerHTML = '<div class="no-data">暂无关联流水记录</div>';
-                return;
-            }
-
-            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
-            data.logs.forEach(log => {
-                const time = new Date(log.created_at).toLocaleString("zh-CN");
-                const isError = log.status !== 'success' && log.status !== 'ok';
-                const statusColor = isError ? "#e74c3c" : "#2ecc71";
-                const targetType = log.analysis_target_type || 'track';
-                const targetKey = escapeHtmlText(log.target_key || log.track_info || '-');
-                const targetMetadata = prettyJsonLike(log.target_metadata);
-                const requestJson = prettyJsonLike(log.request_json);
-                const responseJson = prettyJsonLike(log.response_json);
-                const requestSize = log.request_json ? String(log.request_json.length) : '0';
-                const responseSize = log.response_json ? String(log.response_json.length) : '0';
-                const objectBadge = targetType === 'album'
-                    ? '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>'
-                    : '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(16,185,129,0.16);color:#34d399;font-size:0.75em;font-weight:700;">曲目</span>';
-                
-                html += `
-                <div style="border: 1px solid #444; border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.03); box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
-                        <div style="min-width: 0;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtmlText(log.provider)} (${escapeHtmlText(log.model)})</span>
-                                ${objectBadge}
-                            </div>
-                            <div style="font-size: 0.8em; opacity: 0.72;">${time}</div>
-                        </div>
-                        <div style="text-align: right; font-size: 0.82em; line-height: 1.5; opacity: 0.86;">
-                            <div>状态: <span style="color: ${statusColor}; font-weight: 700;">${escapeHtmlText(log.status)}</span> | 耗时: ${log.duration_ms}ms</div>
-                            <div>请求 ${requestSize} 字符 | 响应 ${responseSize} 字符</div>
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 10px; font-size: 0.85em; opacity: 0.84; word-break: break-all;">
-                        对象键: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">${targetKey}</span>
-                    </div>
-                    ${targetMetadata ? `
-                    <details style="margin-bottom: 10px;">
-                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">对象元数据</summary>
-                        <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
-                    </details>` : ''}
-                    ${log.error_msg ? `<div style="margin-bottom: 10px; color: #e74c3c; font-size: 0.86em; line-height: 1.6;">错误: ${escapeHtmlText(log.error_msg)}</div>` : ''}
-                    <details>
-                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">查看原始请求与响应</summary>
-                        <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 0.8em;">
-                            <div>
-                                <div style="font-weight: 700; margin-bottom: 6px;">Request</div>
-                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
-                            </div>
-                            <div>
-                                <div style="font-weight: 700; margin-bottom: 6px;">Response</div>
-                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
-                            </div>
-                        </div>
-                    </details>
-                </div>`;
-            });
-            html += '</div>';
-            content.innerHTML = html;
+            content.innerHTML = renderInsightCallLogList(data.logs);
         } catch (e) {
             console.error(e);
             content.innerHTML = `<div class="error">加载流水日志失败</div>`;
@@ -7975,64 +9874,7 @@
         try {
             const res = await fetch(`/api/album-insights/${albumID}/logs`);
             const data = await res.json();
-
-            if (!data.logs || data.logs.length === 0) {
-                content.innerHTML = '<div class="no-data">暂无关联流水记录</div>';
-                return;
-            }
-
-            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
-            data.logs.forEach(log => {
-                const time = new Date(log.created_at).toLocaleString("zh-CN");
-                const isError = log.status !== 'success' && log.status !== 'ok';
-                const statusColor = isError ? "#e74c3c" : "#2ecc71";
-                const targetMetadata = prettyJsonLike(log.target_metadata);
-                const requestJson = prettyJsonLike(log.request_json);
-                const responseJson = prettyJsonLike(log.response_json);
-                const requestSize = log.request_json ? String(log.request_json.length) : '0';
-                const responseSize = log.response_json ? String(log.response_json.length) : '0';
-
-                html += `
-                <div style="border: 1px solid #444; border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.03); box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
-                        <div style="min-width: 0;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtmlText(log.provider)} (${escapeHtmlText(log.model)})</span>
-                                <span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>
-                            </div>
-                            <div style="font-size: 0.8em; opacity: 0.72;">${time}</div>
-                        </div>
-                        <div style="text-align: right; font-size: 0.82em; line-height: 1.5; opacity: 0.86;">
-                            <div>状态: <span style="color: ${statusColor}; font-weight: 700;">${escapeHtmlText(log.status)}</span> | 耗时: ${log.duration_ms}ms</div>
-                            <div>请求 ${requestSize} 字符 | 响应 ${responseSize} 字符</div>
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 10px; font-size: 0.85em; opacity: 0.84; word-break: break-all;">
-                        对象键: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">${escapeHtmlText(log.target_key || albumID || '-')}</span>
-                    </div>
-                    ${targetMetadata ? `
-                    <details style="margin-bottom: 10px;">
-                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">对象元数据</summary>
-                        <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
-                    </details>` : ''}
-                    ${log.error_msg ? `<div style="margin-bottom: 10px; color: #e74c3c; font-size: 0.86em; line-height: 1.6;">错误: ${escapeHtmlText(log.error_msg)}</div>` : ''}
-                    <details>
-                        <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">查看原始请求与响应</summary>
-                        <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 0.8em;">
-                            <div>
-                                <div style="font-weight: 700; margin-bottom: 6px;">Request</div>
-                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
-                            </div>
-                            <div>
-                                <div style="font-weight: 700; margin-bottom: 6px;">Response</div>
-                                <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
-                            </div>
-                        </div>
-                    </details>
-                </div>`;
-            });
-            html += '</div>';
-            content.innerHTML = html;
+            content.innerHTML = renderInsightCallLogList(data.logs);
         } catch (e) {
             console.error(e);
             content.innerHTML = `<div class="error">加载流水日志失败</div>`;
@@ -8214,6 +10056,24 @@
             if (!isMainDashboardVisible()) return;
             refreshRecentPlays();
         }, getPollingInterval(60000))); // 每60秒更新最近播放列表
+        dashboardUpdater.addTimer(createAutoUpdater(() => {
+            if (currentSectionID !== "insightJobList") return;
+            loadInsightJobList(currentInsightJobPage);
+        }, getPollingInterval(15000))); // 任务列表额外保留 15 秒轮询兜底
+
+        if (insightJobDurationTicker) {
+            clearInterval(insightJobDurationTicker);
+        }
+        insightJobDurationTicker = setInterval(() => {
+            if (document.hidden) return;
+            refreshInsightJobDurationsLocally();
+        }, 1000);
+
+        window.addEventListener("resize", () => {
+            if (currentSectionID === "insightJobList") {
+                syncInsightJobWorkspaceHeight();
+            }
+        });
 
         // 添加时间过滤器点击事件
         document.querySelectorAll(".time-filter").forEach((filter) => {
@@ -8455,6 +10315,46 @@
             });
         }
 
+        const insightJobRefreshBtn = document.getElementById("refreshInsightJobListBtn");
+        if (insightJobRefreshBtn) {
+            insightJobRefreshBtn.addEventListener("click", () => {
+                currentInsightJobPage = 1;
+                loadInsightJobList();
+            });
+        }
+
+        const insightJobSearchInput = document.getElementById("insightJobSearchInput");
+        if (insightJobSearchInput) {
+            insightJobSearchInput.addEventListener("input", (e) => {
+                const val = e.target.value.trim();
+                if (insightJobSearchTimeout) clearTimeout(insightJobSearchTimeout);
+
+                insightJobSearchTimeout = setTimeout(() => {
+                    currentInsightJobKeyword = val;
+                    currentInsightJobPage = 1;
+                    loadInsightJobList();
+                }, 400);
+            });
+        }
+
+        const insightJobStatusFilter = document.getElementById("insightJobStatusFilter");
+        if (insightJobStatusFilter) {
+            insightJobStatusFilter.addEventListener("change", (e) => {
+                currentInsightJobStatus = e.target.value;
+                currentInsightJobPage = 1;
+                loadInsightJobList();
+            });
+        }
+
+        const insightJobTargetFilter = document.getElementById("insightJobTargetFilter");
+        if (insightJobTargetFilter) {
+            insightJobTargetFilter.addEventListener("change", (e) => {
+                currentInsightJobTargetType = e.target.value;
+                currentInsightJobPage = 1;
+                loadInsightJobList();
+            });
+        }
+
         // 播放排行榜搜索
         const rankingSearchInput = document.getElementById("rankingSearchInput");
         if (rankingSearchInput) {
@@ -8481,6 +10381,20 @@
             }
         });
         document.getElementById("closeCallLogModal").addEventListener("click", () => hideModal("callLogModal"));
+        document.getElementById("insightJobPrevPage").addEventListener("click", () => {
+            if (currentInsightJobPage > 1) {
+                currentInsightJobPage--;
+                loadInsightJobList();
+            }
+        });
+        document.getElementById("insightJobNextPage").addEventListener("click", () => {
+            const totalPages = Math.max(1, Math.ceil(totalInsightJobs / insightJobPageSize));
+            if (currentInsightJobPage < totalPages) {
+                currentInsightJobPage++;
+                loadInsightJobList();
+            }
+        });
+        document.getElementById("closeInsightJobModal").addEventListener("click", () => hideModal("insightJobModal"));
     });
 
     // 添加查看详情模态框相关函数
@@ -8505,6 +10419,10 @@
     // 隐藏模态框
     function hideModal(modalId) {
         document.getElementById(modalId).style.display = "none";
+
+        if (modalId === "insightJobModal") {
+            currentInsightJobDetail = null;
+        }
         
         // 增加清理逻辑
         if (modalId === 'nowPlayingInsightModal' || modalId === 'listInsightModal') {
@@ -8581,6 +10499,7 @@
         window.currentDetailData = {
             track: null,
             insight: null,
+            recommendedInsightID: 0,
             loadingTrack: true,
             loadingInsight: true,
             recentPlay: recentPlay
@@ -8638,6 +10557,9 @@
                     else if (data.insight) insights = [data.insight];
                     else if (Array.isArray(data)) insights = data;
                 }
+                window.currentDetailData.recommendedInsightID = Number(
+                    data?.recommended_insight_id || data?.recommendedInsightID || 0,
+                );
                 window.currentDetailData.insights = insights;
                 window.currentDetailData.loadingInsight = false;
                 // 如果用户这时已经切换到了 AI Tab，则在加载完后刷新渲染
@@ -8787,6 +10709,11 @@
             }
 
             const insights = data.insights || [];
+            const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
+            const selectedInsightIndex = recommendedInsightID > 0
+                ? insights.findIndex((item) => Number(item.id || 0) === recommendedInsightID)
+                : 0;
+            const activeInsightIndex = selectedInsightIndex >= 0 ? selectedInsightIndex : 0;
 
             if (insights.length === 0) {
                 bodyContent.innerHTML = `
@@ -8815,7 +10742,7 @@
                         hour: '2-digit',
                         minute: '2-digit'
                     });
-                    const activeClass = index === 0 ? 'active' : '';
+                    const activeClass = index === activeInsightIndex ? 'active' : '';
                     const totalScore = insight.total_score || 0;
                     let supportRate;
                     if (positiveTotal > 0) {
@@ -8830,7 +10757,7 @@
 
             html += '<div id="detail-insight-content-container">';
             insights.forEach((insight, index) => {
-                const displayStyle = index === 0 ? 'block' : 'none';
+                const displayStyle = index === activeInsightIndex ? 'block' : 'none';
                 html += `<div class="insight-item" id="detail-insight-item-${index}" style="display: ${displayStyle};">`;
                 html += generateInsightContentHtml(insight);
                 // 添加一致的操作按钮行
@@ -8851,8 +10778,9 @@
             bodyContent.innerHTML = html;
             // 保存 insights 到全局变量，以便切换 tab 和点赞点踩使用
             window.currentDetailData.insights = insights;
+            window.currentDetailData.recommendedInsightID = recommendedInsightID;
             // 更新选中的 ID，以便全局 feedback 可用
-            currentTrackInsight = insights[0];
+            currentTrackInsight = insights[activeInsightIndex] || insights[0];
         }
     }
     window.showTrackDetails = showTrackDetails;
@@ -8911,7 +10839,7 @@
         const previousAlbumID = Number(window.currentAlbumID || 0);
         window.currentAlbumID = id; // 记录当前处理的专辑 ID
         window.currentAlbumSyncStatus = 0; // 记录当前专辑的同步状态
-        window.currentAlbumDetailData = { albumID: id, album: null, insights: [] };
+        window.currentAlbumDetailData = { albumID: id, album: null, insights: [], recommendedInsightID: 0 };
         
         // 检测当前主题
         const isDark = document.body.classList.contains("dark-mode");
@@ -10099,10 +12027,11 @@
 <script>
     // --- 新增：导航切换逻辑 ---
     function showSection(sectionId) {
+        currentSectionID = sectionId;
         // 隐藏所有主内容区域
         const sections = [
             '.stats-container', '.charts-container', '.rankings-container',
-            '#unscrobbledContainer', '#insightListContainer', 
+            '#unscrobbledContainer', '#insightListContainer', '#insightJobListContainer',
             '#albumListContainer', '#artistListContainer', '#pendingAlbumListContainer', '#trackListContainer'
         ];
         
@@ -10165,6 +12094,10 @@
             if (sectionId === 'pendingAlbumList') loadPendingAlbumList();
             if (sectionId === 'trackList') loadTrackList();
             if (sectionId === 'insightList') loadInsightList();
+            if (sectionId === 'insightJobList') {
+                updateInsightJobTabLayout();
+                loadInsightJobList();
+            }
             if (sectionId === 'unscrobbled') loadUnscrobbledRecords();
         }
     }
@@ -10199,6 +12132,7 @@
                     'pendingAlbumListTab': 'pendingAlbumList',
                     'trackListTab': 'trackList',
                     'insightListTab': 'insightList',
+                    'insightJobListTab': 'insightJobList',
                     'unscrobbledTab': 'unscrobbled'
                 };
                 
@@ -11327,6 +13261,7 @@
                 'pendingAlbumListTab': 'pendingAlbumList',
                 'trackListTab': 'trackList',
                 'insightListTab': 'insightList',
+                'insightJobListTab': 'insightJobList',
                 'unscrobbledTab': 'unscrobbled'
             };
             

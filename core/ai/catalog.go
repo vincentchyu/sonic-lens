@@ -138,11 +138,13 @@ func GetConfiguredPlatforms() []PlatformOption {
 	factories := getConfiguredFactories()
 	platforms := make([]PlatformOption, 0, len(factories))
 	for _, factory := range factories {
-		platforms = append(platforms, PlatformOption{
-			ID:           factory.Platform(),
-			DisplayName:  factory.DisplayName(),
-			DefaultModel: factory.DefaultModel(),
-		})
+		platforms = append(
+			platforms, PlatformOption{
+				ID:           factory.Platform(),
+				DisplayName:  factory.DisplayName(),
+				DefaultModel: factory.DefaultModel(),
+			},
+		)
 	}
 	return platforms
 }
@@ -292,7 +294,20 @@ func getCachedModels(ctx context.Context, factory providerFactory) ([]ModelOptio
 
 	models, err := factory.ListModels(ctx)
 	if err != nil {
-		return nil, err
+		if fallbackModels, fallback := fallbackModelCatalog(factory, err); fallback {
+			log.Warn(
+				ctx,
+				"模型目录回源失败，已降级为默认模型",
+				zap.Error(err),
+				zap.String("cache_key", cacheKey),
+				zap.String("platform", string(factory.Platform())),
+				zap.String("default_model", fallbackModels[0].ID),
+			)
+			models = fallbackModels
+		} else {
+			log.Warn(ctx, "回源查询失败", zap.Error(err), zap.String("cache_key", cacheKey))
+			return nil, err
+		}
 	}
 
 	if client != nil {
@@ -316,20 +331,61 @@ func buildModelCatalogCacheKey(factory providerFactory) string {
 func readModelCatalogCache(ctx context.Context, client *goredis.Client, key string) ([]ModelOption, error) {
 	value, err := client.Get(ctx, key).Result()
 	if err != nil {
+		if !errors.Is(err, goredis.Nil) {
+			log.Warn(ctx, "读取 AI 模型目录缓存失败", zap.Error(err), zap.String("cache_key", key))
+		}
 		return nil, err
 	}
 
 	var entry modelCatalogCacheEntry
 	if err := json.Unmarshal([]byte(value), &entry); err != nil {
+		log.Warn(ctx, "解析 AI 模型目录缓存失败", zap.Error(err), zap.String("cache_key", key))
 		return nil, err
 	}
 	return entry.Models, nil
 }
 
-func writeModelCatalogCache(ctx context.Context, client *goredis.Client, key string, models []ModelOption, ttl time.Duration) error {
+func writeModelCatalogCache(
+	ctx context.Context, client *goredis.Client, key string, models []ModelOption, ttl time.Duration,
+) error {
 	payload, err := json.Marshal(modelCatalogCacheEntry{Models: models})
 	if err != nil {
 		return err
 	}
 	return client.Set(ctx, key, payload, ttl).Err()
+}
+
+func fallbackModelCatalog(factory providerFactory, err error) ([]ModelOption, bool) {
+	if factory == nil || err == nil {
+		return nil, false
+	}
+	if factory.Platform() != common.AIModelPlatformGemini {
+		return nil, false
+	}
+	if !isGeminiModelCatalogUnavailableError(err) {
+		return nil, false
+	}
+
+	defaultModel := strings.TrimSpace(factory.DefaultModel())
+	if defaultModel == "" {
+		return nil, false
+	}
+
+	return []ModelOption{
+		{
+			ID:          defaultModel,
+			DisplayName: defaultModel,
+			IsDefault:   true,
+		},
+	}, true
+}
+
+func isGeminiModelCatalogUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "user location is not supported") ||
+		(strings.Contains(msg, "failed_precondition") && strings.Contains(msg, "location"))
 }

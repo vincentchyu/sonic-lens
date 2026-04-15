@@ -72,7 +72,9 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			return err
 		}*/
 		// Auto migrate the schema for AI insight related tables
-		if err = GlobalDBForSqlLite.AutoMigrate(&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}); err != nil {
+		if err = GlobalDBForSqlLite.AutoMigrate(
+			&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}, &AlbumInsightFeedback{},
+		); err != nil {
 			return err
 		}
 		// Auto migrate the schema for LLM call log table
@@ -108,7 +110,28 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 		if err = ensureTrackPlayRecordTraceSchema(context.Background()); err != nil {
 			return err
 		}
+		if err = ensureTrackPlayRecordCoverArtSchema(context.Background()); err != nil {
+			return err
+		}
 		if err = ensureAlbumCoverSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureAlbumOriginalReleaseDateSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureAlbumTitleSubtitleSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureAlbumIdentitySchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureTrackFavoriteEventIdentitySchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureTrackPlayRecordIdentitySchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureAlbumTitleMetadataSchema(context.Background()); err != nil {
 			return err
 		}
 		if err = ensureLLMCallLogSchema(context.Background()); err != nil {
@@ -118,6 +141,9 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			return err
 		}
 		if err = ensureInsightJobSchema(context.Background()); err != nil {
+			return err
+		}
+		if err = ensureInsightFeedbackSchema(context.Background()); err != nil {
 			return err
 		}
 		if err = EnsureDashboardStatSchema(context.Background()); err != nil {
@@ -148,7 +174,7 @@ func InitDB(dataSourceName string, l *zap.Logger) error {
 			}
 			// Auto migrate the schema for AI insight related tables
 			if err = GlobalDBForMysql.AutoMigrate(
-				&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{},
+				&TrackInsight{}, &TrackInsightFeedback{}, &AlbumInsight{}, &AlbumInsightFeedback{},
 			); err != nil {
 				return err
 			}

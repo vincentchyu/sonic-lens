@@ -155,7 +155,7 @@ struct AlbumCardView: View {
             AlbumArtworkCard(
                 size: contentWidth,
                 artworkURL: resolvedArtworkURL,
-                title: album.name,
+                title: album.displayName,
                 hasInsight: album.hasInsight,
                 prefersCompactBadge: prefersCompactLayout,
                 isHighlighted: isBadgeHighlighted,
@@ -719,7 +719,7 @@ private struct AlbumCardMetadata: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(album.name)
+            Text(album.displayName)
                 .font(titleFont)
                 .foregroundStyle(SonicTheme.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)

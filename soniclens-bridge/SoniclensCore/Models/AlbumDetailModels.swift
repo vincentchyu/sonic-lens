@@ -47,8 +47,10 @@ struct LinkAlbumRequest: Encodable {
 struct AlbumDetail: Codable, Identifiable {
     let id: Int64
     let name: String
+    let nameSubtitle: String?
     let artist: String
     let releaseDate: String?
+    let originalReleaseDate: String?
     let coverArtURL: String?
     let coverArtMime: String?
     let coverArtObjectKey: String?
@@ -60,8 +62,10 @@ struct AlbumDetail: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case nameSubtitle = "name_subtitle"
         case artist
         case releaseDate = "release_date"
+        case originalReleaseDate = "original_release_date"
         case coverArtURL = "cover_art_url"
         case coverArtMime = "cover_art_mime"
         case coverArtObjectKey = "cover_art_object_key"
@@ -69,6 +73,42 @@ struct AlbumDetail: Codable, Identifiable {
         case totalDiscs = "total_discs"
         case tracks
         case releaseMB = "release_mb"
+    }
+
+    var displayName: String {
+        let subtitle = nameSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !subtitle.isEmpty else { return name }
+        return "\(name) (\(subtitle))"
+    }
+
+    init(
+        id: Int64,
+        name: String,
+        nameSubtitle: String? = nil,
+        artist: String,
+        releaseDate: String?,
+        originalReleaseDate: String? = nil,
+        coverArtURL: String?,
+        coverArtMime: String?,
+        coverArtObjectKey: String?,
+        genre: String?,
+        totalDiscs: Int?,
+        tracks: [Track],
+        releaseMB: AlbumReleaseMBLink?
+    ) {
+        self.id = id
+        self.name = name
+        self.nameSubtitle = nameSubtitle
+        self.artist = artist
+        self.releaseDate = releaseDate
+        self.originalReleaseDate = originalReleaseDate
+        self.coverArtURL = coverArtURL
+        self.coverArtMime = coverArtMime
+        self.coverArtObjectKey = coverArtObjectKey
+        self.genre = genre
+        self.totalDiscs = totalDiscs
+        self.tracks = tracks
+        self.releaseMB = releaseMB
     }
 }
 

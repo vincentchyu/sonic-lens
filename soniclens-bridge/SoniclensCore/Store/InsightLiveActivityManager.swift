@@ -64,22 +64,40 @@ final class InsightLiveActivityManager {
 
         guard let activity = currentActivity else { return }
         if job.phase.isTerminal {
-            await end(
-                activity: activity,
-                using: content(for: job, route: route, artworkLocalIdentifier: artworkIdentifier),
-                dismissalPolicy: dismissalPolicy(for: job.phase)
-            )
-            currentActivity = nil
-            currentArtworkIdentifier = nil
-            artworkTask?.cancel()
-            artworkTask = nil
-            tokenTask?.cancel()
-            tokenTask = nil
+            logger.info("终态已到达，保留灵动岛等待用户点进 App 后关闭 id=\(job.id, privacy: .public)")
+            currentArtworkIdentifier = artworkIdentifier
+            await activity.update(content(for: job, route: route, artworkLocalIdentifier: artworkIdentifier))
         } else {
             currentArtworkIdentifier = artworkIdentifier
             await activity.update(content(for: job, route: route, artworkLocalIdentifier: artworkIdentifier))
             prepareArtworkIfNeeded(job: job, route: route)
         }
+    }
+
+    func dismissCurrentActivityIfNeeded(for job: InsightAnalysisJob, route: InsightAnalysisRouteSnapshot?) async {
+        guard #available(iOS 16.2, *), UIDevice.current.userInterfaceIdiom == .phone else { return }
+        guard job.phase.isTerminal else { return }
+
+        let activity = currentActivity ?? Activity<InsightLiveActivityAttributes>.activities.first { $0.attributes.jobID == job.id }
+        guard let activity else {
+            logger.debug("没有找到需要关闭的 Live Activity id=\(job.id, privacy: .public)")
+            return
+        }
+
+        logger.info("用户已进入 App，关闭终态灵动岛 id=\(job.id, privacy: .public)")
+        await end(
+            activity: activity,
+            using: content(for: job, route: route, artworkLocalIdentifier: currentArtworkIdentifier),
+            dismissalPolicy: .immediate
+        )
+        if currentActivity?.attributes.jobID == job.id {
+            currentActivity = nil
+        }
+        currentArtworkIdentifier = nil
+        artworkTask?.cancel()
+        artworkTask = nil
+        tokenTask?.cancel()
+        tokenTask = nil
     }
 
     private func content(

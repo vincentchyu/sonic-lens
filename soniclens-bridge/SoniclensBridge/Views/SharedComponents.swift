@@ -102,3 +102,73 @@ struct PlaybackStatusBanner: View {
             )
     }
 }
+
+struct FavoriteActionNoticeBanner: View {
+    let notice: FavoriteActionNotice
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                switch notice.style {
+                case .success:
+                    Image(systemName: "checkmark.circle.fill")
+                case .failure:
+                    Image(systemName: "xmark.octagon.fill")
+                }
+            }
+            .font(.caption.weight(.semibold))
+
+            Text(notice.message)
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+        }
+        .foregroundStyle(foregroundColor)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule(style: .continuous)
+                .fill(backgroundColor)
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(borderColor, lineWidth: 1)
+        )
+        .shadow(color: shadowColor, radius: 8, x: 0, y: 4)
+    }
+
+    private var foregroundColor: Color {
+        switch notice.style {
+        case .success:
+            return Color.green.opacity(0.96)
+        case .failure:
+            return Color.red.opacity(0.96)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch notice.style {
+        case .success:
+            return Color.green.opacity(0.15)
+        case .failure:
+            return Color.red.opacity(0.15)
+        }
+    }
+
+    private var borderColor: Color {
+        switch notice.style {
+        case .success:
+            return Color.green.opacity(0.26)
+        case .failure:
+            return Color.red.opacity(0.26)
+        }
+    }
+
+    private var shadowColor: Color {
+        switch notice.style {
+        case .success:
+            return Color.green.opacity(0.12)
+        case .failure:
+            return Color.red.opacity(0.12)
+        }
+    }
+}

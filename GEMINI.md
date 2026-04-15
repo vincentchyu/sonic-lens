@@ -75,14 +75,17 @@
 - **日志打印要求**: **所有日志必须使用中文**。打印不同级别的日志（具体使用什么级别看紧急程度，不要滥用）, 关键的函数要出入口要打印。
 - **当前现状**: Web 端大量核心功能仍承载于 `templates/*.html` (Go Templates) + Vanilla JS；Bridge 是独立的 SwiftUI 客户端体系。修改 `dashboard.html` 等历史页面时，需预期其代码体量大且存在冗余定义。
 - **Bridge 资料库红线**: `soniclens-bridge` 的专辑/曲目列表必须坚持“本地 SQLite 轻量索引 + FTS5 搜索 + `/api/library/sync` 增量同步 + `library_updated(version)` WebSocket 推送 + 详情页懒加载”模式，禁止回退到“远端分页 + 本地数组过滤/排序”的混合设计。
+- **Bridge 专辑展示红线**: 专辑主名与版本说明必须以结构化字段展示，`album.name + album.name_subtitle` / `now_playing.album + album_subtitle` 是唯一事实源；列表、详情、最近播放、热门专辑和当前播放禁止各自重新从原始标题字符串猜括号后缀。
 - **Bridge 模块边界红线**: `soniclens-bridge` 当前包含 `SoniclensBridgeMac`、`SoniclensBridgePad`、`SoniclensBridgePhone` 三个产品线。新增能力时应优先下沉到 `SoniclensCore` / `ViewModels` 共享层，再按端实现容器与交互差异，禁止将 macOS `AppKit` 窗口语义泄漏到 iPad/iPhone。详细边界见 `soniclens-bridge/Docs/CLIENT_MODULE_BOUNDARY.md`。
 - **Bridge 性能状态红线**: `AppStore` 只允许承载低频全局态（连接、最近服务端、任务协调等）；高频播放态、收藏态必须收口到细粒度 `PlaybackStore` / `FavoriteStore`，并通过 Observation/typed environment 下发。密集列表、详情页、播放条禁止直接订阅 `AppStore` 的高频字段。
 - **Bridge 资料库性能红线**: `LibraryViewModel` 的资料库刷新必须保持 single-flight；列表交互遵循“第一页先返回，总数异步补 + 请求 token 丢弃过期结果”模式。控制区反馈优先于统计完成，收藏变更优先 patch 可见行，禁止回退到“每次筛选/收藏都整页重载”的策略。
 - **Bridge 本地索引红线**: `LibraryIndexStore` 当前以 schema `7` 为基线；`track_index.is_favorited_effective` 及 favorites / unreported / recent 复合索引属于长期约束，收藏筛选语义不得回退到运行时 `OR` 拼接。
 - **Bridge 工程生成红线**: `soniclens-bridge/SoniclensBridge.xcodeproj` 是由 `soniclens-bridge/project.yml` 通过 `xcodegen generate` 生成的产物。任何 target、scheme、Info.plist 生成属性、extension 嵌入关系的改动，都必须先落在 `project.yml`，否则下一次 `xcodegen generate` 会回滚手改工程。
+- **Bridge macOS 玻璃宿主红线**: macOS mini 播放条若需要真实 backdrop blur，必须使用窗口级 `NSVisualEffectView` 宿主长期承载，再把 SwiftUI 内容嵌入其中；禁止继续把 `NSVisualEffectView` 塞进 SwiftUI `background`、`clipShape`、按钮样式或普通 overlay 修饰链里，否则前后台切换时容易退化成实色背景。
 - **Bridge 正在播放收藏红线**: 三端 `NowPlaying` 必须优先消费 `WS now_playing` 提供的 `apple_music_state`、`lastfm_state`、`favorite_state`。`favorite_pending` / `unfavorite_pending` 不能再被布尔位抹平；共享态应收口到 `SoniclensCore` 的 favorite projection，再由各端 UI 复用同一套状态推导与提示文案。
-- **Bridge 正在播放进度红线**: 三端正在播放页与全局播放条的本地进度只允许在最近一次 `now_playing` 更新仍然新鲜时继续自增；如果 WS 静默超过短阈值，就必须自动冻结当前进度，收到新的 `now_playing` 后再恢复推进，禁止在暂停后继续空跑计时器。
+- **Bridge 正在播放进度红线**: 三端正在播放页与全局播放条的本地进度只允许在最近一次 `now_playing` 更新仍然新鲜时继续自增；如果 WS 静默超过短阈值，就必须自动冻结当前进度，收到新的 `now_playing` 后再恢复推进，禁止在暂停后继续空跑计时器。Bridge 客户端必须保留每条 `now_playing` 快照的接收时间作为新鲜度事实源，不能在重新进入页面时把旧快照当成“刚同步”的活跃播放。
 - **Bridge 连接链路红线**: Bonjour 自动发现若已拿到解析地址，连接链路必须优先直连解析地址；连接过程中必须同时提供顶部阶段反馈、行内反馈、取消能力与全局断开入口，不能让用户处于“点了没反应”的状态。
+- **Bridge 连接恢复红线**: 已连接过的服务端在下次启动时应优先做静默健康检查，成功后直接进 dashboard；失败时必须保留当前连接上下文并进入用户决策态，允许用户选择“退出当前连接”或“重新连接”，禁止软件在未告知用户的情况下自动断开。
 - **Bridge URL 编码红线**: `soniclens-bridge` 所有 GET 请求的 query 参数必须统一走 `SoniclensCore/Networking/APIClient.swift` 的百分号编码收口，禁止在业务层手写 query string 或依赖 `+` 的隐式语义。曲名、艺人名、专辑名等元数据只允许传原始值，由共享网络层负责把 `+` 编码为 `%2B`，避免后端将 `+` 还原成空格。
 - **Bridge 分享红线**: iPhone 分享首期只从 `TrackDetailView` 进入；可复用的是 ShareKit 的数据装配、渲染和动作层，不是 macOS 快照布局。系统分享只走单张长图；保存图片允许在“长图 / 分页”之间显式选择。音眸分享必须复用现有 `InsightTaggedContentParser` 标签语义并渲染全文 segment，不能退回成摘要卡片或大段纯文本。
 - **Bridge 交互红线**: 排序、筛选等控制态要在控制区回显；高频状态不要直接扩散到密集列表。
@@ -100,15 +103,19 @@
 该清单映射了 `internal/model/` 目录下的核心实体及其关键职责，AI Agent 在涉及数据变更时应参考对应的模型文件：
 
 - **[track.go](./internal/model/track.go)**: 
-    - **核心索引**: `uidx_t_aatdntn` (Artist, Album, Track, DiscNumber, TrackNumber)。
+    - **核心索引**: `uidx_t_aaastdntn` (Artist, Album, AlbumSubtitle, Track, DiscNumber, TrackNumber)。
     - **功能**: 曲目元数据、播放次数统计、乐观锁版本控制。
     - **补充**: `Source` / `BundleID` / `UniqueID` / `ReleaseDate` 只能作为弱线索，不能再被视为稳定主键；低置信来源（如 Apple Music 流媒体、Roon 简化播放态）只允许命中既有曲目并增加播放次数，不允许新建 `album` / `track_album`。
+    - **补充**: `GetOrCreateTrackByIdentityTx`、`UpdateTrackCuratedMetadataTx` 和播放写入路径在落库前必须统一做 `UnityFixAll + ConversionSimplifiedFx`，保证 MusicBrainz 深度维护不会把繁体标题、艺人、专辑、专辑艺人和流派原样写回 `track`，同时保留对旧有简体存量行的回退匹配。
+    - **补充**: `track.album_subtitle` 已成为正式字段；曲目资料库、播放归因与收藏待归因都要透传该字段，曲目稳定身份主键已升级为 `(artist, album, album_subtitle, track, disc_number, track_number)`，不要再回退到只按主名匹配。
 - **[album.go](./internal/model/album.go)**: 
-    - **核心索引**: `uidx_album_artist_name_release_date`。
+    - **核心索引**: `uidx_album_artist_name_subtitle_release_date`。
     - **功能**: 专辑元数据、同步状态 (SyncStatus) 管理。
     - **补充**: `Album` 的 GORM Hook 会写入 `library_change_log`，用于 Bridge 资料库索引增量同步。
-    - **补充**: `GetOrCreateAlbum` 不可再把播放器/文件上报的曲目级 `release_date` 视为稳定专辑身份；精确命中失败后必须回退复用同 `artist + name` 的现有专辑，缺失日期时优先复用 `sync_status=3` 的已深度维护专辑。
+    - **补充**: `GetOrCreateAlbum` 不可再把播放器/文件上报的曲目级 `release_date` 视为唯一稳定专辑身份；专辑身份现在以 `artist + name + name_subtitle + release_date` 共同约束，缺失日期时仍可优先复用 `sync_status=3` 的已深度维护专辑，但不能把不同 subtitle 的版本硬合并。
+    - **补充**: `original_release_date` 现在是独立事实字段，只能在来源明确提供 `release-group.first-release-date` / 文件 `OriginalDate` 时填入；它不参与专辑身份匹配，也不能用当前 `release_date` 直接冒充。
     - **补充**: 专辑封面已升级为对象存储闭环：`album` 维护 `cover_art_url` / `cover_art_mime` / `cover_art_object_key`，实时播放链路优先复用对象存储 URL，失败时才回退内存封面缓存。
+    - **补充**: `album.name_subtitle` 已用于承载 Deluxe / Remaster / Anniversary 等结构化版本说明；资料库同步、详情页和排行榜都应优先读取该字段，而不是再把 `name` 当成带括号的完整展示串。
 - **[track_album.go](./internal/model/track_album.go)**: 
     - **功能**: 维护曲目与专辑的多对多关联，支持碟号和轨道号的物理映射。
     - **规则**: 任何占位符匹配、专辑内曲目绑定、MusicBrainz 对齐都必须优先按 `(album_id, disc_number, track_number)` 处理，`track` 名称只能作为兜底条件。
@@ -126,11 +133,13 @@
     - **补充**: 播放流水现已显式记录 `resolved_track_id`、`resolution_status`、`resolution_confidence` 与 `library_applied`；实时 scrobble 应优先走 `ProcessTrackPlayRecord`，统一完成资料库写入与归因回填。
     - **补充**: 后台补归因与补写资料库时，应优先复用 `ReplayTrackPlayRecords` / `ProcessTrackPlayRecord`，不要再在命令层手工串联“查记录 -> 增播放 -> 回填状态”。
     - **补充**: `track_play_record` 现已记录 `trace_id`、`root_span_id`、`trace_sampled`，用于把业务播放流水直接锚定到当前歌曲根 span；后续排障、replay 和调试页应优先复用这组字段反查 Jaeger/SigNoz，而不是再靠播放时间和曲名模糊匹配。
+    - **补充**: 播放阈值达到时写入的 `track_play_record.cover_art_path` 是最近播放封面的客户端消费字段；`HandleTrackPlaybackThreshold` 必须在落库时同步收敛封面路径，最近播放首页应优先展示该路径对应的封面图片，时间只保留短标签或省略。
+    - **补充**: `track_play_records.album_subtitle` 是最近播放、D1 镜像和待归因专辑上下文的专辑版本说明来源；播放入库时必须同步保留，最近播放与资料库索引的 fallback join 也必须按 `album_subtitle` 进行匹配，不能再只按 `artist + album` 兜底。
 - **[track_favorite_event.go](./internal/model/track_favorite_event.go)**:
     - **功能**: 收藏事件表，用于“先记意图，再归因回填”。
     - **补充**: `track_favorite_event` 只表示待归因收藏意图，不得替代 `track` 表中的稳定收藏事实；对外读取必须统一走 logic 层 favorite projection 合成稳定态与 pending 态。
     - **补充**: `POST /api/favorite` 与 `WS now_playing` 必须同时输出 `apple_music_state`、`lastfm_state`、`favorite_state`；兼容布尔位 `apple_music` / `lastfm` 表示“有效收藏态”，`favorite_pending` 也应表现为 `true`。
-    - **补充**: 实时 scrobbler 的收藏探测必须优先复用 logic 层 favorite projection 缓存与版本失效机制；同歌稳态且 probe 未变化时，不要每轮重查 `track` / `track_favorite_event`，本地 `SetTrackFavorite` 写入后需主动使缓存失效。
+    - **补充**: `track_favorite_event` 的身份查找已经纳入 `album_subtitle`；实时 scrobbler 的收藏探测必须优先复用 logic 层 favorite projection 缓存与版本失效机制，同歌稳态且 probe 未变化时，不要每轮重查 `track` / `track_favorite_event`，本地 `SetTrackFavorite` 写入后需主动使缓存失效。
 - **[pending_album_work_item.go](./internal/model/pending_album_work_item.go)**:
     - **功能**: 待归因专辑工作项的冻结上下文、实时对比和显式刷新。
     - **补充**: `GetPendingAlbumWorkItemDetail` 会同时返回冻结的播放/点赞记录、实时 `live_group` 和 `context_stale`，前端可以据此提示用户是否刷新。
@@ -140,21 +149,28 @@
     - **补充**: 手动维护时，`manual_tracks[].title` 必须优先于冻结上下文证据标题；`evidence_titles` 仅用于 replay 归因，不得反向覆盖 curated 曲名。若复用了历史 `resolved_track_id`，也必须允许把 `track.artist/album/track` 身份字段修正为本次手填值。
     - **补充**: v1 手动维护曲目表必须实时接收输入值，不能依赖 `change` 失焦事件；当 `disc_number/track_number` 变化时，前端需立即按位置重排，且唯一约束只在 `(disc_number, track_number)`，不限制同名曲。
     - **补充**: 当冻结上下文中的播放/收藏标题与手填曲名不一致时，pending album 维护流程必须在落库阶段显式把该工单冻结的 `track_play_records` / `track_favorite_event` 绑定到目标 `track.id`；不能只依赖后续 replay 再按旧标题找库，否则会出现 `track_album` 已修正但 `track` 表与回填状态仍停留在旧标题的错位。
+    - **补充**: `pending_album_work_item.album_subtitle` 必须和冻结的播放/收藏上下文一起持久化，避免 Deluxe / Anniversary 专辑在待归因列表、详情和手动维护之间丢失版本说明。
 - **[config.go](./config/config.go)**:
     - **补充**: `playReplay` 用于控制播放流水自动补归因调度，默认应保持关闭，待手动 replay 验数稳定后再开启。
 - **[internal/sync/d1_sync.go](./internal/sync/d1_sync.go)**:
     - **补充**: D1 同步必须走“单飞 + 启动串行 + 按表更新时间戳增量”闭环，`SyncAll` 进入后要先抢占运行锁，定时器触发时若已有同步在跑应直接跳过，避免首轮全量和定时重入同时刷 D1 额度。
     - **补充**: D1 直连 `database/sql` 链路统一走 `otelsql.Open(...)` + `RegisterDBStatsMetrics(...)`，不要再让同步侧 SQL 调用游离在主库 tracing/metrics 体系之外。
+    - **补充**: D1 镜像表 `track_play_records` 与 `top_album_stat` 现已同步维护 `album_subtitle`；新增镜像字段时要同时补齐建表、补列、迁移复制和 batch upsert 四条链路，不能只改单侧 schema。
 - **[library_change_log.go](./internal/model/library_change_log.go)**:
     - **功能**: 记录专辑与曲目的增删改事件，为 Bridge `/api/library/sync` 提供版本游标、upsert 集合与删除 tombstone。
 - **[track_insight.go](./internal/model/track_insight.go)**: 
     - **功能**: AI 生成的歌曲赏析细节（背景、歌词翻译、时代背景）。
     - **补充**: 结构化 insight 的事实标准不是 Bridge 自行猜测的扁平字段，而是 `core/ai/agent.go` 中 `GetTrackInsightSchema()` 定义的 JSON Schema；`analysis_by_section` 是核心字段，`appreciate_analysis` 内允许出现 `<original>/<translation>/<explain>` 标签串。
-    - **补充**: Bridge 客户端当前只展示后端排序后的第一条 insight；共享解码与富渲染规则位于 `soniclens-bridge/SoniclensCore/Models/LibraryModels.swift` 与 `soniclens-bridge/SoniclensBridge/Views/InsightDetailView.swift`。
+    - **补充**: Bridge 客户端现在优先消费后端返回的 `recommended_insight_id` 选中默认 insight；共享解码与富渲染规则位于 `soniclens-bridge/SoniclensCore/Models/LibraryModels.swift` 与 `soniclens-bridge/SoniclensBridge/Views/InsightDetailView.swift`。
+    - **补充**: `track_insight_feedbacks` 只承载曲目反馈，不再和专辑反馈混表；`/api/insights/:id/feedbacks` 需要按 `analysis_target_type` 路由到对应表。
+    - **补充**: 单用户 Bridge 反馈语义统一为“我的反馈 / 历史反馈 / 待修正”，列表态只读取摘要，不展示所谓“社区评论”。
+    - **补充**: `reason_codes` 必须与 `common.InsightFeedbackReason` 保持一致，后端只接受白名单值并按该枚举顺序归一；`TopReasonCodes` 与 prompt 注入都基于这套归一后的原因标签。
 - **[album_insight.go](./internal/model/album_insight.go)**:
     - **功能**: AI 生成的专辑级深度分析结果（整专主题、文学解读、作者动机、哲学反思、时代语境）。
-    - **补充**: 专辑 insight 不是重新逐曲分析歌词，而是基于 `track_album` 曲序和已存在的 `track_insight` 做二次聚合；每首歌只允许带入“总分最高、同分最新”的那条曲目 insight。
+    - **补充**: 专辑 insight 不是重新逐曲分析歌词，而是基于 `track_album` 曲序和已存在的 `track_insight` 做二次聚合；每首歌只允许带入“总分最高、同分最新”的那条曲目 insight，并通过 `recommended_insight_id` 显式标记默认推荐版本。
     - **补充**: 结构化专辑契约以 `core/ai/agent.go` 中 `GetAlbumInsightSchema()` 为准，`metadata` 需保留 `album_id`、`total_tracks`、`analyzed_tracks` 与 `selected_track_insight_ids`，便于前端和后台追踪来源。
+    - **补充**: `album_insight_feedbacks` 已独立建表；专辑分析会注入该表中的历史差评作为 `FeedbackContext`，`RecordAlbumFeedback` 负责回写点赞/点踩计数。
+    - **补充**: 曲目/专辑反馈事件已补齐 `reason_codes`、`section_key`、`source_platform`；再生成时要优先整理成高频问题标签、重点分区和最近负反馈摘要，而不是直接无序拼接 comment。
 - **[insight_job.go](./internal/model/insight_job.go)**:
     - **功能**: 承载曲目/专辑音眸的异步任务状态、客户端平台、Live Activity push token 与结果可用性，作为长调用恢复事实源。
     - **补充**: `/api/insight-jobs*` 是 iPhone 音眸的主调用链；`track-insight` / `album-insight` 继续只承担结果读取与兼容旧入口，不再承担 iPhone 首选长任务调度。
@@ -199,6 +215,7 @@
 - **[dashboard_stat.go](./internal/model/dashboard_stat.go)**: 
     - **功能**: 复杂聚合统计逻辑（Top 艺术家、流派占比、年度统计）。
     - **补充**: 首页热门艺术家头像已从统计事实表中拆出，`top-artists` 响应可以通过 `artist_profile` 资料映射补齐 `avatar_url` / `avatar_object_key` / `avatar_mime`；统计层只负责排名与计数，前端优先渲染头像，缺失时回退首字母圆牌。
+    - **补充**: 热门专辑统计已显式输出 `album_subtitle`；聚合时应优先从 `album.name_subtitle` 回填，缺失时再回退播放流水里的 `album_subtitle`，保证首页排行榜和专辑详情展示一致。
 - **[init.go](./internal/model/init.go)**: 
     - **功能**: 数据库初始化与 AutoMigrate 配置。
 - **[sql/ddl](./internal/model/sql/ddl)**:
@@ -211,5 +228,5 @@
     - **功能**: model 包 MySQL 方言单元测试基座入口（基于 GORM MySQL dialector + sqlmock）。
     - **规则**: DAO 层重构与事务治理优先补 model 级测试，优先校验 MySQL SQL 与事务顺序，避免再为 SQLite 兼容性让路。
 
-*最后更新日期：2026-04-02 | 文档版本: v3.0*
+*最后更新日期：2026-04-09 | 文档版本: v3.1*
 AI MUST READ THIS FILE BEFORE MODIFYING CODE.

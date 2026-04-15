@@ -91,8 +91,9 @@ func ArtistCustomFit(artist string) string {
 }
 
 // TrackCustomFit 歌曲自定义适配
-func TrackCustomFit(artist string) string {
-	switch artist {
+func TrackCustomFit(name string) string {
+	// strings.HasSuffix(name,"Pt. 1")
+	switch name {
 	case "Another Brick In the Wall, Pt. 1":
 		return "Another Brick in the Wall, Part 1"
 	case "Another Brick In the Wall, Pt. 2":
@@ -101,9 +102,19 @@ func TrackCustomFit(artist string) string {
 		return "Another Brick in the Wall, Part 3"
 	case "蚂蚁蚂蚁":
 		return "蚂蚁 蚂蚁"
+	case "What God Wants, Pt. I":
+		return "What God Wants, Part I"
+	case "What God Wants, Pt. II":
+		return "What God Wants, Part II"
+	case "What God Wants, Pt. III":
+		return "What God Wants, Part III"
+	case "Leave It (A Capella Version)":
+		return "Leave It (\"a cappella\" version)"
+	case "Leave It (Single Remix)":
+		return "Leave It (single remix)"
 		// todo add
 	}
-	return artist
+	return name
 }
 
 func UnityFixAll(str string) string {
@@ -121,8 +132,11 @@ func UnityFixAll(str string) string {
 // ）=> )
 // 替换为英文引号
 func UnityPunctuationMarksFix(target string) string {
-	if strings.ContainsAny(target, "’") {
-		target = strings.ReplaceAll(target, "’", "'")
+	if strings.ContainsAny(target, "’‘") {
+		target = strings.NewReplacer("’", "'", "‘", "'").Replace(target)
+	}
+	if strings.ContainsAny(target, "“”") {
+		target = strings.NewReplacer("“", "\"", "”", "\"").Replace(target)
 	}
 	if strings.ContainsAny(target, "，") {
 		target = strings.ReplaceAll(target, "，", ",")
@@ -131,6 +145,27 @@ func UnityPunctuationMarksFix(target string) string {
 		target = strings.NewReplacer("（", "(", "）", ")").Replace(target)
 	}
 	return target
+}
+
+// NormalizeForIdentity 提供一种极其松散的归一化结果，用于在身份比对时忽略大小写、空格、引号及常见干扰符。
+func NormalizeForIdentity(str string) string {
+	str = UnityFixAll(str)
+	str = strings.ToLower(str)
+	// 移除引号
+	str = strings.ReplaceAll(str, "\"", "")
+	str = strings.ReplaceAll(str, "'", "")
+	// 移除常见干扰标点
+	str = strings.NewReplacer(
+		"(", " ", ")", " ",
+		"[", " ", "]", " ",
+		"{", " ", "}", " ",
+		".", " ", ",", " ",
+		"-", " ", "_", " ",
+	).Replace(str)
+
+	// 合并连续空格并 trim
+	fields := strings.Fields(str)
+	return strings.Join(fields, " ")
 }
 
 //	UnityFeatFix

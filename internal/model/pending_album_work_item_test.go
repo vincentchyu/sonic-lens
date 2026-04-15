@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestGetPendingAlbumGroupsAndCreateWorkItem(t *testing.T) {
@@ -184,6 +185,53 @@ func TestPendingAlbumWorkItemDetailDoesNotFlagCompletedAsStale(t *testing.T) {
 	require.False(t, detail.ContextStale)
 	require.Nil(t, detail.LiveGroup)
 	require.Len(t, detail.PlayRecords, 1)
+}
+
+func TestResolveCanonicalAlbumForPendingContextTxKeepsVersionedAlbumSeparate(t *testing.T) {
+	db := newTrackResolutionTestDB(t, "pending_album_canonical_versioned_album")
+
+	require.NoError(
+		t,
+		db.Create(&Album{
+			ID:          177,
+			Name:        "The Dark Side of the Moon",
+			Artist:      "Pink Floyd",
+			ReleaseDate: "2016",
+			SyncStatus:  3,
+			TotalDiscs:  1,
+			DiscInfos:   `{"1":10}`,
+		}).Error,
+	)
+
+	var resolved *Album
+	require.NoError(
+		t,
+		db.Transaction(func(tx *gorm.DB) error {
+			var err error
+			resolved, err = ResolveCanonicalAlbumForPendingContextTx(
+				tx,
+				&Album{
+					Name:         "The Dark Side of the Moon",
+					NameSubtitle: "(50th Anniversary) [Remastered]",
+					Artist:       "Pink Floyd",
+					ReleaseDate:  "2023-10-13",
+					TotalDiscs:   1,
+					DiscInfos:    `{"1":10}`,
+				},
+			)
+			return err
+		}),
+	)
+
+	require.NotNil(t, resolved)
+	require.NotEqual(t, int64(177), resolved.ID)
+	require.Equal(t, "(50th Anniversary) [Remastered]", resolved.NameSubtitle)
+	require.Equal(t, "2023-10-13", resolved.ReleaseDate)
+
+	var original Album
+	require.NoError(t, db.First(&original, 177).Error)
+	require.Equal(t, "", original.NameSubtitle)
+	require.Equal(t, "2016", original.ReleaseDate)
 }
 
 func TestApplyTrackFavoriteEventsByIDs(t *testing.T) {
