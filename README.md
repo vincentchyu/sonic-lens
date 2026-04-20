@@ -1,59 +1,159 @@
-# 引言
+# SonicLens
 
-* 我要做的第一件事就是让你知道，你接受到的音乐轨迹也是你的数字资产，而你得到你的资产不需要依靠别人、任何平台。
-* 当你需要深入了解一首歌曲的时候，就是这个平台要做的第二件事。
+SonicLens 是一个围绕“音乐轨迹属于你自己”构建的开源项目。它不只是一个 scrobble 工具，而是一整套完整产品：
 
-# 展示
+- 核心后端：负责播放器监听、播放记录沉淀、AI 音眸解析、WebSocket 实时推送与数据同步。
+- Web 后台：负责服务管理、统计看板、历史数据浏览与日常运维入口。
+- 原生三端客户端：基于纯原生 SwiftUI 构建 macOS、iPadOS、iPhone 三端体验，用于连接家庭局域网中的 SonicLens 服务端，提供更完整的浏览、播放中、歌词、音眸与分享能力。
 
-以下是效果展示界面：
-![项目效果暗色](static/img/home2.png)
-![项目效果暗色](static/img/home1.png)
-![项目效果暗色](static/img/home3.png)
-![项目效果暗色](static/img/lens1.png)
-![项目效果暗色](static/img/lrc1.png)
-![项目效果明色](static/img/lrc2.png)
----
-# SonicLens 项目学习指南
+如果你想了解这个项目的精华，可以把它理解成一句话：
 
-## 1. 项目概述
+> 把你分散在不同播放器里的听歌历史，沉淀成你自己的本地音乐资产，并用 AI 重新组织成可浏览、可分析、可分享的个人音乐档案。
 
-> **音眸轨迹 · SonicLens**
->
-> 音乐不仅是流动的空气，更是你生命中不曾停歇的**数字资产**。
->
-> `sonic-lens` 是一架专为 macOS 乐迷打造的“声之透镜”。它静默地守候在 **Audirvana**、**Roon** 与 **Apple Music** 之后，通过高频采样与无感监控，将每一次聆听凝结为跨越平台的永恒印记。
->
-> 在这里，你的听歌历史不再是存储于流媒体服务器上的冷数据，而是属于你个人的、可触碰的**音眸轨迹**。通过 AI 的深度解析，每一首乐曲都将被赋予超越旋律的洞察，转化为不可磨灭的聆听印记。
+## 项目亮点
 
-## 2. 项目结构
+- 跨播放器沉淀音乐历史，统一接入 Apple Music、Audirvana、Roon 等播放来源。
+- 本地优先保存听歌资产，核心数据由你自己掌控，不依赖某一个平台继续存在。
+- AI 音眸解析能力，支持歌词、歌曲、专辑的深度分析与结构化洞察。
+- 实时体验完整，后端变化可以通过 WebSocket 秒级推送到 Web 与客户端。
+- 客户端不是壳应用，而是独立设计的原生三端产品，适合日常长期使用。
 
-```
-/
-├── core/                    # 核心模块：AI 接入、播放器控制器、Scrobbler 逻辑
-├── internal/                # 业务逻辑：数据模型、统计分析
-├── api/                     # HTTP 服务接口
-├── config/                  # 配置文件
-├── shell/                   # 服务管理脚本
-├── templates/               # Web 仪表板模板
-└── main.go                  # 程序入口
-```
+## 项目结构
 
-## 3. 工作原理
+这个仓库目前主要由三块组成：
 
-项目通过 **并发监控 -> 状态解析 -> 数据沉淀 -> 智能洞察** 的流式架构运行：
+### 1. 核心后端
 
-1.  **无感监控**: 基于 Go 并发特性，为每个播放器（Audirvana, Roon, Apple Music）启动独立 Goroutine。
-2.  **状态捕获**: 通过 AppleScript 或命令行工具实时采样播放器的元数据（艺术家、曲目、进度）。
-3.  **智能 Scrobble**: 遵循 Last.fm 协议，当播放进度达标时自动触发同步，并写入本地数据库。
-4.  **音眸解析**: 结合 AI 大模型（如本地 Ollama），对歌词进行深度情感与语义解析。
-5.  **实时推送**: 通过 WebSocket 将状态变更秒级推送至 Web 仪表板。
+位置：
 
----
+- `main.go`
+- `api/`
+- `internal/`
+- `core/`
+- `config/`
 
-## 4. 快速开始
+主要职责：
 
-### 第一步：基础配置
-编辑 `config/config.yaml`，填入您的 Last.fm 凭据：
+- 监听播放器状态并进行 scrobble / 收藏状态同步
+- 保存本地音乐资料与统计数据
+- 提供 REST API、WebSocket、资料库同步接口
+- 接入 AI 模型，生成歌曲与专辑 insight
+- 为 Web 端与三端客户端提供统一数据服务
+
+### 2. Web 后台 / 管理端
+
+位置：
+
+- `templates/`
+- `static/`
+
+主要职责：
+
+- 展示当前播放、统计看板、历史数据
+- 承担后台管理与日常维护入口
+- 作为后端能力的可视化管理界面
+
+### 3. 原生三端客户端 `soniclens-bridge`
+
+位置：
+
+- `soniclens-bridge/`
+
+这是项目非常重要的一块。它不是简单的移动端适配，而是一套纯原生 SwiftUI 的局域网 Bridge 客户端，包含：
+
+- macOS 客户端
+- iPadOS 客户端
+- iPhone 客户端
+
+三端共享 `SoniclensCore` 网络层、模型层与状态管理，同时按端提供不同容器与交互方式。
+
+## 三端客户端能做什么
+
+`soniclens-bridge` 面向的是“使用者体验”，不是单纯开发调试工具。它目前承载的核心能力包括：
+
+- 连接局域网中的 SonicLens 服务端，支持 Bonjour 自动发现与手动输入地址
+- 浏览首页统计、趋势、热门内容与最近播放
+- 浏览资料库，包括专辑、曲目、收藏、未上报等数据视图
+- 查看当前播放、歌词、专辑信息与音眸解析
+- 在 iPhone / iPad / macOS 上获得一致但不雷同的原生体验
+- 支持分享海报、长图导出、Insight 结果消费等偏产品化的能力
+
+如果你是第一次了解这个项目，这部分基本就是它和普通“音乐记录脚本”最大的区别。
+
+## 效果展示
+
+我们为所有端点提供了一致但深度适配的原生体验，包含 **Web 后台**、**Mac 桌面客户端** 以及 **iPhone 移动端**。
+
+### 1. Web 后台管理
+
+Web 后台主要用于大屏数据可视化展现、系统管理与日常运维入口。
+
+<details>
+<summary>点击展开查看 Web 端截图展示</summary>
+
+| | |
+| :---: | :---: |
+| <img src="static/img/home2.png" width="100%"> | <img src="static/img/home1.png" width="100%"> |
+| <img src="static/img/home3.png" width="100%"> | <img src="static/img/lens1.png" width="100%"> |
+| <img src="static/img/lrc1.png" width="100%"> | <img src="static/img/lrc2.png" width="100%"> |
+
+</details>
+
+### 2. Mac 原生客户端
+
+基于 SwiftUI 开发，深度融合 macOS 原生体验，支持毛玻璃视图体验和更完整的桌面多栏视图交互。
+
+<details>
+<summary>点击展开查看 Mac 端截图展示 (平铺布局)</summary>
+
+| | |
+| :---: | :---: |
+| <img src="static/img/apple/MAC/1-home1.png" width="100%"> | <img src="static/img/apple/MAC/1-home2.png" width="100%"> |
+| <img src="static/img/apple/MAC/1-home3.png" width="100%"> | <img src="static/img/apple/MAC/1-home4.png" width="100%"> |
+| <img src="static/img/apple/MAC/2-专辑1.png" width="100%"> | <img src="static/img/apple/MAC/2-专辑2.png" width="100%"> |
+| <img src="static/img/apple/MAC/2-专辑3.png" width="100%"> | <img src="static/img/apple/MAC/3-曲目1.png" width="100%"> |
+| <img src="static/img/apple/MAC/3-曲目2.png" width="100%"> | <img src="static/img/apple/MAC/3-曲目3.png" width="100%"> |
+| <img src="static/img/apple/MAC/4-音眸1.png" width="100%"> | <img src="static/img/apple/MAC/5-播放1.png" width="100%"> |
+| <img src="static/img/apple/MAC/5-正在播放1.png" width="100%"> | <img src="static/img/apple/MAC/5-正在播放2.png" width="100%"> |
+| <img src="static/img/apple/MAC/5-正在播放3.png" width="100%"> | <img src="static/img/apple/MAC/5-正在播放4.png" width="100%"> |
+| <img src="static/img/apple/MAC/5-正在播放5.png" width="100%"> | |
+
+</details>
+
+### 3. iPhone 原生移动端
+
+同样基于 SwiftUI 打造，为移动设备而生的阅读与正在播放体系，兼顾密集资料库与单曲歌词解析的沉浸展示。
+
+<details>
+<summary>点击展开查看 iPhone 常规界面展示 (三列并排)</summary>
+
+| | | |
+| :---: | :---: | :---: |
+| <img src="static/img/apple/IPHONE/1-home1.PNG" width="100%"> | <img src="static/img/apple/IPHONE/1-home2.PNG" width="100%"> | <img src="static/img/apple/IPHONE/2-专辑1.PNG" width="100%"> |
+| <img src="static/img/apple/IPHONE/3-曲目1.PNG" width="100%"> | <img src="static/img/apple/IPHONE/3-曲目3.PNG" width="100%"> | <img src="static/img/apple/IPHONE/正在播放1.PNG" width="100%"> |
+| <img src="static/img/apple/IPHONE/正在播放2.PNG" width="100%"> | | |
+
+</details>
+
+<details>
+<summary>点击展开查看 iPhone 超长沉浸解析图 (独立陈列)</summary>
+
+针对长文本阅读（如长歌词、单曲音眸解读、专辑音眸洞察），可生成专属的高清晰度长图：
+
+| | |
+| :---: | :---: |
+| <img src="static/img/apple/IPHONE/3-曲目4-腰-晚春-歌词.PNG" width="100%"> | <img src="static/img/apple/IPHONE/3-曲目5-腰-晚春-音眸.PNG" width="100%"> |
+| <img src="static/img/apple/IPHONE/3-曲目2腰-晚春-信息.PNG" width="100%"> | <img src="static/img/apple/IPHONE/2-专辑2-腰-24'相见恨晚-信息.PNG" width="100%"> |
+| <img src="static/img/apple/IPHONE/2-专辑3腰-24'相见恨晚-专辑音眸.PNG" width="100%"> | |
+
+</details>
+
+## 快速开始
+
+### 1. 启动后端服务
+
+先准备配置文件 `config/config.yaml`，至少补齐你自己的 Last.fm 信息：
+
 ```yaml
 lastfm:
   apiKey: "YOUR_API_KEY"
@@ -64,67 +164,163 @@ lastfm:
 scrobblers: ["Apple Music", "Audirvana", "Roon"]
 ```
 
-### 第二步：环境准备
-- **Roon 用户**: `brew install media-control`
-- **Redis 缓存 (可选)**: `brew install redis` (用于加速收藏状态查询)
+可选依赖：
 
-### 第三步：运行服务
+- `Redis`：用于缓存与部分状态加速
+- `media-control`：部分播放器场景会用到
 
-**推荐方式 (后台服务运行):**
-```shell
-sh shell/script/build_sonic-lens_launchctl.sh  # 编译并部署
-sh shell/script/start_sonic-lens.sh            # 启动服务
+示例：
+
+```bash
+brew install redis
+brew install media-control
 ```
 
-**调试方式 (前台运行):**
-```shell
+运行方式：
+
+```bash
+# 方式一：前台调试
 go build -o sonic-lens
 ./sonic-lens
+
+# 方式二：使用仓库脚本部署为后台服务
+sh shell/script/build_sonic-lens_launchctl.sh
+sh shell/script/start_sonic-lens.sh
 ```
-> 访问 Web 仪表板: `http://localhost:8081`
 
----
+启动后，你可以使用 Web 端或客户端连接它。
 
-## 5. 核心特性
+### 2. 打开 Web 后台
 
-### 🛡️ 资产数字化与沉淀
-- **跨平台追踪**: 统一集成 Audirvana, Roon, Apple Music 的聆听历史。
-- **本地化自治**: 所有播放数据存储于本地 SQLite，摆脱平台限制，成为个人数字资产。
-- **Redis 加速**: 智能缓存 Last.fm 交互状态，响应极速。
+后端起来后，可以直接访问项目的 Web 界面进行浏览与管理。具体端口以你的本地配置和启动日志为准。
 
-### 👁️ 音眸智能洞察 (Sonic Insight)
-- **AI 深度解析**: 接入大模型对歌词进行解析、翻译与情感挖掘。
-- **SSE 流式渲染**: 洞察结果实时流式呈现，支持点赞与重新分析。
-- **印记分享**: 一键生成带有封面与 AI 见解的分享海报，铭刻聆听瞬间。
+Web 端适合：
 
-### ⚡ 实时交互与监控
-- **Web 仪表板**: 实时展示当前播放元数据（封面、比特率等）。
-- **WebSocket 架构**: 后端变更与前端 UI 保持毫秒级同步。
-- **优雅停启**: 配合 macOS `launchd` 实现开机自启与平滑退出。
+- 先确认服务是否正常工作
+- 查看统计看板和播放数据
+- 做后台管理与运维操作
 
----
+### 3. 构建三端客户端
 
-## 6. 开发与贡献
+客户端工程位于 `soniclens-bridge/`，目前包含三个 Scheme：
 
-了解详细架构或参与贡献，请参考代码中的 `core/` 与 `internal/` 目录注释。
+- `SoniclensBridgeMac`
+- `SoniclensBridgePad`
+- `SoniclensBridgePhone`
 
-## 7. SigNoz 日志采集
+前置要求：
 
-当前 SonicLens 应用侧保持 `zap + lumberjack` 本地文件日志策略，不在应用内直连 OTLP logs exporter。
-如果需要把日志上报到本地 SigNoz，推荐使用 OpenTelemetry Collector 的 `filelog` receiver 采集 `./.logs/go_lastfm-scrobbler.log*`，再转发到 SigNoz OTLP `4317`。
+- macOS
+- Xcode
+- Xcode Command Line Tools
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+- 如需真机安装，需要可用的 Apple Developer Team
 
-仓库已提供 Collector 示例配置：
+先生成 Xcode 工程：
 
-- `config/otelcol/filelog_signoz.yaml.example`
-
-推荐闭环：
-
-1. 应用侧继续保留本地日志文件轮转策略。
-2. 本地 Collector 用 `filelog` 采集 JSON 日志并转发到 SigNoz。
-3. SigNoz 管理端单独设置日志 retention，例如 `1` 天。
+```bash
+cd soniclens-bridge
+xcodegen generate
+```
 
 说明：
 
-- `filelog` 只负责采集路径，不决定 SigNoz 里的保存时长。
-- SigNoz retention 与应用本地日志保留天数是两套独立策略。
-- 当前仓库里的 tracing / metrics 仍由应用直接走 OTLP gRPC exporter。
+- `soniclens-bridge/SoniclensBridge.xcodeproj` 是生成产物
+- 真正的工程定义在 `soniclens-bridge/project.yml`
+- 如果你改了 target、scheme、Info.plist 生成配置，应该先改 `project.yml` 再重新生成工程
+
+## 三端打包指引
+
+### macOS
+
+Xcode 中选择：
+
+- Scheme：`SoniclensBridgeMac`
+- Destination：`My Mac`
+
+也可以命令行构建：
+
+```bash
+xcodebuild \
+  -project soniclens-bridge/SoniclensBridge.xcodeproj \
+  -scheme SoniclensBridgeMac \
+  -configuration Debug \
+  -sdk macosx \
+  build \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+### iPadOS
+
+Xcode 中选择：
+
+- Scheme：`SoniclensBridgePad`
+- Destination：对应 iPad 真机或 iPad Simulator
+
+命令行构建示例：
+
+```bash
+xcodebuild \
+  -project soniclens-bridge/SoniclensBridge.xcodeproj \
+  -scheme SoniclensBridgePad \
+  -destination 'generic/platform=iOS' \
+  build
+```
+
+### iPhone
+
+Xcode 中选择：
+
+- Scheme：`SoniclensBridgePhone`
+- Destination：对应 iPhone 真机或 iPhone Simulator
+
+命令行构建示例：
+
+```bash
+xcodebuild \
+  -project soniclens-bridge/SoniclensBridge.xcodeproj \
+  -scheme SoniclensBridgePhone \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  build \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+## 推荐阅读
+
+如果你想继续深入：
+
+- 客户端打包与启动说明：`soniclens-bridge/Docs/PACKAGING_AND_LAUNCH.md`
+- 客户端构建与验证：`soniclens-bridge/Docs/BUILD_AND_VERIFY.md`
+- 客户端架构说明：`soniclens-bridge/Docs/ARCHITECTURE.md`
+- 客户端模块边界：`soniclens-bridge/Docs/CLIENT_MODULE_BOUNDARY.md`
+- API 映射：`soniclens-bridge/Docs/API_MAPPING.md`
+
+## 适合谁
+
+这个项目会比较适合下面几类人：
+
+- 想把自己的听歌历史长期保存在本地的人
+- 同时使用多个播放器，希望统一沉淀与分析的人
+- 对音乐资料、歌词、专辑文本分析、个人音乐资产感兴趣的人
+- 想参考一个同时包含 Go 后端、Web 管理端、SwiftUI 三端客户端的完整开源项目的人
+
+## 当前定位
+
+SonicLens 不是单点工具，而是一套完整音乐系统：
+
+- 后端负责采集、整理、同步、分析
+- Web 负责管理、查看、运维
+- 三端客户端负责真正面向用户的日常体验
+
+这也是这个仓库最值得被开源读者一眼看到的地方。
+
+## SigNoz 日志采集
+
+当前应用侧保持 `zap + lumberjack` 本地文件日志策略，不在应用内直连 OTLP logs exporter。
+
+如果需要把日志上报到本地 SigNoz，推荐使用 OpenTelemetry Collector 的 `filelog` receiver 采集 `./.logs/go_lastfm-scrobbler.log*`，再转发到 SigNoz OTLP `4317`。
+
+示例配置：
+
+- `config/otelcol/filelog_signoz.yaml.example`

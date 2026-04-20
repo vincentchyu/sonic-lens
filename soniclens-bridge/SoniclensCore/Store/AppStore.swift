@@ -94,11 +94,14 @@ final class AppStore: ObservableObject {
     private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "AppStore")
     private var connectionTask: Task<Bool, Never>?
     private var silentHealthCheckTask: Task<Void, Never>?
+    private var realtimeRecoveryTask: Task<Void, Never>?
     private var currentConnectionAttemptID: UUID?
     private var lastPrefetchedNowPlayingKey: String?
+    private var isRealtimeConnected = false
     private let preferredResolvedHealthCheckTimeout: TimeInterval = 1.5
     private let fallbackHealthCheckTimeout: TimeInterval = 3
     private let silentHealthCheckInterval: UInt64 = 60 * 1_000_000_000
+    private let realtimeRecoveryDebounceInterval: UInt64 = 1_200_000_000
     private let autoRestoreLastSuccessfulConnectionKey = "soniclens.autoRestoreLastSuccessfulConnection"
     private var hasAttemptedBootstrapRestore = false
     private let favoriteRequestHandler: (URL, FavoriteRequest) async throws -> FavoriteResponse
@@ -221,12 +224,15 @@ final class AppStore: ObservableObject {
         logger.info("断开当前服务端连接")
         cancelActiveConnection(announceCancellation: false)
         stopSilentHealthMonitoring()
+        stopRealtimeRecovery()
         setAutoRestoreEnabled(false)
         libraryUpdateWorkItem?.cancel()
         libraryUpdateWorkItem = nil
+        nowPlayingService?.onConnectionStateChange = nil
         nowPlayingService?.stop()
         nowPlayingService = nil
         currentServer = nil
+        isRealtimeConnected = false
         activeConnectionTargetKey = nil
         connectionRecoveryStore.clear()
         favoriteActionStore.clear()
@@ -295,7 +301,8 @@ final class AppStore: ObservableObject {
 
         let success = await performSilentHealthCheck(
             using: server,
-            origin: .foreground
+            origin: .foreground,
+            restartRealtimeIfNeeded: !isRealtimeConnected
         )
         if success {
             logger.debug("前台健康检查通过 \(server.displayName, privacy: .public)")
@@ -332,7 +339,16 @@ final class AppStore: ObservableObject {
         silentHealthCheckTask = nil
     }
 
-    private func performSilentHealthCheck(using server: ServerConfig, origin: ConnectionHealthProbeOrigin) async -> Bool {
+    private func stopRealtimeRecovery() {
+        realtimeRecoveryTask?.cancel()
+        realtimeRecoveryTask = nil
+    }
+
+    private func performSilentHealthCheck(
+        using server: ServerConfig,
+        origin: ConnectionHealthProbeOrigin,
+        restartRealtimeIfNeeded: Bool = false
+    ) async -> Bool {
         do {
             let (effectiveServer, health) = try await resolveReachableServer(from: server)
             guard health.status == "ok" else {
@@ -345,8 +361,11 @@ final class AppStore: ObservableObject {
                 return false
             }
 
-            if currentServer?.webSocketURL.absoluteString != effectiveServer.webSocketURL.absoluteString {
-                logger.info("健康检查命中可用回退地址，刷新当前连接 \(effectiveServer.baseURL.absoluteString, privacy: .public)")
+            stopRealtimeRecovery()
+            let shouldRestartRealtime = restartRealtimeIfNeeded
+                || currentServer?.webSocketURL.absoluteString != effectiveServer.webSocketURL.absoluteString
+            if shouldRestartRealtime {
+                logger.info("健康检查通过，重新建立实时连接 \(effectiveServer.baseURL.absoluteString, privacy: .public)")
                 currentServer = effectiveServer
                 recentStore.add(effectiveServer)
                 recentServers = recentStore.load()
@@ -373,8 +392,10 @@ final class AppStore: ObservableObject {
         detail: String?
     ) {
         connectionStatus = .failed(message: message, detail: detail)
+        nowPlayingService?.onConnectionStateChange = nil
         nowPlayingService?.stop()
         nowPlayingService = nil
+        isRealtimeConnected = false
         switch origin {
         case .bootstrap:
             connectionRecoveryStore.setNeedsDecision(
@@ -382,7 +403,7 @@ final class AppStore: ObservableObject {
                 message: "上次连接不可用",
                 detail: detail ?? server.displayName
             )
-        case .background, .foreground:
+        case .background, .foreground, .realtimeDisconnect:
             connectionRecoveryStore.setNeedsDecision(
                 server: currentServer ?? server,
                 message: "连接失效，请处理",
@@ -406,9 +427,17 @@ final class AppStore: ObservableObject {
     }
 
     private func startNowPlaying(_ server: ServerConfig) {
+        stopRealtimeRecovery()
+        nowPlayingService?.onConnectionStateChange = nil
         nowPlayingService?.stop()
+        isRealtimeConnected = false
         logger.debug("启动播放态 WebSocket 监听 \(server.webSocketURL.absoluteString, privacy: .public)")
         let service = NowPlayingService(server: server)
+        service.onConnectionStateChange = { [weak self] isConnected in
+            DispatchQueue.main.async {
+                self?.handleRealtimeConnectionStateChange(isConnected, for: server)
+            }
+        }
         service.onUpdate = { [weak self] nowPlaying, source in
             DispatchQueue.main.async {
                 self?.playbackStore.update(nowPlaying: nowPlaying, source: source)
@@ -436,6 +465,46 @@ final class AppStore: ObservableObject {
         }
         nowPlayingService = service
         service.start()
+    }
+
+    private func handleRealtimeConnectionStateChange(_ isConnected: Bool, for server: ServerConfig) {
+        guard currentServer?.baseURL == server.baseURL else { return }
+
+        if isConnected {
+            if !isRealtimeConnected {
+                logger.info("实时连接已恢复 \(server.displayName, privacy: .public)")
+            }
+            isRealtimeConnected = true
+            stopRealtimeRecovery()
+            return
+        }
+
+        isRealtimeConnected = false
+        guard connectionRecoveryStore.isIdle else { return }
+        guard !isConnecting else { return }
+
+        logger.warning("检测到实时连接中断，准备自动恢复 \(server.displayName, privacy: .public)")
+        scheduleRealtimeRecovery(for: server)
+    }
+
+    private func scheduleRealtimeRecovery(for server: ServerConfig) {
+        stopRealtimeRecovery()
+        realtimeRecoveryTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: self.realtimeRecoveryDebounceInterval)
+            guard !Task.isCancelled else { return }
+
+            let shouldRecover = await MainActor.run {
+                self.currentServer?.baseURL == server.baseURL && !self.isRealtimeConnected
+            }
+            guard shouldRecover else { return }
+
+            _ = await self.performSilentHealthCheck(
+                using: server,
+                origin: .realtimeDisconnect,
+                restartRealtimeIfNeeded: true
+            )
+        }
     }
 
     func isFavorite(
@@ -875,6 +944,8 @@ final class AppStore: ObservableObject {
     private func cancelActiveConnection(announceCancellation: Bool) {
         connectionTask?.cancel()
         connectionTask = nil
+        stopRealtimeRecovery()
+        isRealtimeConnected = false
         activeConnectionTargetKey = nil
         currentConnectionAttemptID = nil
         if announceCancellation {
@@ -1138,4 +1209,5 @@ private enum ConnectionHealthProbeOrigin {
     case bootstrap
     case background
     case foreground
+    case realtimeDisconnect
 }

@@ -10,12 +10,16 @@ final class NowPlayingService {
     var onLibraryUpdate: ((Int64) -> Void)?
     var onInsightJobUpdate: ((InsightAnalysisJob) -> Void)?
     var onRecentPlaysUpdate: (() -> Void)?
+    var onConnectionStateChange: ((Bool) -> Void)?
 
     init(server: ServerConfig) {
         self.server = server
         client = WebSocketClient(url: server.webSocketURL)
         client.onMessage = { [weak self] message in
             self?.handle(message)
+        }
+        client.onStateChange = { [weak self] isConnected in
+            self?.onConnectionStateChange?(isConnected)
         }
     }
 
@@ -28,6 +32,7 @@ final class NowPlayingService {
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
+        onConnectionStateChange?(true)
         switch message {
         case .string(let text):
             guard let data = text.data(using: .utf8) else { return }

@@ -585,7 +585,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取歌词数据（优先查库，没有则调用 lrcapi 等）
 	r.GET(
-		"/api/track-lyrics", redisCache(20*time.Minute), func(c *gin.Context) {
+		"/api/track-lyrics", redisCache(5*time.Minute), func(c *gin.Context) {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")

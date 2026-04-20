@@ -159,6 +159,13 @@ struct AppLayoutView: View {
                 await libraryViewModel.refresh(using: server)
             }
         }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            Task {
+                await store.performForegroundConnectionHealthCheckIfNeeded()
+                guard let server = store.currentServer, store.isConnectionHealthy else { return }
+                await libraryViewModel.refresh(using: server)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .librarySyncDidUpdate)) { _ in
             guard let server = store.currentServer else { return }
             Task {
