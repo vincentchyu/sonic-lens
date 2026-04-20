@@ -127,11 +127,13 @@ Web 后台主要用于大屏数据可视化展现、系统管理与日常运维�
 <details>
 <summary>点击展开查看 iPhone 常规界面展示 (三列并排)</summary>
 
-| | | |
-| :---: | :---: | :---: |
-| <img src="static/img/apple/IPHONE/1-home1.PNG" width="100%"> | <img src="static/img/apple/IPHONE/1-home2.PNG" width="100%"> | <img src="static/img/apple/IPHONE/2-专辑1.PNG" width="100%"> |
-| <img src="static/img/apple/IPHONE/3-曲目1.PNG" width="100%"> | <img src="static/img/apple/IPHONE/3-曲目3.PNG" width="100%"> | <img src="static/img/apple/IPHONE/正在播放1.PNG" width="100%"> |
-| <img src="static/img/apple/IPHONE/正在播放2.PNG" width="100%"> | | |
+|                                                              |                                                              |                                                              |
+|:------------------------------------------------------------:|:------------------------------------------------------------:|:------------------------------------------------------------:|
+| <img src="static/img/apple/IPHONE/1-home1.PNG" width="100%"> | <img src="static/img/apple/IPHONE/1-home2.PNG" width="100%"> |  <img src="static/img/apple/IPHONE/2-专辑1.PNG" width="100%">  |
+|  <img src="static/img/apple/IPHONE/3-曲目1.PNG" width="100%">  |  <img src="static/img/apple/IPHONE/3-曲目3.PNG" width="100%">  |  <img src="static/img/apple/IPHONE/正在播放1.PNG" width="100%">  |
+|  <img src="static/img/apple/IPHONE/正在播放2.PNG" width="100%">  | <img src="static/img/apple/IPHONE/4-灵动岛-1.PNG" width="100%"> | <img src="static/img/apple/IPHONE/4-灵动岛-2.PNG" width="100%"> |
+| <img src="static/img/apple/IPHONE/4-灵动岛-3.PNG" width="100%"> | <img src="static/img/apple/IPHONE/4-灵动岛-4.PNG" width="100%"> |  <img src="static/img/apple/IPHONE/2-专辑-4.jpeg" width="100%">  |
+
 
 </details>
 
@@ -140,11 +142,10 @@ Web 后台主要用于大屏数据可视化展现、系统管理与日常运维�
 
 针对长文本阅读（如长歌词、单曲音眸解读、专辑音眸洞察），可生成专属的高清晰度长图：
 
-| | |
-| :---: | :---: |
-| <img src="static/img/apple/IPHONE/3-曲目4-腰-晚春-歌词.PNG" width="100%"> | <img src="static/img/apple/IPHONE/3-曲目5-腰-晚春-音眸.PNG" width="100%"> |
-| <img src="static/img/apple/IPHONE/3-曲目2腰-晚春-信息.PNG" width="100%"> | <img src="static/img/apple/IPHONE/2-专辑2-腰-24'相见恨晚-信息.PNG" width="100%"> |
-| <img src="static/img/apple/IPHONE/2-专辑3腰-24'相见恨晚-专辑音眸.PNG" width="100%"> | |
+|                                                                          |                                                                         |
+|:------------------------------------------------------------------------:|:-----------------------------------------------------------------------:|
+| <img src="static/img/apple/IPHONE/2-专辑2-腰-24'相见恨晚-信息.PNG" width="100%">  |    <img src="static/img/apple/IPHONE/3-曲目2腰-晚春-信息.PNG" width="100%">    |
+| <img src="static/img/apple/IPHONE/2-专辑3腰-24'相见恨晚-专辑音眸.PNG" width="100%"> |   <img src="static/img/apple/IPHONE/3-曲目5-腰-晚春-音眸.PNG" width="100%">    |
 
 </details>
 
