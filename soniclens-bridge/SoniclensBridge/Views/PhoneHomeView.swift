@@ -109,7 +109,9 @@ struct PhoneHomeView: View {
 
                     RecentPlaysSection(
                         items: viewModel.recentPlays,
+                        artworkURLs: viewModel.recentPlayArtworkURLs,
                         totalPlaysCount: hotPresentation.totalPlaysCount,
+                        accentKey: selectedAccent,
                         onTrackTap: { selectedRecentTrack = $0 }
                     )
                 }
@@ -131,6 +133,10 @@ struct PhoneHomeView: View {
         .onChange(of: store.currentServer) { _, server in
             guard let server else { return }
             Task { await viewModel.load(using: server) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .recentPlaysDidUpdate)) { _ in
+            guard let server = store.currentServer else { return }
+            Task { await viewModel.refreshRecentPlays(using: server) }
         }
         .navigationDestination(item: $selectedRecentTrack) { track in
             TrackDetailView(track: track)
@@ -190,7 +196,7 @@ private struct PhoneHomeHero: View {
                                     .font(.headline.weight(.semibold))
                                     .foregroundStyle(SonicTheme.textPrimary)
                                     .lineLimit(1)
-                                Text([nowPlaying.artist, nowPlaying.album].compactMap { $0 }.joined(separator: " · "))
+                                Text([nowPlaying.artist, nowPlaying.displayAlbumTitle].compactMap { $0 }.joined(separator: " · "))
                                     .font(.subheadline)
                                     .foregroundStyle(SonicTheme.textSecondary)
                                     .lineLimit(1)

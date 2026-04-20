@@ -11,8 +11,8 @@ enum MacNowPlayingTab: String, CaseIterable {
 
 struct NowPlayingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(FavoriteActionStore.self) private var favoriteActionStore
     @Environment(PlaybackStore.self) private var playbackStore
-    @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = PlayerViewModel()
     @State private var animate = false
@@ -21,76 +21,16 @@ struct NowPlayingView: View {
     @State private var lyricsFollowMode = true
     @State private var isWindowFullscreen = false
     @State private var selectedTab: MacNowPlayingTab = .lyrics
+    @State private var topBarHeight: CGFloat = 0
+    @State private var progressBarHeight: CGFloat = 0
+    @State private var favoriteNoticeDismissTask: Task<Void, Never>?
 
     let nowPlaying: NowPlaying
     let onClose: () -> Void
 
     var body: some View {
-        let displayNowPlaying = currentNowPlaying
-
-        ZStack {
-            NowPlayingLiquidBackground(
-                palette: palette,
-                animate: .constant(animate && scenePhase == .active),
-                isWindowFullscreen: isWindowFullscreen
-            )
-
-            VStack(spacing: 28) {
-                NowPlayingTopBar(
-                    favoriteStatus: favoriteStatus,
-                    lyricsFollowMode: $lyricsFollowMode,
-                    selectedTab: $selectedTab,
-                    statusBannerText: viewModel.playbackState.bannerText,
-                    onFavorite: {
-                        guard favoriteStatus.allowsFavoriteAction else { return }
-                        Task {
-                            await store.setFavorite(
-                                artist: displayNowPlaying.artist,
-                                album: displayNowPlaying.album,
-                                track: displayNowPlaying.track,
-                                favorite: true
-                            )
-                        }
-                    },
-                    onClose: onClose
-                )
-
-                HStack(alignment: .center, spacing: 48) {
-                    NowPlayingLeftPanel(
-                        nowPlaying: displayNowPlaying,
-                        insightSummary: viewModel.insights.primaryInsight?.teaserText
-                    )
-                    .frame(maxWidth: 380)
-
-                    Group {
-                        if selectedTab == .lyrics {
-                            NowPlayingLyricsPanel(
-                                lines: viewModel.lyricLines,
-                                currentLineID: viewModel.currentLineID,
-                                isSimplified: performanceModeEnabled,
-                                followMode: $lyricsFollowMode
-                            )
-                        } else {
-                            MacNowPlayingInsightPanel(items: viewModel.insights)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-            .padding(.horizontal, 34)
-            .padding(.top, 52)
-            .padding(.bottom, 46)
-
-            VStack {
-                Spacer()
-                NowPlayingBottomProgressBar(
-                    currentTime: viewModel.currentTime,
-                    duration: duration,
-                    progress: progress
-                )
-                .padding(.horizontal, 22)
-                .padding(.bottom, 10)
-            }
+        GeometryReader { geo in
+            nowPlayingCanvas(geo: geo)
         }
         .task {
             await refreshNowPlaying(forcePaletteRefresh: true)
@@ -101,14 +41,21 @@ struct NowPlayingView: View {
         .onChange(of: playbackStore.nowPlaying?.artwork) { _, artwork in
             Task { await updatePalette(for: artwork) }
         }
-        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
+        .onChange(of: playbackSyncToken) { _, token in
+            viewModel.syncProgress(
+                position: token.position,
+                positionMs: token.positionMs,
+                receivedAt: token.receivedAt ?? nowPlaying.receivedAt
+            )
         }
-        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: favoriteActionStore.state) { _, state in
+            handleFavoriteActionStateChange(state)
         }
         .onDisappear {
+            animate = false
             viewModel.stopProgress()
+            favoriteNoticeDismissTask?.cancel()
+            favoriteNoticeDismissTask = nil
         }
         .onAppear {
             animate = true
@@ -126,6 +73,10 @@ struct NowPlayingView: View {
         return "\(active.artist)::\(active.album ?? "")::\(active.track)"
     }
 
+    private var playbackSyncToken: PlaybackProgressSyncToken {
+        PlaybackProgressSyncToken(nowPlaying: playbackStore.nowPlaying)
+    }
+
     private var duration: TimeInterval {
         TimeInterval(currentNowPlaying.duration ?? 0)
     }
@@ -139,9 +90,47 @@ struct NowPlayingView: View {
         .init(projection: currentNowPlaying.favoriteProjection)
     }
 
+    private var favoriteActionLoading: Bool {
+        favoriteActionStore.state.isLoading(matching: currentNowPlaying)
+    }
+
+    private var favoriteActionNotice: FavoriteActionNotice? {
+        favoriteActionStore.state.notice(matching: currentNowPlaying)
+    }
+
+    private var favoriteStatusTagText: String? {
+        if favoriteActionLoading {
+            return "收藏处理中"
+        }
+        return favoriteStatus.badgeTitle
+    }
+
+    private var favoriteStatusTagTone: NowPlayingArtworkStatusTagTone? {
+        if favoriteActionLoading {
+            return .loading
+        }
+        switch favoriteStatus {
+        case .full:
+            return .success
+        case .partial:
+            return .warning
+        case .pending, .unfavoritePending:
+            return .loading
+        case .none:
+            return nil
+        }
+    }
+
     private func refreshNowPlaying(forcePaletteRefresh: Bool) async {
         guard let server = store.currentServer else { return }
         let active = currentNowPlaying
+
+        viewModel.startProgress(
+            position: active.position,
+            positionMs: active.positionMs,
+            receivedAt: active.receivedAt
+        )
+        await Task.yield()
 
         await viewModel.load(
             using: server,
@@ -149,7 +138,6 @@ struct NowPlayingView: View {
             album: active.album,
             track: active.track
         )
-        viewModel.startProgress(position: active.position, positionMs: active.positionMs)
 
         guard forcePaletteRefresh || lastArtworkURL != active.artwork else { return }
         lastArtworkURL = active.artwork
@@ -179,6 +167,128 @@ struct NowPlayingView: View {
         isWindowFullscreen = false
         #endif
     }
+
+    private func handleFavoriteActionStateChange(_ state: FavoriteActionState) {
+        favoriteNoticeDismissTask?.cancel()
+        favoriteNoticeDismissTask = nil
+
+        guard state.notice(matching: currentNowPlaying) != nil else { return }
+        favoriteNoticeDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                favoriteActionStore.clear()
+            }
+        }
+    }
+
+    private func adaptivePanelViewportHeight(for windowHeight: CGFloat) -> CGFloat {
+        let reservedHeight = topBarHeight + progressBarHeight + 28 + 52 + 46 + 10
+        return max(0, windowHeight - reservedHeight)
+    }
+
+    @ViewBuilder
+    private func nowPlayingCanvas(geo: GeometryProxy) -> some View {
+        let displayNowPlaying = currentNowPlaying
+        let panelViewportHeight = adaptivePanelViewportHeight(for: geo.size.height)
+
+        ZStack {
+            NowPlayingLiquidBackground(
+                palette: palette,
+                animate: .constant(animate && scenePhase == .active),
+                isWindowFullscreen: isWindowFullscreen
+            )
+
+            nowPlayingMainContent(
+                displayNowPlaying: displayNowPlaying,
+                panelViewportHeight: panelViewportHeight
+            )
+
+            nowPlayingProgressOverlay
+        }
+        .clipped()
+    }
+
+    @ViewBuilder
+    private func nowPlayingMainContent(
+        displayNowPlaying: NowPlaying,
+        panelViewportHeight: CGFloat
+    ) -> some View {
+        VStack(spacing: 28) {
+            NowPlayingTopBar(
+                favoriteStatus: favoriteStatus,
+                favoriteActionLoading: favoriteActionLoading,
+                favoriteActionNotice: favoriteActionNotice,
+                lyricsFollowMode: $lyricsFollowMode,
+                selectedTab: $selectedTab,
+                statusBannerText: viewModel.playbackState.bannerText,
+                onFavorite: {
+                    guard favoriteStatus.allowsFavoriteAction else { return }
+                    Task {
+                        await store.setFavorite(
+                            artist: displayNowPlaying.artist,
+                            album: displayNowPlaying.album,
+                            track: displayNowPlaying.track,
+                            trackNumber: displayNowPlaying.trackNumber,
+                            discNumber: displayNowPlaying.discNumber,
+                            favorite: true
+                        )
+                    }
+                },
+                onClose: onClose
+            )
+            .readHeight { topBarHeight = $0 }
+
+            HStack(alignment: .top, spacing: 48) {
+                NowPlayingLeftPanel(
+                    nowPlaying: displayNowPlaying,
+                    insightSummary: viewModel.insights.primaryInsight?.teaserText,
+                    favoriteStatusTagText: favoriteStatusTagText,
+                    favoriteStatusTagTone: favoriteStatusTagTone
+                )
+                .frame(maxWidth: 380)
+                .frame(height: panelViewportHeight, alignment: .topLeading)
+                .clipped()
+
+                Group {
+                    if selectedTab == .lyrics {
+                        NowPlayingLyricsPanel(
+                            lines: viewModel.lyricLines,
+                            currentLineID: viewModel.currentLineID,
+                            highlightedIndex: viewModel.currentLineIndex,
+                            followMode: $lyricsFollowMode
+                        )
+                    } else {
+                        MacNowPlayingInsightPanel(
+                            items: viewModel.insights,
+                            selectedInsightIndex: $viewModel.selectedInsightIndex,
+                            insightViewMode: $viewModel.insightViewMode
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: panelViewportHeight, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 34)
+        .padding(.top, 52)
+        .padding(.bottom, 46)
+    }
+
+    private var nowPlayingProgressOverlay: some View {
+        VStack {
+            Spacer()
+            NowPlayingBottomProgressBar(
+                currentTime: viewModel.currentTime,
+                duration: duration,
+                progress: progress
+            )
+            .readHeight { progressBarHeight = $0 }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 10)
+        }
+    }
 }
 
 private struct FullscreenStateObserver: ViewModifier {
@@ -199,8 +309,38 @@ private struct FullscreenStateObserver: ViewModifier {
     }
 }
 
+private struct HeightReporter: ViewModifier {
+    let onChange: (CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        content.background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: MeasuredHeightKey.self, value: proxy.size.height)
+            }
+        )
+        .onPreferenceChange(MeasuredHeightKey.self, perform: onChange)
+    }
+}
+
+private struct MeasuredHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private extension View {
+    func readHeight(_ onChange: @escaping (CGFloat) -> Void) -> some View {
+        modifier(HeightReporter(onChange: onChange))
+    }
+}
+
 struct NowPlayingTopBar: View {
     let favoriteStatus: NowPlayingFavoriteStatus
+    let favoriteActionLoading: Bool
+    let favoriteActionNotice: FavoriteActionNotice?
     @Binding var lyricsFollowMode: Bool
     @Binding var selectedTab: MacNowPlayingTab
     let statusBannerText: String?
@@ -208,79 +348,237 @@ struct NowPlayingTopBar: View {
     let onClose: () -> Void
 
     var body: some View {
-        HStack {
-            HStack(spacing: 10) {
-                Text("正在播放")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                HStack(spacing: 10) {
+                    Text("正在播放")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
 
-                if let statusBannerText {
-                    PlaybackStatusBanner(text: statusBannerText)
-                }
-            }
-
-            Spacer()
-            HStack(spacing: 10) {
-                Picker("", selection: $selectedTab) {
-                    ForEach(MacNowPlayingTab.allCases, id: \.self) { tab in
-                        Text(tab.rawValue).tag(tab)
+                    if let statusBannerText {
+                        PlaybackStatusBanner(text: statusBannerText)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
 
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        lyricsFollowMode.toggle()
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: lyricsFollowMode ? "dot.radiowaves.left.and.right" : "hand.draw")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(lyricsFollowMode ? "跟随播放" : "自由浏览")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundStyle(.white.opacity(0.96))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(lyricsFollowMode ? Color.blue.opacity(0.28) : Color.white.opacity(0.12))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(.white.opacity(lyricsFollowMode ? 0.22 : 0.12), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 8) {
+                    HStack(spacing: 10) {
+                        Picker("", selection: $selectedTab) {
+                            ForEach(MacNowPlayingTab.allCases, id: \.self) { tab in
+                                Text(tab.rawValue).tag(tab)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 220)
 
-                NowPlayingFavoriteButton(status: favoriteStatus, action: onFavorite)
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(width: 32, height: 32)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                lyricsFollowMode.toggle()
+                            }
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: lyricsFollowMode ? "dot.radiowaves.left.and.right" : "hand.draw")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(lyricsFollowMode ? "跟随播放" : "自由浏览")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(.white.opacity(0.96))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(lyricsFollowMode ? Color.blue.opacity(0.28) : Color.white.opacity(0.12))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(.white.opacity(lyricsFollowMode ? 0.22 : 0.12), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        NowPlayingFavoriteButton(
+                            status: favoriteStatus,
+                            isLoading: favoriteActionLoading,
+                            action: onFavorite
+                        )
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(width: 32, height: 32)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if favoriteActionLoading {
+                        MacFavoriteActionToast(
+                            tone: .loading,
+                            title: "收藏处理中",
+                            message: "正在同步 Apple Music / Last.fm"
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)))
+                    } else if let favoriteActionNotice {
+                        MacFavoriteActionToast(
+                            tone: favoriteActionNotice.style == .success ? .success : .failure,
+                            title: favoriteActionNotice.style == .success ? "收藏成功" : "收藏失败",
+                            message: favoriteActionNotice.message
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)))
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.trailing, 6)
     }
 }
 
-struct MacNowPlayingInsightPanel: View {
-    let items: [Insight]
+private struct MacFavoriteActionToast: View {
+    enum Tone {
+        case loading
+        case success
+        case failure
+    }
+
+    let tone: Tone
+    let title: String
+    let message: String
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            InsightPrimaryContentView(
-                insight: items.primaryInsight,
-                style: .immersive,
-                emptyTitle: "暂无音眸",
-                emptySubtitle: "当前曲目还没有生成洞察内容。"
-            )
-            .padding(.horizontal, 14)
-            .padding(.vertical, 18)
+        HStack(spacing: 10) {
+            Group {
+                switch tone {
+                case .loading:
+                    ProgressView()
+                        .controlSize(.small)
+                case .success:
+                    Image(systemName: "checkmark.circle.fill")
+                case .failure:
+                    Image(systemName: "xmark.octagon.fill")
+                }
+            }
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(foregroundColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(foregroundColor)
+
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(foregroundColor.opacity(0.8))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minWidth: 240, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(backgroundColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(borderColor, lineWidth: 1)
+        )
+        .shadow(color: shadowColor, radius: 16, x: 0, y: 6)
+    }
+
+    private var foregroundColor: Color {
+        switch tone {
+        case .loading:
+            return Color.orange.opacity(0.97)
+        case .success:
+            return Color.green.opacity(0.97)
+        case .failure:
+            return Color.red.opacity(0.97)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch tone {
+        case .loading:
+            return Color.orange.opacity(0.18)
+        case .success:
+            return Color.green.opacity(0.16)
+        case .failure:
+            return Color.red.opacity(0.16)
+        }
+    }
+
+    private var borderColor: Color {
+        switch tone {
+        case .loading:
+            return Color.orange.opacity(0.3)
+        case .success:
+            return Color.green.opacity(0.28)
+        case .failure:
+            return Color.red.opacity(0.28)
+        }
+    }
+
+    private var shadowColor: Color {
+        switch tone {
+        case .loading:
+            return Color.orange.opacity(0.15)
+        case .success:
+            return Color.green.opacity(0.12)
+        case .failure:
+            return Color.red.opacity(0.12)
+        }
+    }
+}
+
+struct MacNowPlayingInsightPanel: View {
+    let items: [Insight]
+    @Binding var selectedInsightIndex: Int
+    @Binding var insightViewMode: InsightViewMode
+
+    private var currentInsight: Insight? {
+        guard !items.isEmpty else { return nil }
+        if selectedInsightIndex < items.count {
+            return items[selectedInsightIndex]
+        }
+        return items.first
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if items.count > 1 {
+                InsightVersionPicker(
+                    viewMode: $insightViewMode,
+                    historyCount: items.count
+                )
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
+            }
+
+            ScrollView(.vertical, showsIndicators: false) {
+                if insightViewMode == .history {
+                    InsightHistoryList(
+                        insights: items,
+                        selectedIndex: Binding(
+                            get: { selectedInsightIndex },
+                            set: { 
+                                selectedInsightIndex = $0
+                                insightViewMode = .current
+                            }
+                        )
+                    )
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 18)
+                } else {
+                    InsightPrimaryContentView(
+                        insight: currentInsight,
+                        style: .immersive,
+                        emptyTitle: "暂无音眸",
+                        emptySubtitle: "当前曲目还没有生成洞察内容。"
+                    )
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 18)
+                    .id("insight-\(selectedInsightIndex)")
+                }
+            }
         }
         .mask(
             LinearGradient(
@@ -290,17 +588,24 @@ struct MacNowPlayingInsightPanel: View {
             )
         )
         .frame(maxWidth: .infinity)
-        .frame(height: 520)
     }
 }
 
 struct NowPlayingLeftPanel: View {
     let nowPlaying: NowPlaying
     let insightSummary: String?
+    let favoriteStatusTagText: String?
+    let favoriteStatusTagTone: NowPlayingArtworkStatusTagTone?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            NowPlayingArtwork(artworkURL: nowPlaying.artwork, fallbackTitle: nowPlaying.album ?? nowPlaying.track)
+            NowPlayingArtwork(
+                artworkURL: nowPlaying.artwork,
+                fallbackTitle: nowPlaying.displayAlbumTitle ?? nowPlaying.track,
+                badgeText: nowPlaying.sampleRateDisplayText,
+                statusTagText: favoriteStatusTagText,
+                statusTagTone: favoriteStatusTagTone
+            )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(nowPlaying.track)
@@ -308,29 +613,47 @@ struct NowPlayingLeftPanel: View {
                     .foregroundStyle(.white)
                     .lineLimit(2)
 
-                Text([nowPlaying.artist, nowPlaying.album].compactMap { $0 }.joined(separator: " · "))
+                Text([nowPlaying.artist, nowPlaying.displayAlbumTitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.82))
                     .lineLimit(2)
-
                 DiscTrackBadgeRow(discNumber: nowPlaying.discNumber, trackNumber: nowPlaying.trackNumber)
-
-                if let badgeTitle = NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection).badgeTitle {
-                    NowPlayingFavoriteStatusBadge(status: NowPlayingFavoriteStatus(projection: nowPlaying.favoriteProjection), title: badgeTitle)
-                }
+                
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("沉浸模式")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.9))
-                Text(insightSummary ?? "专注当前播放，把封面、歌词和音眸洞察放到同一块大画布里。")
+            NowPlayingAdaptiveSummarySection(
+                title: "沉浸模式",
+                text: insightSummary ?? "专注当前播放，把封面、歌词和音眸洞察放到同一块大画布里。"
+            )
+            .padding(.top, 0)
+        }
+    }
+}
+
+private struct NowPlayingAdaptiveSummarySection: View {
+    let title: String
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.9))
+
+            ViewThatFits(in: .vertical) {
+                Text(text)
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.56))
                     .fixedSize(horizontal: false, vertical: true)
+
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.56))
+                    .lineLimit(6)
+                    .truncationMode(.tail)
             }
-            .padding(.top, 6)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -418,23 +741,32 @@ struct CapsuleBadge: View {
 
 struct NowPlayingFavoriteButton: View {
     let status: NowPlayingFavoriteStatus
+    let isLoading: Bool
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: iconName)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(iconColor)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(backgroundOpacity)
-                )
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(iconColor)
+                } else {
+                    Image(systemName: iconName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                }
+            }
+            .frame(width: 32, height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(backgroundOpacity)
+            )
         }
         .buttonStyle(.plain)
         .buttonStyle(PressableButtonStyle())
-        .disabled(!status.allowsFavoriteAction)
+        .disabled(!status.allowsFavoriteAction || isLoading)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
@@ -444,6 +776,9 @@ struct NowPlayingFavoriteButton: View {
     }
 
     private var iconName: String {
+        if isLoading {
+            return "clock.fill"
+        }
         switch status {
         case .full: return "star.fill"
         case .partial: return "star.leadinghalf.filled"
@@ -454,6 +789,9 @@ struct NowPlayingFavoriteButton: View {
     }
 
     private var iconColor: Color {
+        if isLoading {
+            return Color.orange.opacity(0.96)
+        }
         switch status {
         case .none:
             return Color.white.opacity(0.95)
@@ -467,6 +805,9 @@ struct NowPlayingFavoriteButton: View {
     }
 
     private var backgroundOpacity: Color {
+        if isLoading {
+            return Color.orange.opacity(isHovered ? 0.28 : 0.18)
+        }
         switch status {
         case .full:
             return Color.yellow.opacity(isHovered ? 0.34 : 0.26)
@@ -482,6 +823,9 @@ struct NowPlayingFavoriteButton: View {
     }
 
     private var helpText: String {
+        if isLoading {
+            return "收藏处理中"
+        }
         switch status {
         case .full: return "已同步到 Apple Music + Last.fm"
         case .partial: return "已在单平台收藏，点击补全双平台收藏"
@@ -617,6 +961,9 @@ struct NowPlayingFavoriteStatusBadge: View {
 struct NowPlayingArtwork: View {
     let artworkURL: String?
     var fallbackTitle: String? = nil
+    var badgeText: String? = nil
+    var statusTagText: String? = nil
+    var statusTagTone: NowPlayingArtworkStatusTagTone? = nil
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
     var body: some View {
@@ -632,6 +979,18 @@ struct NowPlayingArtwork: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.white.opacity(0.16), lineWidth: 1)
         )
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) {
+                if let badgeText, !badgeText.isEmpty {
+                    NowPlayingCornerTag(text: badgeText)
+                }
+
+                if let statusTagText, !statusTagText.isEmpty, let statusTagTone {
+                    NowPlayingArtworkStatusTag(text: statusTagText, tone: statusTagTone)
+                }
+            }
+            .padding(12)
+        }
         .shadow(
             color: .black.opacity(performanceModeEnabled ? 0.18 : 0.28),
             radius: performanceModeEnabled ? 20 : 32,
@@ -641,10 +1000,131 @@ struct NowPlayingArtwork: View {
     }
 }
 
+struct NowPlayingCornerTag: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.96))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.black.opacity(0.46))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(.white.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.14), radius: 10, x: 0, y: 4)
+    }
+}
+
+enum NowPlayingArtworkStatusTagTone {
+    case loading
+    case success
+    case warning
+    case neutral
+}
+
+struct NowPlayingArtworkStatusTag: View {
+    let text: String
+    let tone: NowPlayingArtworkStatusTagTone
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Group {
+                switch tone {
+                case .loading:
+                    ProgressView()
+                        .controlSize(.mini)
+                case .success:
+                    Image(systemName: "star.fill")
+                case .warning:
+                    Image(systemName: "star.leadinghalf.filled")
+                case .neutral:
+                    Image(systemName: "star")
+                }
+            }
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(iconColor)
+
+            Text(text)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            Capsule(style: .continuous)
+                .fill(backgroundColor)
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(borderColor, lineWidth: 1)
+        )
+        .shadow(color: shadowColor, radius: 10, x: 0, y: 4)
+    }
+
+    private var iconColor: Color {
+        switch tone {
+        case .loading:
+            return Color.orange.opacity(0.98)
+        case .success:
+            return Color.green.opacity(0.98)
+        case .warning:
+            return Color.yellow.opacity(0.98)
+        case .neutral:
+            return Color.white.opacity(0.9)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch tone {
+        case .loading:
+            return Color.black.opacity(0.58)
+        case .success:
+            return Color.black.opacity(0.50)
+        case .warning:
+            return Color.black.opacity(0.52)
+        case .neutral:
+            return Color.black.opacity(0.52)
+        }
+    }
+
+    private var borderColor: Color {
+        switch tone {
+        case .loading:
+            return Color.orange.opacity(0.24)
+        case .success:
+            return Color.green.opacity(0.26)
+        case .warning:
+            return Color.yellow.opacity(0.24)
+        case .neutral:
+            return Color.white.opacity(0.16)
+        }
+    }
+
+    private var shadowColor: Color {
+        switch tone {
+        case .loading:
+            return Color.black.opacity(0.18)
+        case .success:
+            return Color.black.opacity(0.16)
+        case .warning:
+            return Color.black.opacity(0.16)
+        case .neutral:
+            return Color.black.opacity(0.16)
+        }
+    }
+}
+
 struct NowPlayingLyricsPanel: View {
     let lines: [LyricLine]
     let currentLineID: UUID?
-    let isSimplified: Bool
+    let highlightedIndex: Int?
     @Binding var followMode: Bool
     var scrollRequestToken: Int = 0
     var scrollEnabled: Bool = true
@@ -653,11 +1133,9 @@ struct NowPlayingLyricsPanel: View {
 
     private let visibleRadius = 5
     @State private var didNotifyUserScroll = false
+    @State private var suppressFollowAnimation = true
 
     var body: some View {
-        let highlightedIndex = currentLineID.flatMap { id in
-            lines.firstIndex(where: { $0.id == id })
-        }
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .center, spacing: 8) {
@@ -697,8 +1175,7 @@ struct NowPlayingLyricsPanel: View {
                 .padding(.bottom, bottomContentInset)
             }
             .scrollDisabled(!scrollEnabled)
-            .frame(maxWidth: .infinity)
-            .frame(height: isSimplified ? 430 : 520)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .mask(
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.94), .black, .black.opacity(0.94), .clear],
@@ -709,9 +1186,18 @@ struct NowPlayingLyricsPanel: View {
             .onChange(of: currentLineID) { _, lineID in
                 guard followMode else { return }
                 guard let lineID else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                if suppressFollowAnimation {
                     proxy.scrollTo(lineID, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(lineID, anchor: .center)
+                    }
                 }
+            }
+            .task {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                guard !Task.isCancelled else { return }
+                suppressFollowAnimation = false
             }
             .onAppear {
                 if let currentLineID, followMode {

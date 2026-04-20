@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -82,18 +83,20 @@ type HourlyPlayTrendData struct {
 // TrackPlayRecord 对应 track_play_records 表
 type TrackPlayRecord struct {
 	ID                   int64                          `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_track_play_records_artist" json:"artist"`
+	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_track_play_records_artist;index:idx_track_play_records_identity_subtitle" json:"artist"`
 	AlbumArtist          string                         `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
-	Track                string                         `gorm:"column:track;type:varchar(255);not null" json:"track"`
-	Album                string                         `gorm:"column:album;type:varchar(255);not null" json:"album"`
+	Track                string                         `gorm:"column:track;type:varchar(255);not null;index:idx_track_play_records_identity_subtitle" json:"track"`
+	Album                string                         `gorm:"column:album;type:varchar(255);not null;index:idx_track_play_records_identity_subtitle" json:"album"`
+	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(255);index:idx_track_play_records_identity_subtitle" json:"album_subtitle"`
 	AlbumID              int64                          `gorm:"column:album_id;type:bigint;default:0;index:idx_track_play_records_album_id" json:"album_id"`
 	Duration             int64                          `gorm:"column:duration;type:int" json:"duration"`
 	PlayTime             time.Time                      `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"play_time"`
 	Scrobbled            bool                           `gorm:"column:scrobbled;type:tinyint(1);not null;default:0;index:idx_track_play_records_scrobbled" json:"scrobbled"`
 	MusicBrainzID        string                         `gorm:"column:music_brainz_id;type:varchar(255)" json:"music_brainz_id"`
-	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint" json:"track_number"`
-	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1" json:"disc_number"`
+	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint;index:idx_track_play_records_identity_subtitle" json:"track_number"`
+	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1;index:idx_track_play_records_identity_subtitle" json:"disc_number"`
 	Source               string                         `gorm:"column:source;type:varchar(100);not null;index:idx_track_play_records_source" json:"source"`
+	CoverArtPath         string                         `gorm:"column:cover_art_path;type:varchar(1024)" json:"cover_art_path"`                                                                               // 客户端可直接拼接或复用的封面路径
 	TraceID              string                         `gorm:"column:trace_id;type:varchar(32);index:idx_track_play_records_trace_id" json:"trace_id"`                                                       // 关联当前播放链路的 TraceID，便于从播放流水反查观测链路
 	RootSpanID           string                         `gorm:"column:root_span_id;type:varchar(16)" json:"root_span_id"`                                                                                     // 当前播放根 span 的 SpanID，便于从播放流水定位单首歌根节点
 	TraceSampled         bool                           `gorm:"column:trace_sampled;type:tinyint(1);not null;default:0" json:"trace_sampled"`                                                                 // 记录该次播放链路是否命中采样，避免库里有 trace_id 但观测平台无样本时误判
@@ -150,6 +153,66 @@ func (TrackPlayRecord) TableName() string {
 	return "track_play_records"
 }
 
+// BuildTrackPlayRecordArtworkPath 将对象键或已知地址统一收敛成客户端可直接消费的封面路径。
+func BuildTrackPlayRecordArtworkPath(coverArtURL, coverArtObjectKey string) string {
+	if path := strings.TrimSpace(coverArtURL); path != "" {
+		return path
+	}
+	if objectKey := strings.TrimSpace(coverArtObjectKey); objectKey != "" {
+		return buildTrackPlayRecordArtworkPathFromObjectKey(objectKey)
+	}
+	return ""
+}
+
+func buildTrackPlayRecordArtworkPathFromObjectKey(objectKey string) string {
+	prefix, ok := buildTrackPlayRecordObjectStorageCDNPrefix()
+	if !ok {
+		return ""
+	}
+	escapedKey := escapeTrackPlayRecordObjectKey(objectKey)
+	if escapedKey == "" {
+		return ""
+	}
+	return strings.TrimRight(prefix, "/") + "/" + escapedKey
+}
+
+func buildTrackPlayRecordObjectStorageCDNPrefix() (string, bool) {
+	objectStorage := config.ConfigObj.ObjectStorage
+	if !objectStorage.Enabled {
+		return "", false
+	}
+
+	cdnURL := strings.TrimSpace(objectStorage.CDNURL)
+	if cdnURL != "" {
+		if strings.HasPrefix(cdnURL, "/") {
+			return strings.TrimRight(cdnURL, "/"), true
+		}
+		if parsed, err := url.Parse(cdnURL); err == nil {
+			if path := strings.TrimRight(parsed.Path, "/"); path != "" {
+				return path, true
+			}
+		}
+	}
+
+	bucket := strings.TrimSpace(objectStorage.Bucket)
+	if bucket == "" {
+		return "", false
+	}
+	return "/" + strings.Trim(bucket, "/"), true
+}
+
+func escapeTrackPlayRecordObjectKey(objectKey string) string {
+	parts := strings.Split(strings.TrimSpace(objectKey), "/")
+	escaped := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		escaped = append(escaped, url.PathEscape(part))
+	}
+	return strings.Join(escaped, "/")
+}
+
 func InsertTrackPlayRecord(ctx context.Context, record *TrackPlayRecord) error {
 	if record == nil {
 		return errors.New("track play record is nil")
@@ -168,7 +231,7 @@ func InsertTrackPlayRecord(ctx context.Context, record *TrackPlayRecord) error {
 	// 自动填充 AlbumID
 	if record.AlbumID == 0 {
 		record.AlbumID = getAlbumIDByTrackInfo(
-			ctx, record.Artist, record.Album, record.Track, record.TrackNumber, record.DiscNumber,
+			ctx, record.Artist, record.Album, record.AlbumSubtitle, record.Track, record.TrackNumber, record.DiscNumber,
 		)
 	}
 	if record.ResolutionStatus == "" {
@@ -185,6 +248,7 @@ func resolveTrackForPlayRecord(
 		tx,
 		artist,
 		album,
+		metadata.AlbumSubtitle,
 		track,
 		strings.TrimSpace(metadata.Source),
 		metadata.TrackNumber,
@@ -258,6 +322,7 @@ func ResolveTrackPlayRecord(
 					tx,
 					resolvedTrack.Artist,
 					resolvedTrack.Album,
+					resolvedTrack.AlbumSubtitle,
 					resolvedTrack.Track,
 					resolvedTrack.TrackNumber,
 					resolvedTrack.DiscNumber,
@@ -277,7 +342,7 @@ func getTrackPlayRecordByIDTx(tx *gorm.DB, recordID int64) (*TrackPlayRecord, er
 }
 
 func findLatestResolvedTrackByIdentityAndSourceTx(
-	tx *gorm.DB, artist, album, track, source string, trackNumber, discNumber int8,
+	tx *gorm.DB, artist, album, albumSubtitle, track, source string, trackNumber, discNumber int8,
 ) (*Track, common.TrackMetadataConfidence, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -286,6 +351,7 @@ func findLatestResolvedTrackByIdentityAndSourceTx(
 
 	query := tx.Model(&TrackPlayRecord{}).
 		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
+		Where("COALESCE(album_subtitle, '') = ?", normalizeTrackStorageText(albumSubtitle)).
 		Where("source = ?", source).
 		Where("resolution_status = ? AND resolved_track_id > 0", TrackPlayRecordResolutionResolved).
 		Where("library_applied = ?", true)
@@ -315,10 +381,11 @@ func findLatestResolvedTrackByIdentityAndSourceTx(
 
 // FindLatestResolvedTrackIDByIdentityTx 优先复用播放归因结果，降低收藏写入的误归因风险。
 func FindLatestResolvedTrackIDByIdentityTx(
-	tx *gorm.DB, artist, album, track string, trackNumber, discNumber int8,
+	tx *gorm.DB, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
 ) (int64, int8, error) {
 	query := tx.Model(&TrackPlayRecord{}).
 		Where("artist = ? AND album = ? AND track = ?", artist, album, track).
+		Where("COALESCE(album_subtitle, '') = ?", normalizeTrackStorageText(albumSubtitle)).
 		Where("resolution_status = ? AND resolved_track_id > 0", TrackPlayRecordResolutionResolved)
 
 	trackNumber, discNumber = normalizeTrackAlbumPosition(trackNumber, discNumber)
@@ -343,6 +410,9 @@ func FindLatestResolvedTrackIDByIdentityTx(
 func buildIncrementTrackPlayCountParamsFromRecord(
 	ctx context.Context, record *TrackPlayRecord, metadata TrackMetadata,
 ) IncrementTrackPlayCountParams {
+	if metadata.AlbumSubtitle == "" && record != nil {
+		metadata.AlbumSubtitle = record.AlbumSubtitle
+	}
 	return IncrementTrackPlayCountParams{
 		Ctx:           ctx,
 		Artist:        record.Artist,
@@ -353,11 +423,28 @@ func buildIncrementTrackPlayCountParamsFromRecord(
 }
 
 func buildTrackPlayRecordResolvedFields(
+	tx *gorm.DB,
 	record *TrackPlayRecord,
 	resolvedTrack *Track,
 	albumID int64,
 ) map[string]interface{} {
+	/*
+		INSERT INTO multimedia.track_play_records (id, artist, album_artist, track, album, duration, play_time, scrobbled, music_brainz_id, track_number, disc_number, source, cover_art_path, trace_id, root_span_id, trace_sampled, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at, album_id) VALUES (6695, '万能青年旅店', '万能青年旅店', '十万嬉皮', '万能青年旅店', 284, '2026-04-03 12:34:05', 1, '24308649-8842-41e4-b515-c503d0d2932a', 7, 1, 'Apple Music', '/album/v1/originals/d82d06648b8f5f17547ef07d4f286081d53818e7', 'a6f19f00299498144d48c1364f79684f', '3d81ea6868795264', 1, 2795, 'resolved', 4, 1, '2026-04-03 12:36:41', '2026-04-03 12:36:42', 47);
+
+	*/
+
 	fields := map[string]interface{}{}
+	albumCoverArtPath, _ := getAlbumCoverArtPathByIDTx(tx, albumID)
+	if record != nil {
+		if coverArtPath := normalizeTrackPlayRecordCoverArtPath(
+			record.CoverArtPath, albumCoverArtPath,
+		); coverArtPath != "" {
+			fields["cover_art_path"] = coverArtPath
+		}
+	}
+	if _, ok := fields["cover_art_path"]; !ok && albumCoverArtPath != "" {
+		fields["cover_art_path"] = albumCoverArtPath
+	}
 	if resolvedTrack == nil {
 		return fields
 	}
@@ -375,8 +462,86 @@ func buildTrackPlayRecordResolvedFields(
 		}
 	}
 	fields["album_id"] = albumID
+	if albumID > 0 {
+		if albumObj, err := GetAlbumTx(tx, albumID); err == nil && albumObj != nil {
+			fields["album_subtitle"] = albumObj.NameSubtitle
+		}
+	}
 
+	if _, ok := fields["cover_art_path"]; !ok && albumCoverArtPath != "" {
+		fields["cover_art_path"] = albumCoverArtPath
+	}
 	return fields
+}
+
+func normalizeTrackPlayRecordCoverArtPath(recordPath, albumPath string) string {
+	recordPath = strings.TrimSpace(recordPath)
+	albumPath = strings.TrimSpace(albumPath)
+	if recordPath == "" {
+		return albumPath
+	}
+	if strings.HasPrefix(recordPath, "/api/artwork/") {
+		return albumPath
+	}
+	return recordPath
+}
+
+func getAlbumCoverArtPathByIDTx(tx *gorm.DB, albumID int64) (string, error) {
+	if tx == nil || albumID <= 0 {
+		return "", nil
+	}
+
+	var album Album
+	if err := tx.First(&album, albumID).Error; err != nil {
+		return "", err
+	}
+	return BuildTrackPlayRecordArtworkPath(album.CoverArtURL, album.CoverArtObjectKey), nil
+}
+
+func recentPlayRecordCoverArtPathExpr(tableAlias string) string {
+	albumByIDExpr := buildAlbumCoverArtPathExpr("aa")
+	albumByArtistExpr := buildAlbumCoverArtPathExpr("ab")
+
+	return "COALESCE(NULLIF(" + tableAlias + ".cover_art_path, ''), " + albumByIDExpr + ", " + albumByArtistExpr + ") AS cover_art_path"
+}
+
+func buildAlbumCoverArtPathExpr(alias string) string {
+	objectStoragePrefix, hasObjectStoragePrefix := buildTrackPlayRecordObjectStorageCDNPrefix()
+	switch config.ConfigObj.Database.Type {
+	case string(common.DatabaseTypeMySQL):
+		if hasObjectStoragePrefix {
+			return "COALESCE(NULLIF(" + alias + ".cover_art_url, ''), CASE WHEN " + alias + ".cover_art_object_key IS NOT NULL AND " + alias + ".cover_art_object_key <> '' THEN CONCAT(" + sqlStringLiteral(objectStoragePrefix) + ", '/', " + alias + ".cover_art_object_key) ELSE NULL END)"
+		}
+		return "NULLIF(" + alias + ".cover_art_url, '')"
+	default:
+		if hasObjectStoragePrefix {
+			return "COALESCE(NULLIF(" + alias + ".cover_art_url, ''), CASE WHEN " + alias + ".cover_art_object_key IS NOT NULL AND " + alias + ".cover_art_object_key <> '' THEN " + sqlStringLiteral(
+				strings.TrimRight(
+					objectStoragePrefix, "/",
+				)+"/",
+			) + " || " + alias + ".cover_art_object_key ELSE NULL END)"
+		}
+		return "NULLIF(" + alias + ".cover_art_url, '')"
+	}
+}
+
+func sqlStringLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func recentPlayRecordsQuery(ctx context.Context) *gorm.DB {
+	db := GetDB().WithContext(ctx)
+	return db.Table("track_play_records AS tpr").
+		Select("tpr.*, " + recentPlayRecordCoverArtPathExpr("tpr")).
+		Joins(
+			"LEFT JOIN album AS aa ON aa.id = tpr.album_id AND tpr.album_id > 0",
+		).
+		Joins(
+			"LEFT JOIN (" +
+				"SELECT artist, name, COALESCE(name_subtitle, '') AS name_subtitle, MIN(id) AS id FROM album GROUP BY artist, name, COALESCE(name_subtitle, '')" +
+				") AS ac ON ac.artist = tpr.artist AND ac.name = tpr.album AND COALESCE(ac.name_subtitle, '') = COALESCE(tpr.album_subtitle, '')",
+		).
+		Joins("LEFT JOIN album AS ab ON ab.id = ac.id")
 }
 
 // ProcessTrackPlayRecord 统一处理播放流水的资料库写入和归因回填。
@@ -419,11 +584,12 @@ func ProcessTrackPlayRecord(ctx context.Context, recordID int64, metadata TrackM
 					tx,
 					resolvedTrack.Artist,
 					resolvedTrack.Album,
+					resolvedTrack.AlbumSubtitle,
 					resolvedTrack.Track,
 					resolvedTrack.TrackNumber,
 					resolvedTrack.DiscNumber,
 				)
-				for key, value := range buildTrackPlayRecordResolvedFields(record, resolvedTrack, albumID) {
+				for key, value := range buildTrackPlayRecordResolvedFields(tx, record, resolvedTrack, albumID) {
 					fields[key] = value
 				}
 				if applied && albumID > 0 {
@@ -438,6 +604,7 @@ func ProcessTrackPlayRecord(ctx context.Context, recordID int64, metadata TrackM
 func inferReplayTrackMetadata(record *TrackPlayRecord) TrackMetadata {
 	metadata := TrackMetadata{
 		AlbumArtist:   record.AlbumArtist,
+		AlbumSubtitle: record.AlbumSubtitle,
 		TrackNumber:   record.TrackNumber,
 		DiscNumber:    record.DiscNumber,
 		Duration:      record.Duration,
@@ -607,6 +774,7 @@ func ApplyTrackPlayRecordToResolvedTrackTx(
 		tx,
 		trackObj.Artist,
 		trackObj.Album,
+		trackObj.AlbumSubtitle,
 		trackObj.Track,
 		trackObj.TrackNumber,
 		trackObj.DiscNumber,
@@ -628,7 +796,7 @@ func ApplyTrackPlayRecordToResolvedTrackTx(
 		"resolution_confidence": confidence,
 		"library_applied":       true,
 	}
-	for key, value := range buildTrackPlayRecordResolvedFields(record, trackObj, albumID) {
+	for key, value := range buildTrackPlayRecordResolvedFields(tx, record, trackObj, albumID) {
 		fields[key] = value
 	}
 	if err := tx.Model(&TrackPlayRecord{}).Where("id = ?", recordID).Updates(fields).Error; err != nil {
@@ -643,19 +811,26 @@ func GetTrackPlayRecordByID(ctx context.Context, recordID int64) (*TrackPlayReco
 }
 
 // getAlbumIDByTrackInfo 通过 Track -> TrackAlbum 关联获取 AlbumID
-func getAlbumIDByTrackInfo(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) int64 {
-	return getAlbumIDByTrackInfoTx(GetDB().WithContext(ctx), artist, album, track, trackNumber, discNumber)
+func getAlbumIDByTrackInfo(
+	ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+) int64 {
+	return getAlbumIDByTrackInfoTx(
+		GetDB().WithContext(ctx), artist, album, albumSubtitle, track, trackNumber, discNumber,
+	)
 }
 
-func getAlbumIDByTrackInfoTx(tx *gorm.DB, artist, album, track string, trackNumber, discNumber int8) int64 {
+func getAlbumIDByTrackInfoTx(
+	tx *gorm.DB, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+) int64 {
 	trackObj, err := findTrackByIdentityWithOptions(
 		tx,
 		TrackIdentity{
-			Artist:      artist,
-			Album:       album,
-			Track:       track,
-			TrackNumber: trackNumber,
-			DiscNumber:  discNumber,
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
 		},
 		trackIdentityResolveOptions{allowLooseNameFallback: false},
 	)
@@ -663,9 +838,15 @@ func getAlbumIDByTrackInfoTx(tx *gorm.DB, artist, album, track string, trackNumb
 		return 0
 	}
 
-	// 从 TrackAlbum 获取 album_id
-	var trackAlbum TrackAlbum
-	err = tx.Where("track_id = ?", trackObj.ID).First(&trackAlbum).Error
+	trackAlbum, err := GetTrackAlbumByTrackAndAlbumIdentityTx(
+		tx,
+		trackObj.ID,
+		artist,
+		album,
+		albumSubtitle,
+		trackNumber,
+		discNumber,
+	)
 	if err != nil {
 		return 0
 	}
@@ -690,7 +871,7 @@ func GetUnscrobbledRecords(ctx context.Context, limit int) ([]*TrackPlayRecord, 
 // GetRecentPlayRecords 获取最近播放的记录
 func GetRecentPlayRecords(ctx context.Context, limit int) ([]*TrackPlayRecord, error) {
 	var records []*TrackPlayRecord
-	err := GetDB().WithContext(ctx).Order("play_time DESC").Limit(limit).Find(&records).Error
+	err := recentPlayRecordsQuery(ctx).Order("play_time DESC, id DESC").Limit(limit).Find(&records).Error
 	if err != nil {
 		return nil, err
 	}
@@ -706,13 +887,13 @@ func GetRecentPlayRecordsByDays(ctx context.Context, days int) (map[string][]*Tr
 	// 根据数据库类型使用不同的日期函数
 	var err error
 	if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
-		err = GetDB().WithContext(ctx).Where(
-			"DATE_FORMAT(`play_time`, '%Y-%m-%d') > ?", startTime,
-		).Order("play_time DESC").Find(&records).Error
+		err = recentPlayRecordsQuery(ctx).Where(
+			"DATE_FORMAT(`tpr`.`play_time`, '%Y-%m-%d') > ?", startTime,
+		).Order("play_time DESC, id DESC").Find(&records).Error
 	} else {
-		err = GetDB().WithContext(ctx).Where(
-			"strftime('%Y-%m-%d',`play_time`) > ?", startTime,
-		).Order("play_time DESC").Find(&records).Error
+		err = recentPlayRecordsQuery(ctx).Where(
+			"strftime('%Y-%m-%d',`tpr`.`play_time`) > ?", startTime,
+		).Order("play_time DESC, id DESC").Find(&records).Error
 	}
 
 	if err != nil {
@@ -802,6 +983,7 @@ func GetPlayCountsBySource(ctx context.Context) (map[string]int64, error) {
 type TopAlbum struct {
 	AlbumID           int64  `json:"album_id"`
 	Album             string `json:"album"`
+	AlbumSubtitle     string `json:"album_subtitle"`
 	Artist            string `json:"artist"`
 	PlayCount         int    `json:"play_count"`
 	CoverArtURL       string `json:"cover_art_url"`
@@ -828,9 +1010,10 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 	}
 
 	type topAlbumRow struct {
-		Album     string
-		Artist    string
-		PlayCount int
+		Album         string
+		AlbumSubtitle string
+		Artist        string
+		PlayCount     int
 	}
 	var rows []topAlbumRow
 
@@ -848,7 +1031,7 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 		query = query.Where("DATE_FORMAT(`play_time`, '%Y-%m-%d') > ?", startTime.Format("2006-01-02"))
 	}
 
-	err := query.Select("album, MIN(artist) as artist, COUNT(album) as play_count").
+	err := query.Select("album, MIN(album_subtitle) as album_subtitle, MIN(artist) as artist, COUNT(album) as play_count").
 		Group("album").
 		Order("play_count DESC").
 		Limit(limit).
@@ -872,6 +1055,7 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 			result, &TopAlbum{
 				AlbumID:           albumID,
 				Album:             row.Album,
+				AlbumSubtitle:     row.AlbumSubtitle,
 				Artist:            row.Artist,
 				PlayCount:         row.PlayCount,
 				CoverArtURL:       albumObj.CoverArtURL,

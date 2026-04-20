@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS tracks
     TEXT
     NOT
     NULL,
+    album_subtitle
+    TEXT,
     track
     TEXT
     NOT
@@ -121,6 +123,8 @@ CREATE TABLE IF NOT EXISTS track_play_records
     music_brainz_id
     TEXT,
     source
+    TEXT,
+    cover_art_path
     TEXT,
     resolved_track_id
     INTEGER
@@ -239,6 +243,7 @@ CREATE TABLE IF NOT EXISTS top_album_stat
     period_days INTEGER NOT NULL,
     album_id    INTEGER DEFAULT 0,
     album       TEXT    NOT NULL,
+    album_subtitle TEXT,
     artist      TEXT    DEFAULT '',
     play_count  INTEGER DEFAULT 0,
     rank        INTEGER NOT NULL,

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
 	"github.com/vincentchyu/sonic-lens/common"
 )
 
@@ -129,7 +130,7 @@ type CloudflareConfig struct {
 	SyncInterval int    `yaml:"syncInterval"` // 同步间隔(小时)
 }
 
-// ObjectStorageConfig 对象存储配置（MinIO/S3/R2 兼容）。
+// ObjectStorageConfig 对象存储配置（MinIO/S3/R2/cloudflare 兼容）。
 type ObjectStorageConfig struct {
 	Enabled         bool   `yaml:"enabled"`
 	Provider        string `yaml:"provider"`

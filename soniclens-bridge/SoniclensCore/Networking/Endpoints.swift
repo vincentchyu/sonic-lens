@@ -18,6 +18,9 @@ enum APIPath {
     static let insights = "/api/insights/all"
     static func insightDetail(id: Int64) -> String { "/api/insights/\(id)" }
     static func insightLogs(id: Int64) -> String { "/api/insights/\(id)/logs" }
+    static func insightHistory(id: Int64) -> String { "/api/insights/\(id)/history" }
+    static func insightFeedbackSummary(id: Int64) -> String { "/api/insights/\(id)/feedback-summary" }
+    static func insightFeedbackHistory(id: Int64) -> String { "/api/insights/\(id)/feedback-history" }
     static let unscrobbled = "/api/unscrobbled-records"
     static let unscrobbledCount = "/api/unscrobbled-records/count"
 
@@ -27,6 +30,8 @@ enum APIPath {
     static let trackInsight = "/api/track-insight"
     static let albumInsight = "/api/album-insight"
     static let trackInsightStream = "/api/track-insight-stream"
+    static func trackInsightFeedback(id: Int64) -> String { "/api/track-insight/\(id)/feedback" }
+    static func albumInsightFeedback(id: Int64) -> String { "/api/album-insight/\(id)/feedback" }
     static let insightJobs = "/api/insight-jobs"
     static func insightJob(id: String) -> String { "/api/insight-jobs/\(id)" }
     static func insightJobLiveActivityToken(id: String) -> String { "/api/insight-jobs/\(id)/live-activity-token" }

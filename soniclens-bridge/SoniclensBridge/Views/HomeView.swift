@@ -27,8 +27,6 @@ struct HomeContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let contentWidth = max(proxy.size.width - 64, 0)
-
             ZStack {
                 AmbientBackgroundView(
                     gradient: LinearGradient(
@@ -68,7 +66,7 @@ struct HomeContentView: View {
                                     sources: Array(hotPresentation.sources.prefix(3)),
                                     accentKey: selectedAccent
                                 )
-                                .frame(minWidth: 1120, maxWidth: .infinity, alignment: .topLeading)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
                             } else {
                                 VStack(alignment: .leading, spacing: 14) {
                                     DashboardTrendSection(
@@ -93,41 +91,53 @@ struct HomeContentView: View {
                             }
 
                             if layoutModes.wideRankings {
-                                Grid(horizontalSpacing: 16, verticalSpacing: 16) {
-                                    GridRow {
-                                        AlbumShelfCard(
-                                            items: Array(hotPresentation.albums.prefix(5)),
-                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                            style: .featureGrid,
-                                            collectionCount: hotPresentation.totalAlbumsCount,
-                                            accentKey: selectedAccent,
-                                            onAlbumTap: { albumID in
-                                                selectedAlbumID = albumID
-                                            }
-                                        )
-                                        .frame(minWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
+                                HStack(alignment: .top, spacing: 16) {
+                                    AlbumShelfCard(
+                                        items: Array(hotPresentation.albums.prefix(5)),
+                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                        style: .featureGrid,
+                                        collectionCount: hotPresentation.totalAlbumsCount,
+                                        accentKey: selectedAccent,
+                                        onAlbumTap: { albumID in
+                                            selectedAlbumID = albumID
+                                        }
+                                    )
+                                    .frame(minWidth: AlbumShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
 
-                                        ArtistLadderCard(
-                                            items: Array(hotPresentation.artists.prefix(6)),
-                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                            collectionCount: hotPresentation.totalArtistsCount,
-                                            accentKey: selectedAccent
-                                        )
-                                        .frame(minWidth: 160, maxWidth: .infinity, maxHeight: .infinity)
+                                    ArtistLadderCard(
+                                        items: Array(hotPresentation.artists.prefix(6)),
+                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                        collectionCount: hotPresentation.totalArtistsCount,
+                                        accentKey: selectedAccent
+                                    )
+                                    .frame(minWidth: ArtistLadderCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
+                                }
 
-                                        TrackShelfCard(
-                                            items: Array(hotPresentation.tracks.prefix(5)),
-                                            artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                            style: .featureGrid,
-                                            totalTracksCount: hotPresentation.totalTracksCount,
-                                            accentKey: selectedAccent,
-                                            onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
-                                        )
-                                        .frame(minWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
-                                    }
+                                HStack(alignment: .top, spacing: 16) {
+                                    TrackShelfCard(
+                                        items: Array(hotPresentation.tracks.prefix(10)),
+                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                        style: .featureGrid,
+                                        visibleItemCount: 9,
+                                        totalTracksCount: hotPresentation.totalTracksCount,
+                                        accentKey: selectedAccent,
+                                        onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                    )
+                                    .frame(minWidth: TrackShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
+
+                                    RecentPlaysSection(
+                                        items: viewModel.recentPlays,
+                                        artworkURLs: viewModel.recentPlayArtworkURLs,
+                                        totalPlaysCount: hotPresentation.totalPlaysCount,
+                                        accentKey: selectedAccent,
+                                        onTrackTap: { track in
+                                            selectedRecentTrack = track
+                                        }
+                                    )
+                                    .frame(minWidth: RecentPlaysSection.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
                                 }
                             } else {
-                                VStack(spacing: 16) {
+                                VStack(alignment: .leading, spacing: 16) {
                                     AlbumShelfCard(
                                         items: Array(hotPresentation.albums.prefix(5)),
                                         artworkBaseURL: store.currentServer?.artworkBaseURL,
@@ -150,21 +160,24 @@ struct HomeContentView: View {
                                         items: Array(hotPresentation.tracks.prefix(5)),
                                         artworkBaseURL: store.currentServer?.artworkBaseURL,
                                         style: .featureGrid,
+                                        visibleItemCount: 5,
                                         totalTracksCount: hotPresentation.totalTracksCount,
                                         accentKey: selectedAccent,
                                         onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
                                     )
+
+                                    RecentPlaysSection(
+                                        items: viewModel.recentPlays,
+                                        artworkURLs: viewModel.recentPlayArtworkURLs,
+                                        totalPlaysCount: hotPresentation.totalPlaysCount,
+                                        accentKey: selectedAccent,
+                                        onTrackTap: { track in
+                                            selectedRecentTrack = track
+                                        }
+                                    )
                                 }
                             }
                         }
-
-                        RecentPlaysSection(
-                            items: viewModel.recentPlays,
-                            totalPlaysCount: hotPresentation.totalPlaysCount,
-                            onTrackTap: { track in
-                                selectedRecentTrack = track
-                            }
-                        )
                     }
                     .padding(.horizontal, 32)
                     .padding(.top, 28)
@@ -197,6 +210,10 @@ struct HomeContentView: View {
             guard let server else { return }
             Task { await viewModel.load(using: server) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .recentPlaysDidUpdate)) { _ in
+            guard let server = store.currentServer else { return }
+            Task { await viewModel.refreshRecentPlays(using: server) }
+        }
         .navigationDestination(item: $selectedRecentTrack) { track in
             TrackDetailView(track: track)
         }
@@ -219,7 +236,6 @@ private struct HomeLayoutModes {
             return
         }
 
-        // 使用滞回区间，避免 sidebar 动画期间反复跨过临界值时不断拆解/合并布局。
         if wideInsights {
             if width < 980 {
                 wideInsights = false
@@ -587,6 +603,22 @@ private struct WideListeningInsightsSection: View {
     var body: some View {
         GlassPanel(cornerRadius: 18, padding: 0) {
             HStack(alignment: .top, spacing: 0) {
+                ListeningProfileSummarySidebar(
+                    summaryText: summaryText,
+                    footnoteText: footnoteText,
+                    genres: genres,
+                    sources: sources,
+                    accentKey: accentKey
+                )
+                .padding(18)
+                .frame(width: 380, alignment: .topLeading)
+                
+                
+                Rectangle()
+                    .fill(SonicTheme.glassBorder.opacity(0.9))
+                    .frame(width: 1)
+                    .padding(.vertical, 18)
+                
                 DashboardTrendSectionBody(
                     points: points,
                     hourlyData: hourlyData,
@@ -601,20 +633,8 @@ private struct WideListeningInsightsSection: View {
                 )
                 .frame(minWidth: 720, maxWidth: .infinity, alignment: .topLeading)
 
-                Rectangle()
-                    .fill(SonicTheme.glassBorder.opacity(0.9))
-                    .frame(width: 1)
-                    .padding(.vertical, 18)
 
-                ListeningProfileSummarySidebar(
-                    summaryText: summaryText,
-                    footnoteText: footnoteText,
-                    genres: genres,
-                    sources: sources,
-                    accentKey: accentKey
-                )
-                .padding(18)
-                .frame(width: 380, alignment: .topLeading)
+               
             }
         }
     }
@@ -1403,8 +1423,12 @@ struct RankingsCard: View {
 }
 
 struct RecentPlaysSection: View {
+    static let homeMinimumWidth: CGFloat = 340
+
     let items: [RecentPlayRecord]
+    let artworkURLs: [Int64: String]
     let totalPlaysCount: Int64?
+    let accentKey: HomeHotAccentKey?
     let onTrackTap: (Track) -> Void
 
     var body: some View {
@@ -1412,8 +1436,9 @@ struct RecentPlaysSection: View {
             VStack(alignment: .leading, spacing: 14) {
                 HotModuleSectionHeader(
                     title: "最近播放",
-                    subtitle: "按时间倒序展示最近 10 次播放记录。",
-                    metricTag: totalPlaysCount.map { "总：\(compactCount($0))" }
+                    subtitle: "按时间倒序展示最近 10 次播放记录，优先突出封面和曲目信息。",
+                    metricTag: totalPlaysCount.map { "总：\(compactCount($0))" },
+                    accentKey: accentKey
                 )
 
                 if items.isEmpty {
@@ -1459,14 +1484,12 @@ struct RecentPlaysSection: View {
             ))
         } label: {
             HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(SonicTheme.primary.opacity(0.10))
-                        .frame(width: 34, height: 34)
-                    Text("\(rank)")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(SonicTheme.primary)
-                }
+                RecentPlayArtworkView(
+                    item: item,
+                    artworkURL: artworkURLs[item.id],
+                    size: 42,
+                    cornerRadius: 12
+                )
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.track)
@@ -1484,17 +1507,20 @@ struct RecentPlaysSection: View {
 
                 Spacer(minLength: 12)
 
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(formatPlayTime(item.playTime))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(SonicTheme.textPrimary)
-                        .lineLimit(1)
-
-                    Text("最近播放")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(SonicTheme.textSecondary)
-                        .lineLimit(1)
-                }
+                Text(formatRecentPlayTime(item.playTime))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SonicTheme.textPrimary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(SonicTheme.dynamicColor(light: .sonicWhite(1, alpha: 0.58), dark: .sonicWhite(1, alpha: 0.06)))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(SonicTheme.glassBorder, lineWidth: 1)
+                    )
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -1515,11 +1541,23 @@ struct RecentPlaysSection: View {
         }
     }
 
-    private func formatPlayTime(_ timeString: String) -> String {
+    private func formatRecentPlayTime(_ timeString: String) -> String {
         guard let date = Self.isoFormatter.date(from: timeString) else {
             return timeString
         }
-        return Self.playTimeDisplayFormatter.string(from: date)
+        let interval = Date().timeIntervalSince(date)
+        switch interval {
+        case ..<60:
+            return "刚刚"
+        case ..<3600:
+            return "\(max(1, Int(interval / 60)))m前"
+        case ..<86400:
+            return "\(max(1, Int(interval / 3600)))h前"
+        case ..<604800:
+            return "\(max(1, Int(interval / 86400)))d前"
+        default:
+            return Self.playTimeDisplayFormatter.string(from: date)
+        }
     }
 
     private static let isoFormatter: ISO8601DateFormatter = {
@@ -1530,9 +1568,26 @@ struct RecentPlaysSection: View {
 
     private static let playTimeDisplayFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.dateFormat = "MM/dd"
         return formatter
     }()
+}
+
+private struct RecentPlayArtworkView: View {
+    let item: RecentPlayRecord
+    let artworkURL: String?
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        ArtworkSquareView(
+            artworkURL: artworkURL,
+            fallbackTitle: item.track,
+            size: size,
+            cornerRadius: cornerRadius,
+            style: .subtle
+        )
+    }
 }
 
 private func compactCount(_ value: Int64) -> String {

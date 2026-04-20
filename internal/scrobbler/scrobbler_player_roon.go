@@ -23,6 +23,13 @@ func (r *RoonTrackInfoWrapper) GetAlbum() string {
 	return r.baseWrapper.ConversionSimplified(r.Album)
 }
 
+func (r *RoonTrackInfoWrapper) GetAlbumSubtitle() string {
+	return ""
+}
+func (r *RoonTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMetadata {
+	return nil
+}
+
 func (r *RoonTrackInfoWrapper) GetArtist() string {
 	splits := strings.Split(r.Artist, ",")
 	if len(splits) > 0 {
@@ -37,6 +44,10 @@ func (r *RoonTrackInfoWrapper) GetPosition() float64 {
 
 func (r *RoonTrackInfoWrapper) GetDuration() int64 {
 	return int64(r.Duration)
+}
+
+func (r *RoonTrackInfoWrapper) GetSampleRate() int64 {
+	return 0
 }
 
 func (r *RoonTrackInfoWrapper) GetUrl() string {
@@ -66,6 +77,10 @@ func (r *RoonTrackInfoWrapper) GetComposer() string {
 
 func (r *RoonTrackInfoWrapper) GetReleaseDate() string {
 	// Roon没有直接提供发布日期
+	return ""
+}
+
+func (r *RoonTrackInfoWrapper) GetOriginalReleaseDate() string {
 	return ""
 }
 

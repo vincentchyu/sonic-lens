@@ -81,6 +81,13 @@ func normalizeMBTrackLookupKey(title string) string {
 	return strings.ToLower(common.ConversionSimplifiedFx(title))
 }
 
+func extractReleaseGroupFirstReleaseDate(release musicbrainzws2.Release) string {
+	if release.ReleaseGroup == nil {
+		return ""
+	}
+	return strings.TrimSpace(release.ReleaseGroup.FirstReleaseDate.String())
+}
+
 func matchMBTrackByTitle(
 	ta *model.TrackAlbum,
 	trackObj *model.Track,
@@ -413,7 +420,7 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 	log.Info(ctx, "Fetching MB release details", zap.String("mbid", link.MBID))
 	release, err := musicbrainz.LookupRelease(
 		ctx, mbtypes.MBID(link.MBID), musicbrainzws2.IncludesFilter{
-			Includes: []string{"recordings", "media", "artist-credits", "genres"},
+			Includes: []string{"recordings", "media", "artist-credits", "genres", "release-groups"},
 		},
 	)
 	if err != nil {
@@ -451,6 +458,7 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 	discInfosBytes, _ := json.Marshal(discInfosMap)
 	discInfosStr := string(discInfosBytes)
 	releaseDate := release.Date.String()
+	originalReleaseDate := extractReleaseGroupFirstReleaseDate(release)
 	var genreStr string
 	if len(release.Genres) > 0 {
 		var genres []string
@@ -554,7 +562,7 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 						}
 						if err := model.UpsertTrackAlbumTx(
 							tx, &model.TrackAlbum{
-								TrackID:                existingTA.ID,
+								TrackID:                existingTA.TrackID,
 								AlbumID:                albumID,
 								TrackNumber:            int8(mbTrack.Position),
 								DiscNumber:             mbTrack.DiscNumber,
@@ -596,6 +604,7 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 						Artist:        albumObj.Artist,
 						AlbumArtist:   albumObj.Artist,
 						Album:         albumObj.Name,
+						AlbumSubtitle: albumObj.NameSubtitle,
 						Track:         mbTrack.Title,
 						TrackNumber:   int8(mbTrack.Position),
 						DiscNumber:    mbTrack.DiscNumber,
@@ -640,6 +649,9 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 			}
 			if releaseDate != "" {
 				updateFields["release_date"] = releaseDate
+			}
+			if originalReleaseDate != "" {
+				updateFields["original_release_date"] = originalReleaseDate
 			}
 			if genreStr != "" {
 				updateFields["genre"] = genreStr

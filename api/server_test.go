@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,11 +22,13 @@ type fakeAIRouteService struct {
 	platforms        []ai.PlatformOption
 	modelsByPlatform map[common.AIModelPlatform][]ai.ModelOption
 
-	trackErr  error
-	albumErr  error
-	streamErr error
-	jobErr    error
-	jobByID   map[string]*model.InsightJob
+	trackErr        error
+	albumErr        error
+	streamErr       error
+	jobErr          error
+	jobByID         map[string]*model.InsightJob
+	callLogsByJobID map[string][]*model.LLMCallLog
+	lastListQuery   model.InsightJobListQuery
 
 	lastTrackInput struct {
 		provider  string
@@ -186,6 +189,40 @@ func (f *fakeAIRouteService) GetInsightJob(_ context.Context, jobID string) (*mo
 	return nil, gorm.ErrRecordNotFound
 }
 
+func (f *fakeAIRouteService) GetInsightJobCallLogs(
+	_ context.Context, jobID string,
+) ([]*model.LLMCallLog, error) {
+	if f.jobErr != nil {
+		return nil, f.jobErr
+	}
+	if _, ok := f.jobByID[jobID]; !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return f.callLogsByJobID[jobID], nil
+}
+
+func (f *fakeAIRouteService) ListInsightJobs(
+	_ context.Context,
+	query model.InsightJobListQuery,
+) ([]*model.InsightJob, int64, error) {
+	if f.jobErr != nil {
+		return nil, 0, f.jobErr
+	}
+	f.lastListQuery = query
+
+	jobs := make([]*model.InsightJob, 0, len(f.jobByID))
+	for _, job := range f.jobByID {
+		if query.HasStatus && job.Status != query.Status {
+			continue
+		}
+		if query.HasTargetType && job.AnalysisTargetType != query.TargetType {
+			continue
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, int64(len(jobs)), nil
+}
+
 func (f *fakeAIRouteService) UpdateInsightJobLiveActivityToken(
 	_ context.Context, jobID, token string,
 ) (*model.InsightJob, error) {
@@ -200,10 +237,174 @@ func (f *fakeAIRouteService) UpdateInsightJobLiveActivityToken(
 	return job, nil
 }
 
+func (f *fakeAIRouteService) CancelInsightJob(_ context.Context, jobID string) (*model.InsightJob, error) {
+	if f.jobErr != nil {
+		return nil, f.jobErr
+	}
+	job, ok := f.jobByID[jobID]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	job.Status = common.InsightJobPhaseCanceled
+	return job, nil
+}
+
+func (f *fakeAIRouteService) RetryInsightJob(_ context.Context, jobID string) (*model.InsightJob, bool, error) {
+	if f.jobErr != nil {
+		return nil, false, f.jobErr
+	}
+	job, ok := f.jobByID[jobID]
+	if !ok {
+		return nil, false, gorm.ErrRecordNotFound
+	}
+	retried := *job
+	retried.ID = "job-retry"
+	retried.Status = common.InsightJobPhaseQueued
+	f.jobByID[retried.ID] = &retried
+	return &retried, false, nil
+}
+
+func (f *fakeAIRouteService) DeleteInsightJob(_ context.Context, jobID string) error {
+	if f.jobErr != nil {
+		return f.jobErr
+	}
+	job, ok := f.jobByID[jobID]
+	if !ok {
+		return gorm.ErrRecordNotFound
+	}
+	if job.Status != common.InsightJobPhaseFailed && job.Status != common.InsightJobPhaseCanceled {
+		return errors.New("仅允许删除失败或已取消的任务")
+	}
+	delete(f.jobByID, jobID)
+	return nil
+}
+
 func newAITestRouter(service aiRouteService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	registerAIRoutes(router, service)
+	return router
+}
+
+type fakeInsightFeedbackService struct {
+	lastTrackFeedback struct {
+		insightID      int64
+		score          int
+		comment        string
+		reasonCodes    []string
+		sectionKey     string
+		sourcePlatform string
+	}
+	lastAlbumFeedback struct {
+		insightID      int64
+		score          int
+		comment        string
+		reasonCodes    []string
+		sectionKey     string
+		sourcePlatform string
+	}
+	trackErr   error
+	albumErr   error
+	summaryErr error
+	historyErr error
+	trackList  []*model.TrackInsightFeedback
+	albumList  []*model.AlbumInsightFeedback
+	summary    *insight.InsightFeedbackSummary
+	history    []*insight.InsightFeedbackHistoryItem
+	versions   []*model.InsightListItem
+}
+
+func (f *fakeInsightFeedbackService) RecordFeedback(
+	_ context.Context, insightID int64, req insight.FeedbackRecordRequest,
+) error {
+	f.lastTrackFeedback = struct {
+		insightID      int64
+		score          int
+		comment        string
+		reasonCodes    []string
+		sectionKey     string
+		sourcePlatform string
+	}{
+		insightID:      insightID,
+		score:          req.Score,
+		comment:        req.Comment,
+		reasonCodes:    req.ReasonCodes,
+		sectionKey:     req.SectionKey,
+		sourcePlatform: req.SourcePlatform,
+	}
+	return f.trackErr
+}
+
+func (f *fakeInsightFeedbackService) RecordAlbumFeedback(
+	_ context.Context, insightID int64, req insight.FeedbackRecordRequest,
+) error {
+	f.lastAlbumFeedback = struct {
+		insightID      int64
+		score          int
+		comment        string
+		reasonCodes    []string
+		sectionKey     string
+		sourcePlatform string
+	}{
+		insightID:      insightID,
+		score:          req.Score,
+		comment:        req.Comment,
+		reasonCodes:    req.ReasonCodes,
+		sectionKey:     req.SectionKey,
+		sourcePlatform: req.SourcePlatform,
+	}
+	return f.albumErr
+}
+
+func (f *fakeInsightFeedbackService) GetTrackInsightFeedbacks(
+	_ context.Context, _ int64,
+) ([]*model.TrackInsightFeedback, error) {
+	if f.trackErr != nil {
+		return nil, f.trackErr
+	}
+	return f.trackList, nil
+}
+
+func (f *fakeInsightFeedbackService) GetAlbumInsightFeedbacks(
+	_ context.Context, _ int64,
+) ([]*model.AlbumInsightFeedback, error) {
+	if f.albumErr != nil {
+		return nil, f.albumErr
+	}
+	return f.albumList, nil
+}
+
+func (f *fakeInsightFeedbackService) GetInsightFeedbackSummary(
+	_ context.Context, _ common.AnalysisTargetType, _ int64,
+) (*insight.InsightFeedbackSummary, error) {
+	if f.summaryErr != nil {
+		return nil, f.summaryErr
+	}
+	return f.summary, nil
+}
+
+func (f *fakeInsightFeedbackService) GetInsightFeedbackHistory(
+	_ context.Context, _ common.AnalysisTargetType, _ int64, _ int,
+) ([]*insight.InsightFeedbackHistoryItem, error) {
+	if f.historyErr != nil {
+		return nil, f.historyErr
+	}
+	return f.history, nil
+}
+
+func (f *fakeInsightFeedbackService) GetInsightHistory(
+	_ context.Context, _ common.AnalysisTargetType, _ int64, _ int,
+) ([]*model.InsightListItem, error) {
+	if f.historyErr != nil {
+		return nil, f.historyErr
+	}
+	return f.versions, nil
+}
+
+func newInsightFeedbackTestRouter(service insightFeedbackService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerInsightFeedbackRoutes(router, service)
 	return router
 }
 
@@ -334,6 +535,144 @@ func TestRegisterAIRoutesAlbumInsightSupportsLegacyModelType(t *testing.T) {
 	}
 }
 
+func TestRegisterInsightFeedbackRoutesAlbumFeedbackPassesThrough(t *testing.T) {
+	service := &fakeInsightFeedbackService{}
+	router := newInsightFeedbackTestRouter(service)
+
+	body := `{"score":-1,"comment":"专辑结构可以更紧凑","reason_codes":["结构混乱"],"section_key":"summary","source_platform":"iphone"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/album-insight/88/feedback", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.lastAlbumFeedback.insightID != 88 || service.lastAlbumFeedback.score != -1 {
+		t.Fatalf("album feedback not passed through: %+v", service.lastAlbumFeedback)
+	}
+	if len(service.lastAlbumFeedback.reasonCodes) != 1 || service.lastAlbumFeedback.reasonCodes[0] != "结构混乱" {
+		t.Fatalf("album feedback reason codes not passed through: %+v", service.lastAlbumFeedback)
+	}
+	if service.lastAlbumFeedback.sectionKey != "summary" || service.lastAlbumFeedback.sourcePlatform != "iphone" {
+		t.Fatalf("album feedback metadata not passed through: %+v", service.lastAlbumFeedback)
+	}
+}
+
+func TestRegisterInsightFeedbackRoutesAlbumFeedbackListUsesTargetType(t *testing.T) {
+	service := &fakeInsightFeedbackService{
+		albumList: []*model.AlbumInsightFeedback{
+			{ID: 1, InsightID: 88, Score: -1, Comment: "建议补充结构层次"},
+		},
+	}
+	router := newInsightFeedbackTestRouter(service)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights/88/feedbacks?analysis_target_type=album", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp struct {
+		Feedbacks []model.AlbumInsightFeedback `json:"feedbacks"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Feedbacks) != 1 || resp.Feedbacks[0].InsightID != 88 {
+		t.Fatalf("unexpected feedback response: %+v", resp.Feedbacks)
+	}
+}
+
+func TestRegisterInsightFeedbackRoutesFeedbackSummary(t *testing.T) {
+	service := &fakeInsightFeedbackService{
+		summary: &insight.InsightFeedbackSummary{
+			InsightID:          88,
+			AnalysisTargetType: common.AnalysisTargetTypeTrack,
+			LikeCount:          2,
+			DislikeCount:       1,
+			HasFeedback:        true,
+			TopReasonCodes:     []string{"太空泛"},
+		},
+	}
+	router := newInsightFeedbackTestRouter(service)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights/88/feedback-summary?analysis_target_type=track", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp insight.InsightFeedbackSummary
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode summary response: %v", err)
+	}
+	if resp.LikeCount != 2 || resp.DislikeCount != 1 || len(resp.TopReasonCodes) != 1 {
+		t.Fatalf("unexpected summary response: %+v", resp)
+	}
+}
+
+func TestRegisterInsightFeedbackRoutesFeedbackHistory(t *testing.T) {
+	service := &fakeInsightFeedbackService{
+		history: []*insight.InsightFeedbackHistoryItem{
+			{ID: 7, InsightID: 88, Score: -1, Comment: "总评太空泛"},
+		},
+	}
+	router := newInsightFeedbackTestRouter(service)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights/88/feedback-history?analysis_target_type=track&limit=5", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp struct {
+		Feedbacks []insight.InsightFeedbackHistoryItem `json:"feedbacks"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode history response: %v", err)
+	}
+	if len(resp.Feedbacks) != 1 || resp.Feedbacks[0].ID != 7 {
+		t.Fatalf("unexpected history response: %+v", resp.Feedbacks)
+	}
+}
+
+func TestRegisterInsightFeedbackRoutesInsightHistory(t *testing.T) {
+	service := &fakeInsightFeedbackService{
+		versions: []*model.InsightListItem{
+			{ID: 100, Artist: "Artist", Album: "Album", Track: "Track v2"},
+			{ID: 88, Artist: "Artist", Album: "Album", Track: "Track v1"},
+		},
+	}
+	router := newInsightFeedbackTestRouter(service)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insights/88/history?analysis_target_type=track&limit=5", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp struct {
+		Insights []*model.InsightListItem `json:"insights"`
+		Total    int                      `json:"total"`
+		Limit    int                      `json:"limit"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode history response: %v", err)
+	}
+	if len(resp.Insights) != 2 || resp.Insights[0].ID != 100 || resp.Total != 2 || resp.Limit != 5 {
+		t.Fatalf("unexpected insight history response: %+v", resp)
+	}
+}
+
 func TestRegisterAIRoutesCreateInsightJob(t *testing.T) {
 	service := &fakeAIRouteService{}
 	router := newAITestRouter(service)
@@ -376,6 +715,17 @@ func TestRegisterAIRoutesGetInsightJob(t *testing.T) {
 				ResultInsightID:    &resultInsightID,
 			},
 		},
+		callLogsByJobID: map[string][]*model.LLMCallLog{
+			"job-1": {
+				{
+					ID:         101,
+					Provider:   "openai",
+					Model:      "gpt-5",
+					Status:     "success",
+					DurationMs: 2345,
+				},
+			},
+		},
 	}
 	router := newAITestRouter(service)
 
@@ -388,13 +738,139 @@ func TestRegisterAIRoutesGetInsightJob(t *testing.T) {
 	}
 
 	var resp struct {
-		Job model.InsightJob `json:"job"`
+		Job      model.InsightJob   `json:"job"`
+		CallLogs []model.LLMCallLog `json:"call_logs"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.Job.ResultInsightID == nil || *resp.Job.ResultInsightID != resultInsightID {
 		t.Fatalf("unexpected result insight id: %+v", resp.Job.ResultInsightID)
+	}
+	if len(resp.CallLogs) != 1 || resp.CallLogs[0].ID != 101 {
+		t.Fatalf("unexpected call logs: %+v", resp.CallLogs)
+	}
+}
+
+func TestRegisterAIRoutesListInsightJobs(t *testing.T) {
+	service := &fakeAIRouteService{
+		jobByID: map[string]*model.InsightJob{
+			"job-1": {
+				ID:                 "job-1",
+				AnalysisTargetType: common.AnalysisTargetTypeTrack,
+				Status:             common.InsightJobPhaseRunning,
+			},
+			"job-2": {
+				ID:                 "job-2",
+				AnalysisTargetType: common.AnalysisTargetTypeAlbum,
+				Status:             common.InsightJobPhaseFailed,
+			},
+		},
+	}
+	router := newAITestRouter(service)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/insight-jobs?status=running&analysis_target_type=track", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !service.lastListQuery.HasStatus || service.lastListQuery.Status != common.InsightJobPhaseRunning {
+		t.Fatalf("unexpected list status query: %+v", service.lastListQuery)
+	}
+	if !service.lastListQuery.HasTargetType || service.lastListQuery.TargetType != common.AnalysisTargetTypeTrack {
+		t.Fatalf("unexpected target type query: %+v", service.lastListQuery)
+	}
+
+	var resp struct {
+		Jobs  []model.InsightJob `json:"jobs"`
+		Total int64              `json:"total"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Jobs) != 1 || resp.Jobs[0].ID != "job-1" || resp.Total != 1 {
+		t.Fatalf("unexpected list response: %+v", resp)
+	}
+}
+
+func TestRegisterAIRoutesCancelInsightJob(t *testing.T) {
+	service := &fakeAIRouteService{
+		jobByID: map[string]*model.InsightJob{
+			"job-1": {
+				ID:     "job-1",
+				Status: common.InsightJobPhaseRunning,
+			},
+		},
+	}
+	router := newAITestRouter(service)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/insight-jobs/job-1/cancel", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.jobByID["job-1"].Status != common.InsightJobPhaseCanceled {
+		t.Fatalf("job status not canceled: %+v", service.jobByID["job-1"])
+	}
+}
+
+func TestRegisterAIRoutesRetryInsightJob(t *testing.T) {
+	service := &fakeAIRouteService{
+		jobByID: map[string]*model.InsightJob{
+			"job-1": {
+				ID:                 "job-1",
+				AnalysisTargetType: common.AnalysisTargetTypeTrack,
+				Status:             common.InsightJobPhaseFailed,
+				Track:              "Track",
+			},
+		},
+	}
+	router := newAITestRouter(service)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/insight-jobs/job-1/retry", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var resp struct {
+		Job      model.InsightJob `json:"job"`
+		Existing bool             `json:"existing"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Job.ID != "job-retry" || resp.Job.Status != common.InsightJobPhaseQueued {
+		t.Fatalf("unexpected retry response: %+v", resp)
+	}
+}
+
+func TestRegisterAIRoutesDeleteInsightJob(t *testing.T) {
+	service := &fakeAIRouteService{
+		jobByID: map[string]*model.InsightJob{
+			"job-1": {
+				ID:     "job-1",
+				Status: common.InsightJobPhaseFailed,
+			},
+		},
+	}
+	router := newAITestRouter(service)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/insight-jobs/job-1", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if _, ok := service.jobByID["job-1"]; ok {
+		t.Fatalf("expected job to be deleted")
 	}
 }
 

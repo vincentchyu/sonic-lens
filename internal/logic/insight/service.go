@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -26,8 +27,10 @@ type Service interface {
 		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 		provider, model, legacyModelType string,
 	) ([]*model.TrackInsight, bool, error)
-	// RecordFeedback 记录用户点赞/点踩反馈
-	RecordFeedback(ctx context.Context, insightID int64, score int, comment string) error
+	// RecordFeedback 记录曲目音眸的点赞/点踩反馈。
+	RecordFeedback(ctx context.Context, insightID int64, req FeedbackRecordRequest) error
+	// RecordAlbumFeedback 记录专辑音眸的点赞/点踩反馈。
+	RecordAlbumFeedback(ctx context.Context, insightID int64, req FeedbackRecordRequest) error
 	// GetOrCreateInsightStream 获取大模型流式解析结果，第二个返回值表示是否命中缓存
 	GetOrCreateInsightStream(
 		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
@@ -51,8 +54,18 @@ type Service interface {
 	CreateInsightJob(ctx context.Context, req CreateInsightJobRequest) (*model.InsightJob, bool, error)
 	// GetInsightJob 获取单个音眸任务当前状态。
 	GetInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error)
+	// GetInsightJobCallLogs 获取指定音眸任务关联的调用流水。
+	GetInsightJobCallLogs(ctx context.Context, jobID string) ([]*model.LLMCallLog, error)
+	// ListInsightJobs 分页获取音眸任务，供管理端查看与筛选。
+	ListInsightJobs(ctx context.Context, query model.InsightJobListQuery) ([]*model.InsightJob, int64, error)
 	// UpdateInsightJobLiveActivityToken 更新任务关联的 Live Activity push token。
 	UpdateInsightJobLiveActivityToken(ctx context.Context, jobID, token string) (*model.InsightJob, error)
+	// CancelInsightJob 取消指定音眸任务，供管理端手动维护生命周期。
+	CancelInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error)
+	// RetryInsightJob 基于既有任务重新排队，便于管理端重试失败任务。
+	RetryInsightJob(ctx context.Context, jobID string) (*model.InsightJob, bool, error)
+	// DeleteInsightJob 删除失败或已取消的音眸任务及其调用流水。
+	DeleteInsightJob(ctx context.Context, jobID string) error
 	// GetAllInsights 分页获取所有解析记录
 	GetAllInsights(
 		ctx context.Context, limit, offset int, keyword string, targetType common.AnalysisTargetType,
@@ -67,10 +80,24 @@ type Service interface {
 	GetAlbumCallLogs(ctx context.Context, albumID int64) ([]*model.LLMCallLog, error)
 	// GetInsightCallLogs 按对象类型获取调用流水。
 	GetInsightCallLogs(ctx context.Context, targetType common.AnalysisTargetType, id int64) ([]*model.LLMCallLog, error)
-	// DeleteInsight 按对象类型删除解析记录。
+	// DeleteInsight 按对象类型删除解析记录及其关联流水。
 	DeleteInsight(ctx context.Context, targetType common.AnalysisTargetType, id int64) error
-	// GetInsightFeedbacks 获取关联反馈
-	GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
+	// GetTrackInsightFeedbacks 获取曲目音眸的关联反馈。
+	GetTrackInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
+	// GetAlbumInsightFeedbacks 获取专辑音眸的关联反馈。
+	GetAlbumInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.AlbumInsightFeedback, error)
+	// GetInsightFeedbackSummary 获取单条音眸的反馈摘要，供详情和列表轻量状态展示。
+	GetInsightFeedbackSummary(
+		ctx context.Context, targetType common.AnalysisTargetType, insightID int64,
+	) (*InsightFeedbackSummary, error)
+	// GetInsightFeedbackHistory 获取单条音眸的最近反馈历史，默认按时间倒序。
+	GetInsightFeedbackHistory(
+		ctx context.Context, targetType common.AnalysisTargetType, insightID int64, limit int,
+	) ([]*InsightFeedbackHistoryItem, error)
+	// GetInsightHistory 获取单条音眸的历史版本摘要，供详情页的历史 tab 懒加载使用。
+	GetInsightHistory(
+		ctx context.Context, targetType common.AnalysisTargetType, insightID int64, limit int,
+	) ([]*model.InsightListItem, error)
 	// GetLyrics 获取歌词内容，缺失时自动回源并写入缓存。
 	GetLyrics(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
 		*model.TrackLyrics, error,
@@ -85,6 +112,36 @@ type serviceImpl struct {
 type InsightWithScore struct {
 	*model.TrackInsight
 	TotalScore int `json:"total_score"`
+}
+
+type FeedbackRecordRequest struct {
+	Score          int
+	Comment        string
+	ReasonCodes    []string
+	SectionKey     string
+	SourcePlatform string
+}
+
+type InsightFeedbackHistoryItem struct {
+	ID             int64     `json:"id"`
+	InsightID      int64     `json:"insight_id"`
+	Score          int       `json:"score"`
+	Comment        string    `json:"comment"`
+	ReasonCodes    []string  `json:"reason_codes"`
+	SectionKey     string    `json:"section_key,omitempty"`
+	SourcePlatform string    `json:"source_platform,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type InsightFeedbackSummary struct {
+	InsightID              int64                       `json:"insight_id"`
+	AnalysisTargetType     common.AnalysisTargetType   `json:"analysis_target_type"`
+	LikeCount              int64                       `json:"like_count"`
+	DislikeCount           int64                       `json:"dislike_count"`
+	HasFeedback            bool                        `json:"has_feedback"`
+	LatestFeedback         *InsightFeedbackHistoryItem `json:"latest_feedback,omitempty"`
+	LatestNegativeFeedback *InsightFeedbackHistoryItem `json:"latest_negative_feedback,omitempty"`
+	TopReasonCodes         []string                    `json:"top_reason_codes"`
 }
 
 // NewService 创建 Insight Service 实例
@@ -182,7 +239,7 @@ func (s *serviceImpl) GetAlbumInsightOnly(ctx context.Context, albumID int64) ([
 		return nil, err
 	}
 
-	return model.GetAlbumInsightsByLookup(
+	insights, err := model.GetAlbumInsightsByLookup(
 		ctx,
 		model.AlbumInsightLookup{
 			AlbumID: albumID,
@@ -190,6 +247,13 @@ func (s *serviceImpl) GetAlbumInsightOnly(ctx context.Context, albumID int64) ([
 			Album:   detail.Name,
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+	if err := sortAlbumInsightsByTotalScore(ctx, insights); err != nil {
+		return nil, err
+	}
+	return insights, nil
 }
 
 // GetOrCreateAlbumInsight 获取或创建某张专辑的解析结果。
@@ -237,6 +301,9 @@ func (s *serviceImpl) GetOrCreateAlbumInsight(
 	}
 	insights, err := model.GetAlbumInsightsByLookup(ctx, lookup)
 	if err == nil && len(insights) > 0 && !force {
+		if err := sortAlbumInsightsByTotalScore(ctx, insights); err != nil {
+			return nil, false, err
+		}
 		insights[0].LastUsedAt = time.Now()
 		_ = model.UpdateAlbumInsight(ctx, insights[0])
 		log.Info(
@@ -261,6 +328,20 @@ func (s *serviceImpl) GetOrCreateAlbumInsight(
 		return nil, false, errors.New("当前专辑下暂无可用的曲目音眸分析，请先生成曲目分析")
 	}
 
+	feedbackCtx := ""
+	if negativeFeedbacks, fbErr := model.GetNegativeAlbumFeedbacksByLookup(
+		ctx, lookup,
+	); fbErr == nil && len(negativeFeedbacks) > 0 {
+		feedbackCtx = buildAlbumNegativeFeedbackContext(negativeFeedbacks)
+		if feedbackCtx != "" {
+			log.Info(
+				ctx,
+				"检测到历史差评反馈，将注入到专辑分析上下文",
+				zap.String("feedback", feedbackCtx),
+			)
+		}
+	}
+
 	llmReq := ai.AlbumAnalysisRequest{
 		AlbumID:           detail.ID,
 		Artist:            detail.Artist,
@@ -270,6 +351,7 @@ func (s *serviceImpl) GetOrCreateAlbumInsight(
 		TrackCount:        totalTracks,
 		AnalyzedTracks:    len(trackContexts),
 		TrackContexts:     trackContexts,
+		FeedbackContext:   feedbackCtx,
 		RequestedProvider: selection.RequestedProvider,
 		RequestedModel:    selection.RequestedModel,
 	}
@@ -338,6 +420,9 @@ func (s *serviceImpl) GetOrCreateAlbumInsight(
 		)
 		return []*model.AlbumInsight{newInsight}, false, nil
 	}
+	if err := sortAlbumInsightsByTotalScore(ctx, insights); err != nil {
+		return nil, false, err
+	}
 
 	log.Info(
 		ctx,
@@ -401,6 +486,9 @@ func (s *serviceImpl) GetOrCreateTrackInsight(
 
 	insights, err := model.GetTrackInsightsByLookup(ctx, lookup)
 	if err == nil && len(insights) > 0 && !force {
+		if err := sortTrackInsightsByTotalScore(ctx, insights); err != nil {
+			return nil, false, err
+		}
 		// 命中缓存，更新最近一条的使用时间
 		insights[0].LastUsedAt = time.Now()
 		_ = model.UpdateTrackInsight(ctx, insights[0])
@@ -435,16 +523,8 @@ func (s *serviceImpl) GetOrCreateTrackInsight(
 	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(
 		ctx, lookup,
 	); fbErr == nil && len(negativeFeedbacks) > 0 {
-		var feedbackComments []string
-		for _, fb := range negativeFeedbacks {
-			if fb.Comment != "" {
-				feedbackComments = append(feedbackComments, fb.Comment)
-			}
-		}
-		if len(feedbackComments) > 0 {
-			feedbackCtx = "用户对之前分析的主要反馈意见（请避免重复这些问题）：\n- " + strings.Join(
-				feedbackComments, "\n- ",
-			)
+		feedbackCtx = buildTrackNegativeFeedbackContext(negativeFeedbacks)
+		if feedbackCtx != "" {
 			log.Info(ctx, "检测到历史差评反馈，将注入到分析上下文", zap.String("feedback", feedbackCtx))
 		}
 	}
@@ -533,6 +613,9 @@ func (s *serviceImpl) GetOrCreateTrackInsight(
 		)
 		return []*model.TrackInsight{newInsight}, false, nil
 	}
+	if err := sortTrackInsightsByTotalScore(ctx, insights); err != nil {
+		return nil, false, err
+	}
 
 	log.Info(
 		ctx,
@@ -619,16 +702,8 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 	if negativeFeedbacks, fbErr := model.GetNegativeFeedbacksByLookup(
 		ctx, lookup,
 	); fbErr == nil && len(negativeFeedbacks) > 0 {
-		var feedbackComments []string
-		for _, fb := range negativeFeedbacks {
-			if fb.Comment != "" {
-				feedbackComments = append(feedbackComments, fb.Comment)
-			}
-		}
-		if len(feedbackComments) > 0 {
-			feedbackCtx = "用户对之前分析的主要反馈意见（请避免重复这些问题）：\n- " + strings.Join(
-				feedbackComments, "\n- ",
-			)
+		feedbackCtx = buildTrackNegativeFeedbackContext(negativeFeedbacks)
+		if feedbackCtx != "" {
 			log.Info(ctx, "检测到历史差评反馈，将注入到流式分析上下文", zap.String("feedback", feedbackCtx))
 		}
 	}
@@ -755,17 +830,20 @@ func (s *serviceImpl) GetOrCreateInsightStream(
 
 // RecordFeedback 记录用户点赞/点踩反馈
 func (s *serviceImpl) RecordFeedback(
-	ctx context.Context, insightID int64, score int, comment string,
+	ctx context.Context, insightID int64, req FeedbackRecordRequest,
 ) error {
-	if score != 1 && score != -1 {
+	if req.Score != 1 && req.Score != -1 {
 		return errors.New("score 只能为 1 或 -1")
 	}
 
 	feedback := &model.TrackInsightFeedback{
-		InsightID: insightID,
-		Score:     score,
-		Comment:   strings.TrimSpace(comment),
-		CreatedAt: time.Now(),
+		InsightID:      insightID,
+		Score:          req.Score,
+		Comment:        strings.TrimSpace(req.Comment),
+		ReasonCodes:    normalizeReasonCodes(req.ReasonCodes),
+		SectionKey:     strings.TrimSpace(req.SectionKey),
+		SourcePlatform: strings.TrimSpace(req.SourcePlatform),
+		CreatedAt:      time.Now(),
 	}
 	if err := model.CreateTrackInsightFeedback(ctx, feedback); err != nil {
 		return err
@@ -774,7 +852,7 @@ func (s *serviceImpl) RecordFeedback(
 		ctx,
 		"已记录歌曲解析反馈",
 		zap.Int64("insight_id", insightID),
-		zap.Int("score", score),
+		zap.Int("score", req.Score),
 	)
 
 	// 简单累加统计，避免每次都跑聚合
@@ -782,12 +860,51 @@ func (s *serviceImpl) RecordFeedback(
 	if err != nil {
 		return err
 	}
-	if score == 1 {
+	if req.Score == 1 {
 		insight.LikeCount++
-	} else if score == -1 {
+	} else if req.Score == -1 {
 		insight.DislikeCount++
 	}
 	return model.UpdateTrackInsight(ctx, insight)
+}
+
+// RecordAlbumFeedback 记录专辑音眸的点赞/点踩反馈。
+func (s *serviceImpl) RecordAlbumFeedback(
+	ctx context.Context, insightID int64, req FeedbackRecordRequest,
+) error {
+	if req.Score != 1 && req.Score != -1 {
+		return errors.New("score 只能为 1 或 -1")
+	}
+
+	feedback := &model.AlbumInsightFeedback{
+		InsightID:      insightID,
+		Score:          req.Score,
+		Comment:        strings.TrimSpace(req.Comment),
+		ReasonCodes:    normalizeReasonCodes(req.ReasonCodes),
+		SectionKey:     strings.TrimSpace(req.SectionKey),
+		SourcePlatform: strings.TrimSpace(req.SourcePlatform),
+		CreatedAt:      time.Now(),
+	}
+	if err := model.CreateAlbumInsightFeedback(ctx, feedback); err != nil {
+		return err
+	}
+	log.Info(
+		ctx,
+		"已记录专辑解析反馈",
+		zap.Int64("insight_id", insightID),
+		zap.Int("score", req.Score),
+	)
+
+	insight, err := model.GetAlbumInsightByID(ctx, insightID)
+	if err != nil {
+		return err
+	}
+	if req.Score == 1 {
+		insight.LikeCount++
+	} else if req.Score == -1 {
+		insight.DislikeCount++
+	}
+	return model.UpdateAlbumInsight(ctx, insight)
 }
 
 func getInsightByID(ctx context.Context, id int64) (*model.TrackInsight, error) {
@@ -1029,9 +1146,153 @@ func (s *serviceImpl) DeleteInsight(ctx context.Context, targetType common.Analy
 	}
 }
 
-// GetInsightFeedbacks 获取关联反馈
-func (s *serviceImpl) GetInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error) {
+// GetTrackInsightFeedbacks 获取曲目反馈记录。
+func (s *serviceImpl) GetTrackInsightFeedbacks(
+	ctx context.Context, insightID int64,
+) ([]*model.TrackInsightFeedback, error) {
 	return model.GetTrackInsightFeedbacks(ctx, insightID)
+}
+
+// GetAlbumInsightFeedbacks 获取专辑反馈记录。
+func (s *serviceImpl) GetAlbumInsightFeedbacks(
+	ctx context.Context, insightID int64,
+) ([]*model.AlbumInsightFeedback, error) {
+	return model.GetAlbumInsightFeedbacks(ctx, insightID)
+}
+
+// GetInsightFeedbackSummary 获取单条音眸的反馈摘要。
+func (s *serviceImpl) GetInsightFeedbackSummary(
+	ctx context.Context,
+	targetType common.AnalysisTargetType,
+	insightID int64,
+) (*InsightFeedbackSummary, error) {
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		insight, err := model.GetAlbumInsightByID(ctx, insightID)
+		if err != nil {
+			return nil, err
+		}
+		feedbacks, err := model.GetAlbumInsightFeedbacks(ctx, insightID)
+		if err != nil {
+			return nil, err
+		}
+		return buildFeedbackSummaryFromAlbum(insightID, targetType, insight.LikeCount, insight.DislikeCount, feedbacks), nil
+	default:
+		insight, err := getInsightByID(ctx, insightID)
+		if err != nil {
+			return nil, err
+		}
+		feedbacks, err := model.GetTrackInsightFeedbacks(ctx, insightID)
+		if err != nil {
+			return nil, err
+		}
+		return buildFeedbackSummaryFromTrack(insightID, targetType, insight.LikeCount, insight.DislikeCount, feedbacks), nil
+	}
+}
+
+// GetInsightFeedbackHistory 获取单条音眸的最近反馈历史。
+func (s *serviceImpl) GetInsightFeedbackHistory(
+	ctx context.Context,
+	targetType common.AnalysisTargetType,
+	insightID int64,
+	limit int,
+) ([]*InsightFeedbackHistoryItem, error) {
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		feedbacks, err := model.GetAlbumInsightFeedbacksLimited(ctx, insightID, limit)
+		if err != nil {
+			return nil, err
+		}
+		return convertAlbumFeedbackHistory(feedbacks), nil
+	default:
+		feedbacks, err := model.GetTrackInsightFeedbacksLimited(ctx, insightID, limit)
+		if err != nil {
+			return nil, err
+		}
+		return convertTrackFeedbackHistory(feedbacks), nil
+	}
+}
+
+// GetInsightHistory 获取单条音眸对应的历史版本摘要。
+func (s *serviceImpl) GetInsightHistory(
+	ctx context.Context,
+	targetType common.AnalysisTargetType,
+	insightID int64,
+	limit int,
+) ([]*model.InsightListItem, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	switch targetType {
+	case common.AnalysisTargetTypeAlbum:
+		current, err := model.GetAlbumInsightByID(ctx, insightID)
+		if err != nil {
+			return nil, err
+		}
+		insights, err := model.GetAlbumInsightsByLookup(
+			ctx,
+			model.AlbumInsightLookup{
+				AlbumID: current.AlbumID,
+				Artist:  current.Artist,
+				Album:   current.Album,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]int64, 0, len(insights))
+		for _, insight := range insights {
+			ids = append(ids, insight.ID)
+		}
+		totalScoreMap, err := model.GetAlbumInsightsTotalScores(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		sortAlbumInsightsWithScoreMap(insights, totalScoreMap)
+		if len(insights) > limit {
+			insights = insights[:limit]
+		}
+		scoreMap, err := model.GetAlbumInsightLatestFeedbackScores(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		return convertAlbumInsightHistoryList(insights, scoreMap), nil
+	default:
+		current, err := getInsightByID(ctx, insightID)
+		if err != nil {
+			return nil, err
+		}
+		insights, err := model.GetTrackInsightsByLookup(
+			ctx,
+			model.TrackInsightLookup{
+				TrackID: current.TrackID,
+				Artist:  current.Artist,
+				Album:   current.Album,
+				Track:   current.Track,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]int64, 0, len(insights))
+		for _, insight := range insights {
+			ids = append(ids, insight.ID)
+		}
+		totalScoreMap, err := model.GetInsightsTotalScores(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		sortTrackInsightsWithScoreMap(insights, totalScoreMap)
+		if len(insights) > limit {
+			insights = insights[:limit]
+		}
+		scoreMap, err := model.GetTrackInsightLatestFeedbackScores(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		return convertTrackInsightHistoryList(insights, scoreMap), nil
+	}
 }
 
 // GetLyrics 获取歌词内容，缺失时自动回源并复用歌词缓存写入逻辑。
@@ -1225,6 +1486,60 @@ func pickBestTrackInsightWithScores(
 	return insights[0]
 }
 
+func sortTrackInsightsByTotalScore(ctx context.Context, insights []*model.TrackInsight) error {
+	ids := make([]int64, 0, len(insights))
+	for _, insight := range insights {
+		if insight == nil {
+			continue
+		}
+		ids = append(ids, insight.ID)
+	}
+	scoreMap, err := model.GetInsightsTotalScores(ctx, ids)
+	if err != nil {
+		return err
+	}
+	sortTrackInsightsWithScoreMap(insights, scoreMap)
+	return nil
+}
+
+func sortAlbumInsightsByTotalScore(ctx context.Context, insights []*model.AlbumInsight) error {
+	ids := make([]int64, 0, len(insights))
+	for _, insight := range insights {
+		if insight == nil {
+			continue
+		}
+		ids = append(ids, insight.ID)
+	}
+	scoreMap, err := model.GetAlbumInsightsTotalScores(ctx, ids)
+	if err != nil {
+		return err
+	}
+	sortAlbumInsightsWithScoreMap(insights, scoreMap)
+	return nil
+}
+
+func sortTrackInsightsWithScoreMap(insights []*model.TrackInsight, scoreMap map[int64]int) {
+	sort.SliceStable(insights, func(i, j int) bool {
+		leftScore := scoreMap[insights[i].ID]
+		rightScore := scoreMap[insights[j].ID]
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
+		return insights[i].CreatedAt.After(insights[j].CreatedAt)
+	})
+}
+
+func sortAlbumInsightsWithScoreMap(insights []*model.AlbumInsight, scoreMap map[int64]int) {
+	sort.SliceStable(insights, func(i, j int) bool {
+		leftScore := scoreMap[insights[i].ID]
+		rightScore := scoreMap[insights[j].ID]
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
+		return insights[i].CreatedAt.After(insights[j].CreatedAt)
+	})
+}
+
 func truncatePromptText(text string, limit int) string {
 	text = strings.TrimSpace(text)
 	if text == "" || limit <= 0 {
@@ -1236,4 +1551,267 @@ func truncatePromptText(text string, limit int) string {
 		return text
 	}
 	return strings.TrimSpace(string(runes[:limit])) + "..."
+}
+
+func normalizeReasonCodes(reasonCodes []string) model.StringArray {
+	return model.StringArray(common.NormalizeInsightFeedbackReasons(reasonCodes))
+}
+
+func convertTrackFeedbackHistory(feedbacks []*model.TrackInsightFeedback) []*InsightFeedbackHistoryItem {
+	items := make([]*InsightFeedbackHistoryItem, 0, len(feedbacks))
+	for _, feedback := range feedbacks {
+		if feedback == nil {
+			continue
+		}
+		items = append(items, &InsightFeedbackHistoryItem{
+			ID:             feedback.ID,
+			InsightID:      feedback.InsightID,
+			Score:          feedback.Score,
+			Comment:        feedback.Comment,
+			ReasonCodes:    normalizeReasonCodes(feedback.ReasonCodes),
+			SectionKey:     feedback.SectionKey,
+			SourcePlatform: feedback.SourcePlatform,
+			CreatedAt:      feedback.CreatedAt,
+		})
+	}
+	return items
+}
+
+func convertAlbumFeedbackHistory(feedbacks []*model.AlbumInsightFeedback) []*InsightFeedbackHistoryItem {
+	items := make([]*InsightFeedbackHistoryItem, 0, len(feedbacks))
+	for _, feedback := range feedbacks {
+		if feedback == nil {
+			continue
+		}
+		items = append(items, &InsightFeedbackHistoryItem{
+			ID:             feedback.ID,
+			InsightID:      feedback.InsightID,
+			Score:          feedback.Score,
+			Comment:        feedback.Comment,
+			ReasonCodes:    normalizeReasonCodes(feedback.ReasonCodes),
+			SectionKey:     feedback.SectionKey,
+			SourcePlatform: feedback.SourcePlatform,
+			CreatedAt:      feedback.CreatedAt,
+		})
+	}
+	return items
+}
+
+func buildFeedbackSummaryFromTrack(
+	insightID int64,
+	targetType common.AnalysisTargetType,
+	likeCount, dislikeCount int64,
+	feedbacks []*model.TrackInsightFeedback,
+) *InsightFeedbackSummary {
+	history := convertTrackFeedbackHistory(feedbacks)
+	return buildFeedbackSummary(insightID, targetType, likeCount, dislikeCount, history)
+}
+
+func buildFeedbackSummaryFromAlbum(
+	insightID int64,
+	targetType common.AnalysisTargetType,
+	likeCount, dislikeCount int64,
+	feedbacks []*model.AlbumInsightFeedback,
+) *InsightFeedbackSummary {
+	history := convertAlbumFeedbackHistory(feedbacks)
+	return buildFeedbackSummary(insightID, targetType, likeCount, dislikeCount, history)
+}
+
+func buildFeedbackSummary(
+	insightID int64,
+	targetType common.AnalysisTargetType,
+	likeCount, dislikeCount int64,
+	history []*InsightFeedbackHistoryItem,
+) *InsightFeedbackSummary {
+	summary := &InsightFeedbackSummary{
+		InsightID:          insightID,
+		AnalysisTargetType: targetType,
+		LikeCount:          likeCount,
+		DislikeCount:       dislikeCount,
+		HasFeedback:        len(history) > 0,
+		TopReasonCodes:     []string{},
+	}
+	if len(history) == 0 {
+		return summary
+	}
+
+	summary.LatestFeedback = history[0]
+	reasonCounts := make(map[string]int)
+	for _, item := range history {
+		if item == nil {
+			continue
+		}
+		if summary.LatestNegativeFeedback == nil && item.Score < 0 {
+			summary.LatestNegativeFeedback = item
+		}
+		for _, reason := range item.ReasonCodes {
+			if trimmed := strings.TrimSpace(reason); trimmed != "" {
+				reasonCounts[trimmed]++
+			}
+		}
+	}
+	if len(reasonCounts) == 0 {
+		return summary
+	}
+
+	type reasonCount struct {
+		Reason string
+		Count  int
+	}
+	pairs := make([]reasonCount, 0, len(reasonCounts))
+	for reason, count := range reasonCounts {
+		pairs = append(pairs, reasonCount{Reason: reason, Count: count})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].Count != pairs[j].Count {
+			return pairs[i].Count > pairs[j].Count
+		}
+		return pairs[i].Reason < pairs[j].Reason
+	})
+	limit := 3
+	if len(pairs) < limit {
+		limit = len(pairs)
+	}
+	summary.TopReasonCodes = make([]string, 0, limit)
+	for _, pair := range pairs[:limit] {
+		summary.TopReasonCodes = append(summary.TopReasonCodes, pair.Reason)
+	}
+
+	return summary
+}
+
+func buildTrackNegativeFeedbackContext(feedbacks []*model.TrackInsightFeedback) string {
+	return buildNegativeFeedbackContext(convertTrackFeedbackHistory(feedbacks))
+}
+
+func buildAlbumNegativeFeedbackContext(feedbacks []*model.AlbumInsightFeedback) string {
+	return buildNegativeFeedbackContext(convertAlbumFeedbackHistory(feedbacks))
+}
+
+func buildNegativeFeedbackContext(history []*InsightFeedbackHistoryItem) string {
+	if len(history) == 0 {
+		return ""
+	}
+
+	reasonCounts := make(map[string]int)
+	sectionCounts := make(map[string]int)
+	commentLines := make([]string, 0, 3)
+	for _, item := range history {
+		if item == nil || item.Score >= 0 {
+			continue
+		}
+		for _, reason := range item.ReasonCodes {
+			if trimmed := strings.TrimSpace(reason); trimmed != "" {
+				reasonCounts[trimmed]++
+			}
+		}
+		if section := strings.TrimSpace(item.SectionKey); section != "" {
+			sectionCounts[section]++
+		}
+		if comment := truncatePromptText(item.Comment, 180); comment != "" && len(commentLines) < 3 {
+			commentLines = append(commentLines, comment)
+		}
+	}
+	if len(reasonCounts) == 0 && len(sectionCounts) == 0 && len(commentLines) == 0 {
+		return ""
+	}
+
+	lines := []string{"用户之前对分析提出过这些负反馈，请在本次结果中尽量避免重复这些问题："}
+	if topReasons := topCountKeys(reasonCounts, 4); len(topReasons) > 0 {
+		lines = append(lines, "高频问题标签："+strings.Join(topReasons, "、"))
+	}
+	if sections := topCountKeys(sectionCounts, 3); len(sections) > 0 {
+		lines = append(lines, "重点被指出的问题分区："+strings.Join(sections, "、"))
+	}
+	for index, comment := range commentLines {
+		lines = append(lines, fmt.Sprintf("最近负反馈 %d：%s", index+1, comment))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func topCountKeys(counts map[string]int, limit int) []string {
+	if len(counts) == 0 || limit <= 0 {
+		return nil
+	}
+	type pair struct {
+		Key   string
+		Count int
+	}
+	pairs := make([]pair, 0, len(counts))
+	for key, count := range counts {
+		pairs = append(pairs, pair{Key: key, Count: count})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].Count != pairs[j].Count {
+			return pairs[i].Count > pairs[j].Count
+		}
+		return pairs[i].Key < pairs[j].Key
+	})
+	if len(pairs) < limit {
+		limit = len(pairs)
+	}
+	keys := make([]string, 0, limit)
+	for _, item := range pairs[:limit] {
+		keys = append(keys, item.Key)
+	}
+	return keys
+}
+
+func convertTrackInsightHistoryList(
+	insights []*model.TrackInsight,
+	scoreMap map[int64]int,
+) []*model.InsightListItem {
+	items := make([]*model.InsightListItem, 0, len(insights))
+	for _, insight := range insights {
+		if insight == nil {
+			continue
+		}
+		items = append(items, &model.InsightListItem{
+			ID:                  insight.ID,
+			AnalysisTargetType:  common.AnalysisTargetTypeTrack,
+			TrackID:             insight.TrackID,
+			AlbumID:             0,
+			Artist:              insight.Artist,
+			Album:               insight.Album,
+			Track:               insight.Track,
+			AnalysisSummary:     insight.AnalysisSummary,
+			LLMProvider:         insight.LLMProvider,
+			LikeCount:           insight.LikeCount,
+			DislikeCount:        insight.DislikeCount,
+			LatestFeedbackScore: scoreMap[insight.ID],
+			CreatedAt:           insight.CreatedAt,
+			IsDisabled:          insight.IsDisabled,
+		})
+	}
+	return items
+}
+
+func convertAlbumInsightHistoryList(
+	insights []*model.AlbumInsight,
+	scoreMap map[int64]int,
+) []*model.InsightListItem {
+	items := make([]*model.InsightListItem, 0, len(insights))
+	for _, insight := range insights {
+		if insight == nil {
+			continue
+		}
+		items = append(items, &model.InsightListItem{
+			ID:                  insight.ID,
+			AnalysisTargetType:  common.AnalysisTargetTypeAlbum,
+			TrackID:             0,
+			AlbumID:             insight.AlbumID,
+			Artist:              insight.Artist,
+			Album:               insight.Album,
+			Track:               "",
+			AnalysisSummary:     insight.AnalysisSummary,
+			LLMProvider:         insight.LLMProvider,
+			LikeCount:           insight.LikeCount,
+			DislikeCount:        insight.DislikeCount,
+			LatestFeedbackScore: scoreMap[insight.ID],
+			CreatedAt:           insight.CreatedAt,
+			IsDisabled:          insight.IsDisabled,
+		})
+	}
+	return items
 }

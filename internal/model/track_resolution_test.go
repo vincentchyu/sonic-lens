@@ -28,6 +28,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				artist TEXT NOT NULL,
 				album TEXT NOT NULL,
+				album_subtitle TEXT,
 				track TEXT NOT NULL,
 				play_count INTEGER DEFAULT 0,
 				is_apple_music_fav BOOLEAN DEFAULT 0,
@@ -80,8 +81,11 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 			CREATE TABLE album (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				name TEXT NOT NULL,
+				name_subtitle TEXT,
+				title_metadata TEXT,
 				artist TEXT NOT NULL,
 				release_date TEXT,
+				original_release_date TEXT,
 				genre TEXT,
 				country TEXT,
 				status TEXT,
@@ -119,6 +123,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				album_artist TEXT,
 				track TEXT NOT NULL,
 				album TEXT NOT NULL,
+				album_subtitle TEXT,
 				album_id INTEGER DEFAULT 0,
 				duration INTEGER,
 				play_time DATETIME NOT NULL,
@@ -127,6 +132,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				track_number INTEGER,
 				disc_number INTEGER DEFAULT 1,
 				source TEXT NOT NULL,
+				cover_art_path TEXT,
 				trace_id TEXT,
 				root_span_id TEXT,
 				trace_sampled BOOLEAN DEFAULT 0,
@@ -147,6 +153,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				provider_favorite BOOLEAN NOT NULL DEFAULT 0,
 				artist TEXT NOT NULL,
 				album TEXT NOT NULL,
+				album_subtitle TEXT,
 				track TEXT NOT NULL,
 				album_artist TEXT,
 				track_number INTEGER,
@@ -170,6 +177,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				artist TEXT NOT NULL,
 				album TEXT NOT NULL,
+				album_subtitle TEXT,
 				album_artist TEXT,
 				normalized_identity_key TEXT NOT NULL,
 				play_record_ids_json TEXT,
@@ -700,6 +708,119 @@ func TestProcessTrackPlayRecordKeepsLibraryAppliedFalseWithoutAlbumBinding(t *te
 	var storedTrack Track
 	require.NoError(t, db.First(&storedTrack, 990).Error)
 	require.Equal(t, 3, storedTrack.PlayCount)
+}
+
+func TestGetTrackByMusicBrainzIdentityTxDoesNotCrossAlbumSubtitle(t *testing.T) {
+	db := newTrackResolutionTestDB(t, "track_resolution_mb_identity_subtitle")
+
+	require.NoError(t, db.Create(&Track{
+		ID:            335,
+		Artist:        "Pink Floyd",
+		Album:         "The Dark Side of the Moon",
+		AlbumSubtitle: "",
+		Track:         "Breathe (In the Air)",
+		TrackNumber:   2,
+		DiscNumber:    1,
+		MusicBrainzID: "ecbc7c9b-e79d-4ec8-ac77-44e4a7f7f1b8",
+		Version:       1,
+	}).Error)
+
+	trackObj, err := GetTrackByMusicBrainzIdentityTx(
+		db,
+		"ecbc7c9b-e79d-4ec8-ac77-44e4a7f7f1b8",
+		"Pink Floyd",
+		"The Dark Side of the Moon",
+		"(50th Anniversary) [Remastered]",
+		"Breathe (in the Air)",
+		2,
+		1,
+	)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	require.Nil(t, trackObj)
+}
+
+func TestProcessTrackPlayRecordUsesMatchingAlbumBindingForVersionedTrack(t *testing.T) {
+	db := newTrackResolutionTestDB(t, "track_play_record_versioned_album_binding")
+	ctx := context.Background()
+
+	require.NoError(t, db.Create(&Album{
+		ID:          177,
+		Name:        "The Dark Side of the Moon",
+		Artist:      "Pink Floyd",
+		ReleaseDate: "2016",
+		SyncStatus:  3,
+	}).Error)
+	require.NoError(t, db.Create(&Album{
+		ID:           4675,
+		Name:         "The Dark Side of the Moon",
+		NameSubtitle: "(50th Anniversary) [Remastered]",
+		Artist:       "Pink Floyd",
+		ReleaseDate:  "2023-10-13",
+		SyncStatus:   3,
+	}).Error)
+	require.NoError(t, db.Create(&Track{
+		ID:            1777,
+		Artist:        "Pink Floyd",
+		Album:         "The Dark Side of the Moon",
+		AlbumSubtitle: "(50th Anniversary) [Remastered]",
+		Track:         "Money",
+		TrackNumber:   6,
+		DiscNumber:    1,
+		MusicBrainzID: "7fef22bd-76aa-4803-b56b-93a5d6e70662",
+		PlayCount:     3,
+		Version:       1,
+	}).Error)
+	require.NoError(t, db.Create(&TrackAlbum{
+		ID:          1749,
+		TrackID:     1777,
+		AlbumID:     177,
+		TrackNumber: 6,
+		DiscNumber:  1,
+		Track:       "Money",
+	}).Error)
+	require.NoError(t, db.Create(&TrackAlbum{
+		ID:          5881,
+		TrackID:     1777,
+		AlbumID:     4675,
+		TrackNumber: 6,
+		DiscNumber:  1,
+		Track:       "Money",
+	}).Error)
+
+	record := &TrackPlayRecord{
+		ID:            6992,
+		Artist:        "Pink Floyd",
+		Album:         "The Dark Side of the Moon",
+		AlbumSubtitle: "(50th Anniversary) [Remastered]",
+		Track:         "Money",
+		TrackNumber:   6,
+		DiscNumber:    1,
+		Source:        "Apple Music",
+		PlayTime:      modelTestNow,
+	}
+	require.NoError(t, InsertTrackPlayRecord(ctx, record))
+
+	require.NoError(
+		t, ProcessTrackPlayRecord(
+			ctx,
+			record.ID,
+			TrackMetadata{
+				AlbumSubtitle: "(50th Anniversary) [Remastered]",
+				TrackNumber:   6,
+				DiscNumber:    1,
+				MusicBrainzID: "7fef22bd-76aa-4803-b56b-93a5d6e70662",
+				Confidence:    common.TrackMetadataConfidenceHigh,
+				Source:        "Apple Music",
+			},
+		),
+	)
+
+	var storedRecord TrackPlayRecord
+	require.NoError(t, db.First(&storedRecord, record.ID).Error)
+	require.Equal(t, int64(1777), storedRecord.ResolvedTrackID)
+	require.Equal(t, int64(4675), storedRecord.AlbumID)
+	require.Equal(t, "(50th Anniversary) [Remastered]", storedRecord.AlbumSubtitle)
+	require.True(t, storedRecord.LibraryApplied)
 }
 
 func TestProcessTrackPlayRecordBackfillsResolvedTrackFields(t *testing.T) {

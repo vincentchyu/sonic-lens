@@ -50,6 +50,11 @@ func TestLinkAlbumToMBIDTx(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE `album` SET `sync_status`=?,`updated_at`=? WHERE id = ?")).
 		WithArgs(2, modelTestNow, int64(30)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(
+		regexp.QuoteMeta("INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)"),
+	).
+		WithArgs("album", int64(30), "upsert").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	require.NoError(t, LinkAlbumToMBIDTx(GetDB(), 30, 40, "mbid-30"))
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -75,6 +80,11 @@ func TestLinkAlbumToMBIDUsesContextDB(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE `album` SET `sync_status`=?,`updated_at`=? WHERE id = ?")).
 		WithArgs(2, modelTestNow, int64(31)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(
+		regexp.QuoteMeta("INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)"),
+	).
+		WithArgs("album", int64(31), "upsert").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	require.NoError(t, LinkAlbumToMBID(ctx, 31, 41, "mbid-31"))

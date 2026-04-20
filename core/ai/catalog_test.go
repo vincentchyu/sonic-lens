@@ -2,10 +2,12 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 )
 
@@ -132,4 +134,65 @@ func TestProviderFactoryRegistryReusesSingletonUntilConfigChanges(t *testing.T) 
 	if first == third {
 		t.Fatal("expected factory to rebuild after config change")
 	}
+}
+
+func TestGetCachedModelsFallsBackToGeminiDefaultModelWhenCatalogUnavailable(t *testing.T) {
+	factory := &stubProviderFactory{
+		platform:     common.AIModelPlatformGemini,
+		defaultModel: "gemini-3-flash-preview",
+		listErr:      errors.New("Error 400, Message: User location is not supported for the API use., Status: FAILED_PRECONDITION, Details: []"),
+	}
+
+	models, err := getCachedModels(context.Background(), factory)
+	if err != nil {
+		t.Fatalf("getCachedModels() error = %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(models))
+	}
+	if !models[0].IsDefault {
+		t.Fatal("fallback model should be marked as default")
+	}
+	if models[0].ID != factory.defaultModel {
+		t.Fatalf("model ID = %q, want %q", models[0].ID, factory.defaultModel)
+	}
+}
+
+type stubProviderFactory struct {
+	platform     common.AIModelPlatform
+	defaultModel string
+	listModels   []ModelOption
+	listErr      error
+}
+
+func (f *stubProviderFactory) Platform() common.AIModelPlatform {
+	return f.platform
+}
+
+func (f *stubProviderFactory) DisplayName() string {
+	return string(f.platform)
+}
+
+func (f *stubProviderFactory) Configured() bool {
+	return true
+}
+
+func (f *stubProviderFactory) DefaultModel() string {
+	return f.defaultModel
+}
+
+func (f *stubProviderFactory) Create(model string) (LLMProvider, error) {
+	return nil, nil
+}
+
+func (f *stubProviderFactory) ListModels(ctx context.Context) ([]ModelOption, error) {
+	return f.listModels, f.listErr
+}
+
+func (f *stubProviderFactory) CacheFingerprint() string {
+	return "stub"
+}
+
+func (f *stubProviderFactory) InitErr() error {
+	return nil
 }

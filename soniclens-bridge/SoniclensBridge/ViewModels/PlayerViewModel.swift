@@ -6,16 +6,18 @@ final class PlayerViewModel: ObservableObject {
     @Published var insights: [Insight] = []
     @Published var lyricLines: [LyricLine] = []
     @Published var currentLineID: UUID?
+    @Published var currentLineIndex: Int?
     @Published var currentTime: TimeInterval = 0
     @Published var playbackState: PlaybackActivityState = .inactive
+    @Published var selectedInsightIndex: Int = 0
+    @Published var insightViewMode: InsightViewMode = .current
 
-    private static let pauseStaleTimeout: TimeInterval = 5
-    private static let inactiveTimeout: TimeInterval = 10
     private var timer: Timer?
     private var progressAnchorDate: Date?
     private var progressAnchorTime: TimeInterval = 0
     private var lastSyncDate: Date?
     private var loadSequence: UInt64 = 0
+    private var timedLyricMoments: [TimedLyricMoment] = []
 
     func load(
         using server: ServerConfig,
@@ -27,48 +29,47 @@ final class PlayerViewModel: ObservableObject {
     ) async {
         loadSequence &+= 1
         let requestToken = loadSequence
-        let client = APIClient(baseURL: server.baseURL)
-        do {
-            async let lyricsResponse: TrackLyricsResponse = client.getJSON(
-                path: APIPath.trackLyrics,
-                queryItems: [
-                    URLQueryItem(name: "artist", value: artist),
-                    URLQueryItem(name: "album", value: album ?? ""),
-                    URLQueryItem(name: "track", value: track),
-                    URLQueryItem(name: "trackNumber", value: trackNumber.map(String.init)),
-                    URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
-                ]
-            )
-            async let insightResponse: TrackInsightResponse = client.getJSON(
-                path: APIPath.trackInsight,
-                queryItems: [
-                    URLQueryItem(name: "artist", value: artist),
-                    URLQueryItem(name: "album", value: album ?? ""),
-                    URLQueryItem(name: "track", value: track),
-                    URLQueryItem(name: "trackNumber", value: trackNumber.map(String.init)),
-                    URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
-                ]
-            )
-            let lyrics = try await lyricsResponse
-            let insight = try await insightResponse
-            guard !Task.isCancelled, requestToken == loadSequence else { return }
+        let request = NowPlayingPayloadRequest(
+            serverBaseURL: server.baseURL.absoluteString,
+            artist: artist,
+            album: album,
+            track: track,
+            trackNumber: trackNumber,
+            discNumber: discNumber
+        )
 
-            self.lyrics = lyrics
-            lyricLines = LRCParser.parseLyrics(lyrics.lyrics, hasLRC: lyrics.hasLRC)
-            applyPlaybackState(time: currentTime, forceTimeUpdate: true)
-            insights = insight.insights
-        } catch {
-            // TODO: expose error state
+        guard let snapshot = await NowPlayingPayloadStore.shared.snapshot(using: server, request: request) else {
+            return
         }
+        guard !Task.isCancelled, requestToken == loadSequence else { return }
+
+        self.lyrics = snapshot.lyricsResponse
+        lyricLines = snapshot.lyricLines
+        timedLyricMoments = Self.timedLyricMoments(from: snapshot.lyricLines)
+        applyPlaybackState(time: currentTime, forceTimeUpdate: true)
+        insights = snapshot.insightResponse.insights
+        selectedInsightIndex = Self.recommendedInsightIndex(
+            in: insights,
+            recommendedInsightID: snapshot.insightResponse.recommendedInsightID
+        )
+        insightViewMode = .current
     }
 
-    func startProgress(position: Int?, positionMs: Int?) {
+    private static func recommendedInsightIndex(in insights: [Insight], recommendedInsightID: Int64?) -> Int {
+        guard let recommendedInsightID,
+              let index = insights.firstIndex(where: { $0.id == recommendedInsightID }) else {
+            return 0
+        }
+        return index
+    }
+
+    func startProgress(position: Int?, positionMs: Int?, receivedAt: Date = Date()) {
         stopProgress()
         let startTime = resolvedTime(position: position, positionMs: positionMs)
         progressAnchorTime = startTime
         progressAnchorDate = Date()
-        lastSyncDate = Date()
-        playbackState = .active
+        lastSyncDate = receivedAt
+        playbackState = activityState(for: receivedAt)
         applyPlaybackState(time: startTime, forceTimeUpdate: true)
         timer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -87,16 +88,17 @@ final class PlayerViewModel: ObservableObject {
         playbackState = .inactive
         currentTime = 0
         currentLineID = nil
+        currentLineIndex = nil
     }
 
-    func syncProgress(position: Int?, positionMs: Int?) {
+    func syncProgress(position: Int?, positionMs: Int?, receivedAt: Date = Date()) {
         let incoming = resolvedTime(position: position, positionMs: positionMs)
-        lastSyncDate = Date()
+        lastSyncDate = receivedAt
         if timer == nil || playbackState.isInactive {
-            startProgress(position: position, positionMs: positionMs)
+            startProgress(position: position, positionMs: positionMs, receivedAt: receivedAt)
             return
         }
-        playbackState = .active
+        playbackState = activityState(for: receivedAt)
         if abs(incoming - currentTime) > 0.35 {
             progressAnchorTime = incoming
             progressAnchorDate = Date()
@@ -105,10 +107,14 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func applyPlaybackState(time: TimeInterval, forceTimeUpdate: Bool) {
-        let nextLineID = currentLineID(for: time)
+        let nextLineIndex = currentLineIndex(for: time)
+        let nextLineID = nextLineIndex.flatMap { lyricLines.indices.contains($0) ? lyricLines[$0].id : nil }
         let secondChanged = Int(time.rounded(.down)) != Int(currentTime.rounded(.down))
         if forceTimeUpdate || secondChanged || nextLineID != currentLineID {
             currentTime = time
+        }
+        if nextLineIndex != currentLineIndex {
+            currentLineIndex = nextLineIndex
         }
         if nextLineID != currentLineID {
             currentLineID = nextLineID
@@ -118,12 +124,12 @@ final class PlayerViewModel: ObservableObject {
     private func refreshCurrentTime() {
         guard let progressAnchorDate, let lastSyncDate else { return }
         let silence = Date().timeIntervalSince(lastSyncDate)
-        if silence >= Self.inactiveTimeout {
+        if silence >= NowPlaying.inactiveTimeout {
             playbackState = .inactive
             stopProgress()
             return
         }
-        if silence >= Self.pauseStaleTimeout {
+        if silence >= NowPlaying.pauseStaleTimeout {
             playbackState = .pausedStale
             return
         }
@@ -139,19 +145,47 @@ final class PlayerViewModel: ObservableObject {
         return TimeInterval(position ?? 0)
     }
 
-    private func currentLineID(for time: TimeInterval) -> UUID? {
-        guard lyricLines.contains(where: { $0.time != nil }) else {
-            return nil
+    private func activityState(for receivedAt: Date) -> PlaybackActivityState {
+        let silence = Date().timeIntervalSince(receivedAt)
+        if silence >= NowPlaying.inactiveTimeout {
+            return .inactive
         }
-        var current: LyricLine?
-        for line in lyricLines {
-            guard let lineTime = line.time else { continue }
-            if lineTime <= time {
-                current = line
+        if silence >= NowPlaying.pauseStaleTimeout {
+            return .pausedStale
+        }
+        return .active
+    }
+
+    private func currentLineIndex(for time: TimeInterval) -> Int? {
+        guard !timedLyricMoments.isEmpty else { return nil }
+
+        var low = 0
+        var high = timedLyricMoments.count - 1
+        var candidate: Int?
+
+        while low <= high {
+            let mid = (low + high) / 2
+            let moment = timedLyricMoments[mid]
+            if moment.time <= time {
+                candidate = moment.index
+                low = mid + 1
             } else {
-                break
+                high = mid - 1
             }
         }
-        return current?.id
+
+        return candidate
+    }
+
+    private static func timedLyricMoments(from lines: [LyricLine]) -> [TimedLyricMoment] {
+        lines.enumerated().compactMap { index, line in
+            guard let time = line.time else { return nil }
+            return TimedLyricMoment(time: time, index: index)
+        }
     }
 }
+
+private struct TimedLyricMoment {
+    let time: TimeInterval
+    let index: Int
+    }

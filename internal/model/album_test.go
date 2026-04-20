@@ -8,6 +8,8 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"github.com/vincentchyu/sonic-lens/common"
 )
 
 func TestGetOrCreateAlbumTxPrefersCuratedAlbumWhenReleaseDateMissing(t *testing.T) {
@@ -19,30 +21,30 @@ func TestGetOrCreateAlbumTxPrefersCuratedAlbumWhenReleaseDateMissing(t *testing.
 	}
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? ORDER BY `album`.`id` LIMIT ?"),
+		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? AND COALESCE(name_subtitle, '') = ? ORDER BY `album`.`id` LIMIT ?"),
 	).
-		WithArgs("Miles Davis", "Kind of Blue", "", 1).
+		WithArgs("Miles Davis", "Kind of Blue", "", "", 1).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "artist", "release_date", "sync_status",
+			"id", "name", "artist", "release_date", "original_release_date", "sync_status",
 		}))
 
 	mock.ExpectQuery(
 		regexp.QuoteMeta(
-			"SELECT * FROM `album` WHERE artist = ? AND name = ? AND sync_status = ? ORDER BY CASE WHEN release_date = '' OR release_date IS NULL THEN 1 ELSE 0 END ASC, id ASC,`album`.`id` LIMIT ?",
+			"SELECT * FROM `album` WHERE artist = ? AND name = ? AND sync_status = ? AND COALESCE(name_subtitle, '') = ? ORDER BY CASE WHEN release_date = '' OR release_date IS NULL THEN 1 ELSE 0 END ASC, id ASC,`album`.`id` LIMIT ?",
 		),
 	).
-		WithArgs("Miles Davis", "Kind of Blue", 3, 1).
+		WithArgs("Miles Davis", "Kind of Blue", 3, "", 1).
 		WillReturnRows(
 			sqlmock.NewRows([]string{
-				"id", "name", "artist", "release_date", "sync_status", "created_at", "updated_at",
-			}).AddRow(21, "Kind of Blue", "Miles Davis", "1959-08-17", 3, modelTestNow, modelTestNow),
+				"id", "name", "artist", "release_date", "original_release_date", "sync_status", "created_at", "updated_at",
+			}).AddRow(21, "Kind of Blue", "Miles Davis", "1959-08-17", "1959-08-17", 3, modelTestNow, modelTestNow),
 		)
 
 	mock.ExpectExec(regexp.QuoteMeta(
-		"UPDATE `album` SET `name`=?,`artist`=?,`release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
+		"UPDATE `album` SET `name`=?,`name_subtitle`=?,`artist`=?,`release_date`=?,`original_release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
 	)).
 		WithArgs(
-			"Kind of Blue", "Miles Davis", "1959-08-17", "", "", "", "", "", 0, "", 3, "", "", "",
+			"Kind of Blue", "", "Miles Davis", "1959-08-17", "1959-08-17", "", "", "", "", "", 0, "", 3, "", "", "",
 			modelTestNow, modelTestNow, int64(21),
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -55,56 +57,58 @@ func TestGetOrCreateAlbumTxPrefersCuratedAlbumWhenReleaseDateMissing(t *testing.
 	require.NoError(t, getOrCreateAlbumTx(GetDB(), incoming))
 	require.Equal(t, int64(21), incoming.ID)
 	require.Equal(t, "1959-08-17", incoming.ReleaseDate)
+	require.Equal(t, "1959-08-17", incoming.OriginalReleaseDate)
 	require.Equal(t, 3, incoming.SyncStatus)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetOrCreateAlbumTxReusesExistingAlbumWhenIncomingReleaseDateDiffers(t *testing.T) {
+func TestGetOrCreateAlbumTxCreatesNewAlbumWhenIncomingReleaseDateDiffers(t *testing.T) {
 	_, mock := newModelTestDB(t)
 
 	incoming := &Album{
-		Name:        "The Dark Side of the Moon",
-		Artist:      "Pink Floyd",
-		ReleaseDate: "1973-03-24",
+		Name:                "The Dark Side of the Moon",
+		Artist:              "Pink Floyd",
+		ReleaseDate:         "1973-03-24",
+		OriginalReleaseDate: "1973-03-01",
 	}
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? ORDER BY `album`.`id` LIMIT ?"),
+		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? AND COALESCE(name_subtitle, '') = ? ORDER BY `album`.`id` LIMIT ?"),
 	).
-		WithArgs("Pink Floyd", "The Dark Side of the Moon", "1973-03-24", 1).
+		WithArgs("Pink Floyd", "The Dark Side of the Moon", "1973-03-24", "", 1).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "artist", "release_date",
+			"id", "name", "artist", "release_date", "original_release_date",
 		}))
 
 	mock.ExpectQuery(
 		regexp.QuoteMeta(
-			"SELECT * FROM `album` WHERE artist = ? AND name = ? ORDER BY CASE WHEN release_date = '' OR release_date IS NULL THEN 0 ELSE 1 END ASC, id ASC,`album`.`id` LIMIT ?",
+			"SELECT * FROM `album` WHERE (artist = ? AND name = ? AND COALESCE(name_subtitle, '') = ?) AND (release_date = '' OR release_date IS NULL) ORDER BY CASE WHEN release_date = '' OR release_date IS NULL THEN 0 ELSE 1 END ASC, id ASC,`album`.`id` LIMIT ?",
 		),
 	).
-		WithArgs("Pink Floyd", "The Dark Side of the Moon", 1).
-		WillReturnRows(
-			sqlmock.NewRows([]string{
-				"id", "name", "artist", "release_date", "sync_status", "created_at", "updated_at",
-			}).AddRow(177, "The Dark Side of the Moon", "Pink Floyd", "1973-03-01", 0, modelTestNow, modelTestNow),
-		)
+		WithArgs("Pink Floyd", "The Dark Side of the Moon", "", 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "name", "artist", "release_date", "original_release_date",
+		}))
 
-	mock.ExpectExec(regexp.QuoteMeta(
-		"UPDATE `album` SET `name`=?,`artist`=?,`release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
-	)).
+	mock.ExpectExec(
+		regexp.QuoteMeta(
+			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		),
+	).
 		WithArgs(
-			"The Dark Side of the Moon", "Pink Floyd", "1973-03-01", "", "", "", "", "", 0, "", 0, "", "", "",
-			modelTestNow, modelTestNow, int64(177),
+			"The Dark Side of the Moon", "", "Pink Floyd", "1973-03-24", "1973-03-01", "", "", "", "", "", 1, "", 0, "", "", "",
 		).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+		WillReturnResult(sqlmock.NewResult(178, 1))
 	mock.ExpectExec(
 		regexp.QuoteMeta("INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)"),
 	).
-		WithArgs("album", int64(177), "upsert").
+		WithArgs("album", int64(178), "upsert").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	require.NoError(t, getOrCreateAlbumTx(GetDB(), incoming))
-	require.Equal(t, int64(177), incoming.ID)
-	require.Equal(t, "1973-03-01", incoming.ReleaseDate)
+	require.Equal(t, int64(178), incoming.ID)
+	require.Equal(t, "1973-03-24", incoming.ReleaseDate)
+	require.Equal(t, "1973-03-01", incoming.OriginalReleaseDate)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -182,6 +186,49 @@ func TestUpdateAlbumFieldsUsesContextDB(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	require.NoError(t, UpdateAlbumFields(ctx, 14, map[string]interface{}{"total_discs": 2}))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUpdateAlbumTitleMetadataByIDTx(t *testing.T) {
+	_, mock := newModelTestDB(t)
+
+	mock.ExpectExec(
+		regexp.QuoteMeta(
+			"UPDATE `album` SET `title_metadata`=?,`updated_at`=? WHERE id = ? AND ((title_metadata IS NULL OR title_metadata = '' OR title_metadata <> ?))",
+		),
+	).
+		WithArgs(
+			`{"source_display_title":"Kid A (Deluxe Edition)","official_title":"Kid A","title_versions":[{"text":"Deluxe Edition","type":"edition","bracketed":false,"parenthesized":true}],"normalized_display_title":"Kid A (Deluxe Edition)"}`,
+			modelTestNow,
+			int64(15),
+			`{"source_display_title":"Kid A (Deluxe Edition)","official_title":"Kid A","title_versions":[{"text":"Deluxe Edition","type":"edition","bracketed":false,"parenthesized":true}],"normalized_display_title":"Kid A (Deluxe Edition)"}`,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(
+		regexp.QuoteMeta("INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)"),
+	).
+		WithArgs("album", int64(15), "upsert").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	require.NoError(
+		t,
+		UpdateAlbumTitleMetadataByIDTx(
+			GetDB(),
+			15,
+			&common.AlbumTitleMetadata{
+				SourceDisplayTitle: "Kid A (Deluxe Edition)",
+				OfficialTitle:      "Kid A",
+				TitleVersions: []common.AlbumTitleVersion{
+					{
+						Text:          "Deluxe Edition",
+						Type:          common.AlbumTitleVersionTypeEdition,
+						Parenthesized: true,
+					},
+				},
+				NormalizedDisplayTitle: "Kid A (Deluxe Edition)",
+			},
+		),
+	)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

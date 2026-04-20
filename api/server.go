@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/ai"
 	"github.com/vincentchyu/sonic-lens/core/artwork"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	coreredis "github.com/vincentchyu/sonic-lens/core/redis"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 	artistprofilelogic "github.com/vincentchyu/sonic-lens/internal/logic/artistprofile"
@@ -182,6 +184,7 @@ func setupRouter(name string) *gin.Engine {
 		// 记录日志但不阻断整个服务启动，前端调用时再返回错误
 		log.Warn(context.Background(), "初始化歌词解析服务失败，将暂时无法使用 AI 歌词解析功能", zap.Error(insightErr))
 	}
+	registerInsightFeedbackRoutes(r, insightService)
 	r.GET(
 		"/api/track-play-counts", func(c *gin.Context) {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
@@ -257,7 +260,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取某首歌已有的 AI 解析结果 (仅查询)
 	r.GET(
-		"/api/track-insight", redisCache(1*time.Minute), func(c *gin.Context) {
+		"/api/track-insight", func(c *gin.Context) {
 			if insightService == nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 歌词解析服务未初始化"})
 				return
@@ -280,7 +283,13 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"insights": insights})
+			c.JSON(
+				http.StatusOK,
+				gin.H{
+					"insights":               insights,
+					"recommended_insight_id": recommendedTrackInsightID(insights),
+				},
+			)
 		},
 	)
 
@@ -309,7 +318,12 @@ func setupRouter(name string) *gin.Engine {
 			}
 			c.JSON(
 				http.StatusOK,
-				gin.H{"insights": sanitizeAlbumInsightsForClient(insights, shouldHideAlbumInsightDebugData(c))},
+				gin.H{
+					"insights": sanitizeAlbumInsightsForClient(
+						insights, shouldHideAlbumInsightDebugData(c),
+					),
+					"recommended_insight_id": recommendedAlbumInsightID(insights),
+				},
 			)
 		},
 	)
@@ -366,50 +380,6 @@ func setupRouter(name string) *gin.Engine {
 					"updated_at":         record.UpdatedAt,
 				},
 			)
-		},
-	)
-
-	// 对某次歌词解析结果进行点赞 / 点踩反馈
-	r.POST(
-		"/api/track-insight/:id/feedback", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(
-					http.StatusServiceUnavailable, gin.H{
-						"error": "AI 歌词解析服务未正确初始化，请检查配置",
-					},
-				)
-				return
-			}
-
-			idStr := c.Param("id")
-			insightID, err := strconv.ParseInt(idStr, 10, 64)
-			if err != nil || insightID <= 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 insight ID"})
-				return
-			}
-
-			var req struct {
-				Score   int    `json:"score"`   // 1 点赞，-1 点踩
-				Comment string `json:"comment"` // 可选备注
-			}
-			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
-				return
-			}
-
-			ctx := c.Request.Context()
-			if err := insightService.RecordFeedback(ctx, insightID, req.Score, req.Comment); err != nil {
-				log.Error(
-					ctx, "记录歌词解析反馈失败",
-					zap.Int64("insight_id", insightID),
-					zap.Int("score", req.Score),
-					zap.Error(err),
-				)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录反馈失败"})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		},
 	)
 
@@ -509,7 +479,7 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
-	// 直接删除解析记录
+	// 直接删除解析记录及其关联流水
 	r.DELETE(
 		"/api/insights/:id", func(c *gin.Context) {
 			if insightService == nil {
@@ -536,6 +506,21 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+
+			if client := coreredis.GetRedisClient(); client != nil {
+				cacheKey := buildRedisCacheKey(
+					http.MethodGet,
+					"/api/insights/"+idStr+"/logs",
+					url.Values{"analysis_target_type": []string{string(targetType)}},
+					c.GetHeader("Accept"),
+				)
+				if err := client.Del(c.Request.Context(), cacheKey).Err(); err != nil {
+					log.Warn(
+						c.Request.Context(), "清理音眸日志缓存失败", zap.Error(err), zap.String("cache_key", cacheKey),
+					)
+				}
+			}
+
 			c.JSON(http.StatusOK, gin.H{"status": "ok", "analysis_target_type": targetType})
 		},
 	)
@@ -598,32 +583,9 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
-	// 获取关联的用户反馈记录
-	r.GET(
-		"/api/insights/:id/feedbacks", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
-				return
-			}
-			idStr := c.Param("id")
-			insightID, err := strconv.ParseInt(idStr, 10, 64)
-			if err != nil || insightID <= 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
-				return
-			}
-
-			feedbacks, err := insightService.GetInsightFeedbacks(c.Request.Context(), insightID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"feedbacks": feedbacks})
-		},
-	)
-
 	// 获取歌词数据（优先查库，没有则调用 lrcapi 等）
 	r.GET(
-		"/api/track-lyrics", redisCache(20*time.Minute), func(c *gin.Context) {
+		"/api/track-lyrics", redisCache(5*time.Minute), func(c *gin.Context) {
 			artist := c.Query("artist")
 			album := c.Query("album")
 			track := c.Query("track")
@@ -862,7 +824,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// 获取已缓存的候选结果
 	r.GET(
-		"/api/musicbrainz/candidates/:album_id", redisCache(10*time.Minute), func(c *gin.Context) {
+		"/api/musicbrainz/candidates/:album_id", func(c *gin.Context) {
 			albumID, _ := strconv.ParseInt(c.Param("album_id"), 10, 64)
 			if albumID <= 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
@@ -1648,6 +1610,7 @@ func setupRouter(name string) *gin.Engine {
 				metadata.Genre = currentPlaying.Data.PlayerInfoHandler.GetGenre()
 				metadata.Composer = currentPlaying.Data.PlayerInfoHandler.GetComposer()
 				metadata.ReleaseDate = currentPlaying.Data.PlayerInfoHandler.GetReleaseDate()
+				metadata.OriginalReleaseDate = currentPlaying.Data.PlayerInfoHandler.GetOriginalReleaseDate()
 				metadata.MusicBrainzID = currentPlaying.Data.PlayerInfoHandler.GetMusicBrainzID()
 				metadata.Source = currentPlaying.Data.PlayerInfoHandler.GetSource()
 				metadata.BundleID = currentPlaying.Data.PlayerInfoHandler.GetBundleID()
@@ -1728,6 +1691,20 @@ func parseInt8Query(c *gin.Context, key string) int8 {
 	return int8(v)
 }
 
+func parsePathInt64(c *gin.Context, paramName, badRequestMessage string) (int64, bool) {
+	raw := strings.TrimSpace(c.Param(paramName))
+	if raw == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": badRequestMessage})
+		return 0, false
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": badRequestMessage})
+		return 0, false
+	}
+	return value, true
+}
+
 func parseInt64Query(c *gin.Context, key string) int64 {
 	raw := strings.TrimSpace(c.Query(key))
 	if raw == "" {
@@ -1738,6 +1715,18 @@ func parseInt64Query(c *gin.Context, key string) int64 {
 		return 0
 	}
 	return v
+}
+
+func parseQueryIntWithDefault(c *gin.Context, key string, defaultValue int) int {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultValue
+	}
+	return value
 }
 
 func isAISelectionBadRequest(err error) bool {
@@ -1789,6 +1778,34 @@ func sanitizeAlbumInsightsForClient(insights []*model.AlbumInsight, hideDebugDat
 	return sanitized
 }
 
+func recommendedTrackInsightID(insights []*insight.InsightWithScore) int64 {
+	if len(insights) == 0 || insights[0] == nil || insights[0].TrackInsight == nil {
+		return 0
+	}
+	return insights[0].TrackInsight.ID
+}
+
+func recommendedTrackInsightModelID(insights []*model.TrackInsight) int64 {
+	if len(insights) == 0 || insights[0] == nil {
+		return 0
+	}
+	return insights[0].ID
+}
+
+func recommendedAlbumInsightID(insights []*model.AlbumInsight) int64 {
+	if len(insights) == 0 || insights[0] == nil {
+		return 0
+	}
+	return insights[0].ID
+}
+
+func recommendedInsightListItemID(items []*model.InsightListItem) int64 {
+	if len(items) == 0 || items[0] == nil {
+		return 0
+	}
+	return items[0].ID
+}
+
 type aiRouteService interface {
 	GetAvailableAIPlatforms() []ai.PlatformOption
 	GetPlatformModels(ctx context.Context, platform common.AIModelPlatform) ([]ai.ModelOption, error)
@@ -1807,7 +1824,12 @@ type aiRouteService interface {
 		ctx context.Context, req insight.CreateInsightJobRequest,
 	) (*model.InsightJob, bool, error)
 	GetInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error)
+	GetInsightJobCallLogs(ctx context.Context, jobID string) ([]*model.LLMCallLog, error)
+	ListInsightJobs(ctx context.Context, query model.InsightJobListQuery) ([]*model.InsightJob, int64, error)
 	UpdateInsightJobLiveActivityToken(ctx context.Context, jobID, token string) (*model.InsightJob, error)
+	CancelInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error)
+	RetryInsightJob(ctx context.Context, jobID string) (*model.InsightJob, bool, error)
+	DeleteInsightJob(ctx context.Context, jobID string) error
 }
 
 // registerAIRoutes 注册 AI 模型目录与解析相关路由，便于复用和单测注入。
@@ -1906,6 +1928,51 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 	)
 
 	r.GET(
+		"/api/insight-jobs", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			statusText := strings.TrimSpace(c.Query("status"))
+			targetTypeText := strings.TrimSpace(c.Query("analysis_target_type"))
+
+			query := model.InsightJobListQuery{
+				Limit:   limit,
+				Offset:  offset,
+				Keyword: strings.TrimSpace(c.Query("keyword")),
+			}
+			if statusText != "" {
+				status := common.ParseInsightJobPhase(statusText)
+				if string(status) != strings.ToLower(statusText) {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务状态"})
+					return
+				}
+				query.Status = status
+				query.HasStatus = true
+			}
+			if targetTypeText != "" {
+				targetType := common.ParseAnalysisTargetType(targetTypeText)
+				if string(targetType) != strings.ToLower(targetTypeText) {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "无效的分析对象类型"})
+					return
+				}
+				query.TargetType = targetType
+				query.HasTargetType = true
+			}
+
+			jobs, total, err := insightService.ListInsightJobs(c.Request.Context(), query)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"jobs": jobs, "total": total})
+		},
+	)
+
+	r.GET(
 		"/api/insight-jobs/:id", func(c *gin.Context) {
 			if insightService == nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
@@ -1922,7 +1989,118 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 				return
 			}
 
+			callLogs, err := insightService.GetInsightJobCallLogs(c.Request.Context(), job.ID)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"job": job, "call_logs": callLogs})
+		},
+	)
+
+	r.POST(
+		"/api/insight-jobs/:id/cancel", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			job, err := insightService.CancelInsightJob(c.Request.Context(), c.Param("id"))
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				if strings.Contains(err.Error(), "不能为空") || strings.Contains(err.Error(), "不能取消") {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
 			c.JSON(http.StatusOK, gin.H{"job": job})
+		},
+	)
+
+	r.DELETE(
+		"/api/insight-jobs/:id", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			jobID := c.Param("id")
+			job, err := insightService.GetInsightJob(c.Request.Context(), jobID)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+			if job.Status != common.InsightJobPhaseFailed && job.Status != common.InsightJobPhaseCanceled {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "仅允许删除失败或已取消的任务"})
+				return
+			}
+
+			if err := insightService.DeleteInsightJob(c.Request.Context(), jobID); err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				if strings.Contains(err.Error(), "仅允许删除失败或已取消的任务") {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			if client := coreredis.GetRedisClient(); client != nil {
+				cacheKey := buildRedisCacheKey(
+					http.MethodGet,
+					"/api/insight-jobs/"+jobID,
+					url.Values{},
+					c.GetHeader("Accept"),
+				)
+				if err := client.Del(c.Request.Context(), cacheKey).Err(); err != nil {
+					log.Warn(
+						c.Request.Context(), "清理音眸任务详情缓存失败", zap.Error(err),
+						zap.String("cache_key", cacheKey),
+					)
+				}
+			}
+
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	r.POST(
+		"/api/insight-jobs/:id/retry", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			job, existing, err := insightService.RetryInsightJob(c.Request.Context(), c.Param("id"))
+			if err != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					status = http.StatusNotFound
+				}
+				if strings.Contains(err.Error(), "不能为空") || isAISelectionBadRequest(err) {
+					status = http.StatusBadRequest
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"job": job, "existing": existing})
 		},
 	)
 
@@ -2008,8 +2186,9 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 
 			c.JSON(
 				http.StatusOK, gin.H{
-					"insights": insights,
-					"cached":   cached,
+					"insights":               insights,
+					"cached":                 cached,
+					"recommended_insight_id": recommendedTrackInsightModelID(insights),
 				},
 			)
 		},
@@ -2062,8 +2241,11 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 
 			c.JSON(
 				http.StatusOK, gin.H{
-					"insights": sanitizeAlbumInsightsForClient(insights, shouldHideAlbumInsightDebugData(c)),
-					"cached":   cached,
+					"insights": sanitizeAlbumInsightsForClient(
+						insights, shouldHideAlbumInsightDebugData(c),
+					),
+					"cached":                 cached,
+					"recommended_insight_id": recommendedAlbumInsightID(insights),
 				},
 			)
 		},
@@ -2125,6 +2307,267 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 					return false
 				},
 			)
+		},
+	)
+}
+
+type insightFeedbackService interface {
+	RecordFeedback(ctx context.Context, insightID int64, req insight.FeedbackRecordRequest) error
+	RecordAlbumFeedback(ctx context.Context, insightID int64, req insight.FeedbackRecordRequest) error
+	GetTrackInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.TrackInsightFeedback, error)
+	GetAlbumInsightFeedbacks(ctx context.Context, insightID int64) ([]*model.AlbumInsightFeedback, error)
+	GetInsightFeedbackSummary(
+		ctx context.Context, targetType common.AnalysisTargetType, insightID int64,
+	) (*insight.InsightFeedbackSummary, error)
+	GetInsightFeedbackHistory(
+		ctx context.Context, targetType common.AnalysisTargetType, insightID int64, limit int,
+	) ([]*insight.InsightFeedbackHistoryItem, error)
+	GetInsightHistory(
+		ctx context.Context, targetType common.AnalysisTargetType, insightID int64, limit int,
+	) ([]*model.InsightListItem, error)
+}
+
+type insightFeedbackRequest struct {
+	Score          int      `json:"score"`
+	Comment        string   `json:"comment"`
+	ReasonCodes    []string `json:"reason_codes"`
+	SectionKey     string   `json:"section_key"`
+	SourcePlatform string   `json:"source_platform"`
+}
+
+func registerInsightFeedbackRoutes(r gin.IRoutes, insightService insightFeedbackService) {
+	r.POST(
+		"/api/track-insight/:id/feedback", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 歌词解析服务未正确初始化，请检查配置"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 insight ID")
+			if !ok {
+				return
+			}
+
+			var req insightFeedbackRequest
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+				return
+			}
+
+			ctx := c.Request.Context()
+			if err := insightService.RecordFeedback(
+				ctx,
+				insightID,
+				insight.FeedbackRecordRequest{
+					Score:          req.Score,
+					Comment:        req.Comment,
+					ReasonCodes:    req.ReasonCodes,
+					SectionKey:     req.SectionKey,
+					SourcePlatform: req.SourcePlatform,
+				},
+			); err != nil {
+				log.Error(
+					ctx, "记录歌词解析反馈失败",
+					zap.Int64("insight_id", insightID),
+					zap.Int("score", req.Score),
+					zap.Error(err),
+				)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录反馈失败"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	r.POST(
+		"/api/album-insight/:id/feedback", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 歌词解析服务未正确初始化，请检查配置"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 insight ID")
+			if !ok {
+				return
+			}
+
+			var req insightFeedbackRequest
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+				return
+			}
+
+			ctx := c.Request.Context()
+			if err := insightService.RecordAlbumFeedback(
+				ctx,
+				insightID,
+				insight.FeedbackRecordRequest{
+					Score:          req.Score,
+					Comment:        req.Comment,
+					ReasonCodes:    req.ReasonCodes,
+					SectionKey:     req.SectionKey,
+					SourcePlatform: req.SourcePlatform,
+				},
+			); err != nil {
+				log.Error(
+					ctx, "记录专辑解析反馈失败",
+					zap.Int64("insight_id", insightID),
+					zap.Int("score", req.Score),
+					zap.Error(err),
+				)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录反馈失败"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	r.GET(
+		"/api/insights/:id/feedback-summary", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 ID")
+			if !ok {
+				return
+			}
+
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery("analysis_target_type", string(common.AnalysisTargetTypeTrack)),
+			)
+			summary, err := insightService.GetInsightFeedbackSummary(c.Request.Context(), targetType, insightID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, summary)
+		},
+	)
+
+	r.GET(
+		"/api/insights/:id/feedback-history", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 ID")
+			if !ok {
+				return
+			}
+
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery("analysis_target_type", string(common.AnalysisTargetTypeTrack)),
+			)
+			limit := parseQueryIntWithDefault(c, "limit", 10)
+			if limit <= 0 {
+				limit = 10
+			}
+			history, err := insightService.GetInsightFeedbackHistory(c.Request.Context(), targetType, insightID, limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"feedbacks": history, "analysis_target_type": targetType})
+		},
+	)
+
+	r.GET(
+		"/api/insights/:id/history", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 ID")
+			if !ok {
+				return
+			}
+
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery("analysis_target_type", string(common.AnalysisTargetTypeTrack)),
+			)
+			limit := parseQueryIntWithDefault(c, "limit", 20)
+			if limit <= 0 {
+				limit = 20
+			}
+
+			history, err := insightService.GetInsightHistory(c.Request.Context(), targetType, insightID, limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(
+				http.StatusOK,
+				gin.H{
+					"insights":               history,
+					"total":                  len(history),
+					"limit":                  limit,
+					"offset":                 0,
+					"analysis_target_type":   targetType,
+					"recommended_insight_id": recommendedInsightListItemID(history),
+				},
+			)
+		},
+	)
+
+	r.GET(
+		"/api/insights/:id/feedbacks", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 ID")
+			if !ok {
+				return
+			}
+
+			targetType := common.ParseAnalysisTargetType(
+				c.DefaultQuery("analysis_target_type", string(common.AnalysisTargetTypeTrack)),
+			)
+
+			switch targetType {
+			case common.AnalysisTargetTypeAlbum:
+				feedbacks, err := insightService.GetAlbumInsightFeedbacks(c.Request.Context(), insightID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"feedbacks": feedbacks, "analysis_target_type": targetType})
+			default:
+				feedbacks, err := insightService.GetTrackInsightFeedbacks(c.Request.Context(), insightID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"feedbacks": feedbacks, "analysis_target_type": targetType})
+			}
+		},
+	)
+
+	r.GET(
+		"/api/album-insights/:id/feedbacks", func(c *gin.Context) {
+			if insightService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
+				return
+			}
+
+			insightID, ok := parsePathInt64(c, "id", "无效的 ID")
+			if !ok {
+				return
+			}
+
+			feedbacks, err := insightService.GetAlbumInsightFeedbacks(c.Request.Context(), insightID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"feedbacks": feedbacks, "analysis_target_type": common.AnalysisTargetTypeAlbum})
 		},
 	)
 }

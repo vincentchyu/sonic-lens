@@ -49,18 +49,20 @@ func NewBasePlayerChecker(
 
 func (b *BasePlayerChecker) buildTrackMetadata(playerInfo common.PlayerInfoHandler) model.TrackMetadata {
 	metadata := model.TrackMetadata{
-		AlbumArtist:   playerInfo.GetAlbumArtist(),
-		TrackNumber:   int8(playerInfo.GetTrackNumber()),
-		Duration:      playerInfo.GetDuration(),
-		Genre:         playerInfo.GetGenre(),
-		Composer:      playerInfo.GetComposer(),
-		ReleaseDate:   playerInfo.GetReleaseDate(),
-		MusicBrainzID: playerInfo.GetMusicBrainzID(),
-		Source:        playerInfo.GetSource(),
-		BundleID:      playerInfo.GetBundleID(),
-		UniqueID:      playerInfo.GetUniqueID(),
-		DiscNumber:    playerInfo.GetDiscNumber(),
-		PlayerType:    string(b.source),
+		AlbumArtist:         playerInfo.GetAlbumArtist(),
+		AlbumSubtitle:       playerInfo.GetAlbumSubtitle(),
+		TrackNumber:         int8(playerInfo.GetTrackNumber()),
+		Duration:            playerInfo.GetDuration(),
+		Genre:               playerInfo.GetGenre(),
+		Composer:            playerInfo.GetComposer(),
+		ReleaseDate:         playerInfo.GetReleaseDate(),
+		OriginalReleaseDate: playerInfo.GetOriginalReleaseDate(),
+		MusicBrainzID:       playerInfo.GetMusicBrainzID(),
+		Source:              playerInfo.GetSource(),
+		BundleID:            playerInfo.GetBundleID(),
+		UniqueID:            playerInfo.GetUniqueID(),
+		DiscNumber:          playerInfo.GetDiscNumber(),
+		PlayerType:          string(b.source),
 	}
 	if metadata.Source == "" {
 		metadata.Source = string(b.source)
@@ -269,6 +271,7 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 		Data: websocket.WsTrackData{
 			Title:             playerInfo.GetTitle(),
 			Album:             playerInfo.GetAlbum(),
+			AlbumSubtitle:     playerInfo.GetAlbumSubtitle(),
 			Artist:            playerInfo.GetArtist(),
 			AppleMusic:        favoriteState.AppleMusic,
 			LastFM:            favoriteState.LastFM,
@@ -278,6 +281,7 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 			Duration:          snapshot.duration,
 			Position:          int64(snapshot.position),
 			PositionMs:        int64(math.Round(snapshot.position * 1000)),
+			SampleRate:        playerInfo.GetSampleRate(),
 			TrackNumber:       int8(playerInfo.GetTrackNumber()),
 			DiscNumber:        int8(playerInfo.GetDiscNumber()),
 			CoverArtURL:       b.currentArtURL,
@@ -430,6 +434,7 @@ func (b *BasePlayerChecker) buildPlayingTrackSnapshot(
 		coverArtMime:            coverArtMime,
 		coverArtObjectKey:       coverArtObjectKey,
 		controllerFavoriteKnown: b.source == common.PlayerAppleMusic,
+		// albumTitleMetadata:      playerInfo.GetAlbumTitleMetadata(),
 	}
 	if snapshot.controllerFavoriteKnown {
 		snapshot.controllerFavorite = b.resolveControllerFavorite(ctx, trackKey, trackChanged)

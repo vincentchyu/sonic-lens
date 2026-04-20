@@ -81,7 +81,7 @@ struct SonicLensInsightsView: View {
 
     @ViewBuilder
     private func destination(for insight: InsightSummary) -> some View {
-        InsightDetailLoaderView(viewModel: viewModel, summary: insight)
+        InsightDetailLoaderView(summary: insight)
     }
 }
 
@@ -104,12 +104,18 @@ struct InsightRowCard: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Text(insight.badgeText)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(insight.badgeText)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
+
+                    Text(insight.feedbackStatusText)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(insight.feedbackStatusText == "待修正" ? Color.orange : .secondary)
+                }
             }
 
             if let summary = insight.analysisSummary, !summary.isEmpty {
@@ -135,20 +141,31 @@ struct InsightRowCard: View {
 
 struct InsightDetailLoaderView: View {
     @EnvironmentObject private var store: AppStore
-    @ObservedObject var viewModel: LibraryViewModel
     let summary: InsightSummary
 
     @State private var trackDetail: Insight?
     @State private var albumDetail: AlbumInsight?
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var selectedInsightIndex = 0
+    @State private var insightViewMode: InsightViewMode = .current
 
     var body: some View {
         Group {
             if let trackDetail {
-                InsightDetailView(insight: trackDetail)
+                InsightDetailView(
+                    insight: trackDetail,
+                    allInsights: [trackDetail],
+                    selectedInsightIndex: $selectedInsightIndex,
+                    insightViewMode: $insightViewMode
+                )
             } else if let albumDetail {
-                AlbumInsightDetailView(insight: albumDetail)
+                AlbumInsightDetailView(
+                    insight: albumDetail,
+                    allInsights: [albumDetail],
+                    selectedInsightIndex: $selectedInsightIndex,
+                    insightViewMode: $insightViewMode
+                )
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -203,9 +220,13 @@ struct InsightDetailLoaderView: View {
         albumDetail = nil
         do {
             if summary.isAlbum {
-                albumDetail = try await viewModel.fetchAlbumInsightDetail(using: server, id: summary.id)
+                let history = try await InsightAPIClient.fetchAlbumInsightHistory(using: server, id: summary.id)
+                let detailID = history.recommendedInsightID ?? summary.id
+                albumDetail = try await InsightAPIClient.fetchAlbumInsightDetail(using: server, id: detailID)
             } else {
-                trackDetail = try await viewModel.fetchTrackInsightDetail(using: server, id: summary.id)
+                let history = try await InsightAPIClient.fetchTrackInsightHistory(using: server, id: summary.id)
+                let detailID = history.recommendedInsightID ?? summary.id
+                trackDetail = try await InsightAPIClient.fetchTrackInsightDetail(using: server, id: detailID)
             }
         } catch {
             errorMessage = "音眸详情加载失败"

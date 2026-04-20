@@ -15,12 +15,13 @@ type TrackFavoriteEvent struct {
 	ID                   int64                          `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	Source               string                         `gorm:"column:source;type:varchar(64);not null;index:idx_tfe_source" json:"source"`
 	ProviderFavorite     bool                           `gorm:"column:provider_favorite;type:tinyint(1);not null;default:0" json:"provider_favorite"`
-	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_tfe_identity" json:"artist"`
-	Album                string                         `gorm:"column:album;type:varchar(255);not null;index:idx_tfe_identity" json:"album"`
-	Track                string                         `gorm:"column:track;type:varchar(255);not null;index:idx_tfe_identity" json:"track"`
+	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_tfe_identity_subtitle" json:"artist"`
+	Album                string                         `gorm:"column:album;type:varchar(255);not null;index:idx_tfe_identity_subtitle" json:"album"`
+	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(255);index:idx_tfe_identity_subtitle" json:"album_subtitle"`
+	Track                string                         `gorm:"column:track;type:varchar(255);not null;index:idx_tfe_identity_subtitle" json:"track"`
 	AlbumArtist          string                         `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
-	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint;index:idx_tfe_identity" json:"track_number"`
-	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1;index:idx_tfe_identity" json:"disc_number"`
+	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint;index:idx_tfe_identity_subtitle" json:"track_number"`
+	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1;index:idx_tfe_identity_subtitle" json:"disc_number"`
 	MusicBrainzID        string                         `gorm:"column:music_brainz_id;type:varchar(255)" json:"music_brainz_id"`
 	Duration             int64                          `gorm:"column:duration;type:int" json:"duration"`
 	BundleID             string                         `gorm:"column:bundle_id;type:varchar(255)" json:"bundle_id"`
@@ -61,6 +62,11 @@ func CreateTrackFavoriteEvent(ctx context.Context, event *TrackFavoriteEvent) er
 	if event == nil {
 		return errors.New("track favorite event is nil")
 	}
+	event.Artist = normalizeTrackStorageText(event.Artist)
+	event.Album = normalizeTrackStorageText(event.Album)
+	event.AlbumSubtitle = normalizeTrackStorageText(event.AlbumSubtitle)
+	event.Track = normalizeTrackStorageText(event.Track)
+	event.AlbumArtist = normalizeTrackStorageText(event.AlbumArtist)
 	if event.ResolutionStatus == "" {
 		event.ResolutionStatus = TrackFavoriteEventResolutionPending
 	}
@@ -84,6 +90,7 @@ func getPendingTrackFavoriteSnapshotTx(
 	query := tx.Model(&TrackFavoriteEvent{}).
 		Where("applied = ?", false).
 		Where("artist = ? AND album = ? AND track = ?", identity.Artist, identity.Album, identity.Track).
+		Where("COALESCE(album_subtitle, '') = ?", identity.AlbumSubtitle).
 		Where(
 			"resolution_status IN ?", []string{
 				TrackFavoriteEventResolutionPending,
@@ -138,6 +145,7 @@ func getOpenTrackFavoriteEventTx(tx *gorm.DB, candidate *TrackFavoriteEvent) (*T
 	var event TrackFavoriteEvent
 	err := tx.Where("source = ? AND provider_favorite = ?", candidate.Source, candidate.ProviderFavorite).
 		Where("artist = ? AND album = ? AND track = ?", candidate.Artist, candidate.Album, candidate.Track).
+		Where("COALESCE(album_subtitle, '') = ?", normalizeTrackStorageText(candidate.AlbumSubtitle)).
 		Where("track_number = ? AND disc_number = ?", trackNumber, discNumber).
 		Where("applied = ?", false).
 		Where("resolution_status IN ?", []string{
@@ -201,6 +209,7 @@ func ResolvePendingTrackFavoriteEventsByTrackTx(
 
 	query := tx.Where("applied = ?", false).
 		Where("artist = ? AND album = ? AND track = ?", resolvedTrack.Artist, resolvedTrack.Album, resolvedTrack.Track).
+		Where("COALESCE(album_subtitle, '') = ?", normalizeTrackStorageText(resolvedTrack.AlbumSubtitle)).
 		Where("resolution_status IN ?", []string{
 			TrackFavoriteEventResolutionPending,
 			TrackFavoriteEventResolutionUnresolved,
@@ -261,11 +270,12 @@ func applyTrackFavoriteEventsByIDsTx(
 		trackObj, resolveErr := findTrackByIdentityWithOptions(
 			tx,
 			TrackIdentity{
-				Artist:      event.Artist,
-				Album:       event.Album,
-				Track:       event.Track,
-				TrackNumber: event.TrackNumber,
-				DiscNumber:  event.DiscNumber,
+				Artist:        event.Artist,
+				Album:         event.Album,
+				AlbumSubtitle: event.AlbumSubtitle,
+				Track:         event.Track,
+				TrackNumber:   event.TrackNumber,
+				DiscNumber:    event.DiscNumber,
 			},
 			trackIdentityResolveOptions{allowLooseNameFallback: strings.TrimSpace(event.MusicBrainzID) != ""},
 		)

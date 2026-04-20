@@ -103,6 +103,29 @@ func (s *serviceImpl) GetInsightJob(ctx context.Context, jobID string) (*model.I
 	return model.GetInsightJobByID(ctx, jobID)
 }
 
+// GetInsightJobCallLogs 获取指定任务关联的调用流水，便于管理端在任务详情中直接排障。
+func (s *serviceImpl) GetInsightJobCallLogs(ctx context.Context, jobID string) ([]*model.LLMCallLog, error) {
+	job, err := model.GetInsightJobByID(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	switch job.AnalysisTargetType {
+	case common.AnalysisTargetTypeAlbum:
+		return s.GetAlbumCallLogs(ctx, job.AlbumID)
+	default:
+		return s.GetTrackCallLogs(ctx, job.Artist, job.Album, job.Track)
+	}
+}
+
+// ListInsightJobs 获取音眸任务列表，供管理端筛选和分页使用。
+func (s *serviceImpl) ListInsightJobs(
+	ctx context.Context,
+	query model.InsightJobListQuery,
+) ([]*model.InsightJob, int64, error) {
+	return model.ListInsightJobs(ctx, query)
+}
+
 // UpdateInsightJobLiveActivityToken 记录客户端上报的 push token，便于后续终态推送。
 func (s *serviceImpl) UpdateInsightJobLiveActivityToken(
 	ctx context.Context, jobID, token string,
@@ -118,6 +141,68 @@ func (s *serviceImpl) UpdateInsightJobLiveActivityToken(
 		return nil, err
 	}
 	return model.GetInsightJobByID(ctx, jobID)
+}
+
+// CancelInsightJob 将进行中的任务标记为取消，避免管理端只能被动等待终态。
+func (s *serviceImpl) CancelInsightJob(ctx context.Context, jobID string) (*model.InsightJob, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, errors.New("jobID 不能为空")
+	}
+
+	job, err := model.GetInsightJobByID(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if job.Status == common.InsightJobPhaseCompleted || job.Status == common.InsightJobPhaseFailed {
+		return nil, errors.New("终态任务不能取消")
+	}
+
+	updated, err := model.CancelInsightJob(ctx, jobID, "管理员在控制台取消任务")
+	if err != nil {
+		return nil, err
+	}
+	websocket.BroadcastInsightJobUpdate(ctx, buildInsightJobWSData(updated))
+	return updated, nil
+}
+
+// RetryInsightJob 基于既有任务元数据重新创建任务，便于管理端手动补救失败链路。
+func (s *serviceImpl) RetryInsightJob(ctx context.Context, jobID string) (*model.InsightJob, bool, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, false, errors.New("jobID 不能为空")
+	}
+
+	job, err := model.GetInsightJobByID(ctx, jobID)
+	if err != nil {
+		return nil, false, err
+	}
+	if job.Status == common.InsightJobPhaseQueued || job.Status == common.InsightJobPhaseRunning {
+		return job, true, nil
+	}
+
+	return s.CreateInsightJob(
+		ctx,
+		CreateInsightJobRequest{
+			TargetType:     job.AnalysisTargetType,
+			Artist:         job.Artist,
+			Album:          job.Album,
+			Track:          job.Track,
+			TrackNumber:    job.TrackNumber,
+			DiscNumber:     job.DiscNumber,
+			AlbumID:        job.AlbumID,
+			Provider:       job.Provider,
+			Model:          job.Model,
+			ClientPlatform: job.ClientPlatform,
+		},
+	)
+}
+
+// DeleteInsightJob 删除失败或已取消的任务及其调用流水，便于管理端清理无效记录。
+func (s *serviceImpl) DeleteInsightJob(ctx context.Context, jobID string) error {
+	if strings.TrimSpace(jobID) == "" {
+		return errors.New("jobID 不能为空")
+	}
+
+	return model.DeleteInsightJob(ctx, jobID)
 }
 
 func (s *serviceImpl) buildInsightJob(
@@ -239,6 +324,11 @@ func (s *serviceImpl) processInsightJob(ctx context.Context, job *model.InsightJ
 		"finished_at":       finishedAt,
 		"result_available":  resultAvailable,
 		"result_insight_id": resultInsightID,
+	}
+	latestJob, latestErr := model.GetInsightJobByID(ctx, job.ID)
+	if latestErr == nil && latestJob.Status == common.InsightJobPhaseCanceled {
+		log.Info(ctx, "音眸任务已被手动取消，跳过终态覆盖", zap.String("job_id", job.ID))
+		return
 	}
 	if runErr != nil {
 		fields["status"] = common.InsightJobPhaseFailed

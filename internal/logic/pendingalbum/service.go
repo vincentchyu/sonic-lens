@@ -43,16 +43,17 @@ type ManualPendingAlbumInput struct {
 
 // ManualPendingAlbumAlbumInput 描述手动维护时的专辑级元数据。
 type ManualPendingAlbumAlbumInput struct {
-	Name          string `json:"name"`
-	AlbumArtist   string `json:"album_artist"`
-	DisplayArtist string `json:"display_artist"`
-	ReleaseDate   string `json:"release_date"`
-	Genre         string `json:"genre"`
-	Country       string `json:"country"`
-	Status        string `json:"status"`
-	Packaging     string `json:"packaging"`
-	Barcode       string `json:"barcode"`
-	CoverArtURL   string `json:"cover_art_url"`
+	Name                string `json:"name"`
+	AlbumArtist         string `json:"album_artist"`
+	DisplayArtist       string `json:"display_artist"`
+	ReleaseDate         string `json:"release_date"`
+	OriginalReleaseDate string `json:"original_release_date"`
+	Genre               string `json:"genre"`
+	Country             string `json:"country"`
+	Status              string `json:"status"`
+	Packaging           string `json:"packaging"`
+	Barcode             string `json:"barcode"`
+	CoverArtURL         string `json:"cover_art_url"`
 }
 
 // ManualPendingAlbumTrackInput 描述手动维护时的曲目级元数据。
@@ -403,7 +404,7 @@ func (s *serviceImpl) resolveMusicBrainzMaterial(
 	release, err := coremusicbrainz.LookupRelease(
 		ctx,
 		mbtypes.MBID(detail.WorkItem.SelectedMBID),
-		musicbrainzws2.IncludesFilter{Includes: []string{"recordings", "media", "artist-credits", "genres"}},
+		musicbrainzws2.IncludesFilter{Includes: []string{"recordings", "media", "artist-credits", "genres", "release-groups"}},
 	)
 	if err != nil {
 		return nil, err
@@ -411,20 +412,23 @@ func (s *serviceImpl) resolveMusicBrainzMaterial(
 
 	totalDiscs, discInfos := buildAlbumDiscInfosFromRelease(release)
 	releaseDate := release.Date.String()
+	originalReleaseDate := extractPendingAlbumOriginalReleaseDate(release)
 	genreStr := extractReleaseGenres(release)
 	material := &pendingAlbumMaintenanceMaterial{
 		Mode: pendingAlbumMaintenanceModeMusicBrainz,
 		AlbumCandidate: &model.Album{
-			Name:        detail.WorkItem.Album,
-			Artist:      pendingAlbumOwner(detail.WorkItem),
-			ReleaseDate: releaseDate,
-			Genre:       genreStr,
-			Country:     string(release.CountryCode),
-			Status:      release.Status,
-			Packaging:   release.Packaging,
-			Barcode:     string(release.Barcode),
-			TotalDiscs:  totalDiscs,
-			DiscInfos:   discInfos,
+			Name:                detail.WorkItem.Album,
+			NameSubtitle:        detail.WorkItem.AlbumSubtitle,
+			Artist:              pendingAlbumOwner(detail.WorkItem),
+			ReleaseDate:         releaseDate,
+			OriginalReleaseDate: originalReleaseDate,
+			Genre:               genreStr,
+			Country:             string(release.CountryCode),
+			Status:              release.Status,
+			Packaging:           release.Packaging,
+			Barcode:             string(release.Barcode),
+			TotalDiscs:          totalDiscs,
+			DiscInfos:           discInfos,
 		},
 		CoverEnsureInput: artworklogic.EnsureAlbumCoverInput{
 			AlbumArtist: detail.WorkItem.AlbumArtist,
@@ -469,6 +473,13 @@ func buildAlbumDiscInfosFromRelease(release musicbrainzws2.Release) (int, string
 	}
 	raw, _ := json.Marshal(discInfosMap)
 	return totalDiscs, string(raw)
+}
+
+func extractPendingAlbumOriginalReleaseDate(release musicbrainzws2.Release) string {
+	if release.ReleaseGroup == nil {
+		return ""
+	}
+	return strings.TrimSpace(release.ReleaseGroup.FirstReleaseDate.String())
 }
 
 func (s *serviceImpl) resolveManualMaterial(
@@ -550,16 +561,17 @@ func (s *serviceImpl) resolveManualMaterial(
 	return &pendingAlbumMaintenanceMaterial{
 		Mode: pendingAlbumMaintenanceModeManual,
 		AlbumCandidate: &model.Album{
-			Name:        albumName,
-			Artist:      albumArtist,
-			ReleaseDate: strings.TrimSpace(input.ManualAlbum.ReleaseDate),
-			Genre:       strings.TrimSpace(input.ManualAlbum.Genre),
-			Country:     strings.TrimSpace(input.ManualAlbum.Country),
-			Status:      strings.TrimSpace(input.ManualAlbum.Status),
-			Packaging:   strings.TrimSpace(input.ManualAlbum.Packaging),
-			Barcode:     strings.TrimSpace(input.ManualAlbum.Barcode),
-			TotalDiscs:  totalDiscs,
-			DiscInfos:   discInfos,
+			Name:                albumName,
+			Artist:              albumArtist,
+			ReleaseDate:         strings.TrimSpace(input.ManualAlbum.ReleaseDate),
+			OriginalReleaseDate: strings.TrimSpace(input.ManualAlbum.OriginalReleaseDate),
+			Genre:               strings.TrimSpace(input.ManualAlbum.Genre),
+			Country:             strings.TrimSpace(input.ManualAlbum.Country),
+			Status:              strings.TrimSpace(input.ManualAlbum.Status),
+			Packaging:           strings.TrimSpace(input.ManualAlbum.Packaging),
+			Barcode:             strings.TrimSpace(input.ManualAlbum.Barcode),
+			TotalDiscs:          totalDiscs,
+			DiscInfos:           discInfos,
 		},
 		TrackDrafts: trackDrafts,
 		CoverEnsureInput: artworklogic.EnsureAlbumCoverInput{
@@ -714,14 +726,16 @@ func applyPendingAlbumStructureTx(
 			tx,
 			trackObj.ID,
 			&model.TrackIdentity{
-				Artist:      draft.TrackArtist,
-				Album:       resolvedAlbum.Name,
-				Track:       draft.Title,
-				TrackNumber: draft.TrackNumber,
-				DiscNumber:  draft.DiscNumber,
+				Artist:        draft.TrackArtist,
+				Album:         resolvedAlbum.Name,
+				AlbumSubtitle: resolvedAlbum.NameSubtitle,
+				Track:         draft.Title,
+				TrackNumber:   draft.TrackNumber,
+				DiscNumber:    draft.DiscNumber,
 			},
 			&model.TrackMetadata{
 				AlbumArtist:   draft.AlbumArtist,
+				AlbumSubtitle: resolvedAlbum.NameSubtitle,
 				TrackNumber:   draft.TrackNumber,
 				DiscNumber:    draft.DiscNumber,
 				Duration:      draft.Duration,
@@ -765,17 +779,39 @@ func applyPendingAlbumStructureTx(
 	return model.UpdateAlbumFieldsTx(
 		tx,
 		resolvedAlbum.ID,
-		map[string]interface{}{
-			"sync_status":  3,
-			"release_date": material.AlbumCandidate.ReleaseDate,
-			"genre":        material.AlbumCandidate.Genre,
-			"country":      material.AlbumCandidate.Country,
-			"status":       material.AlbumCandidate.Status,
-			"packaging":    material.AlbumCandidate.Packaging,
-			"barcode":      material.AlbumCandidate.Barcode,
-			"total_discs":  material.AlbumCandidate.TotalDiscs,
-			"disc_infos":   material.AlbumCandidate.DiscInfos,
-		},
+		func() map[string]interface{} {
+			fields := map[string]interface{}{
+				"sync_status": 3,
+			}
+			if releaseDate := strings.TrimSpace(material.AlbumCandidate.ReleaseDate); releaseDate != "" {
+				fields["release_date"] = releaseDate
+			}
+			if originalReleaseDate := strings.TrimSpace(material.AlbumCandidate.OriginalReleaseDate); originalReleaseDate != "" {
+				fields["original_release_date"] = originalReleaseDate
+			}
+			if genre := strings.TrimSpace(material.AlbumCandidate.Genre); genre != "" {
+				fields["genre"] = genre
+			}
+			if country := strings.TrimSpace(material.AlbumCandidate.Country); country != "" {
+				fields["country"] = country
+			}
+			if status := strings.TrimSpace(material.AlbumCandidate.Status); status != "" {
+				fields["status"] = status
+			}
+			if packaging := strings.TrimSpace(material.AlbumCandidate.Packaging); packaging != "" {
+				fields["packaging"] = packaging
+			}
+			if barcode := strings.TrimSpace(material.AlbumCandidate.Barcode); barcode != "" {
+				fields["barcode"] = barcode
+			}
+			if material.AlbumCandidate.TotalDiscs > 0 {
+				fields["total_discs"] = material.AlbumCandidate.TotalDiscs
+			}
+			if discInfos := strings.TrimSpace(material.AlbumCandidate.DiscInfos); discInfos != "" {
+				fields["disc_infos"] = discInfos
+			}
+			return fields
+		}(),
 	)
 }
 
@@ -840,6 +876,7 @@ func resolvePendingTrackTx(
 		tx,
 		draft.TrackArtist,
 		resolvedAlbum.Name,
+		resolvedAlbum.NameSubtitle,
 		draft.Title,
 		draft.TrackNumber,
 		draft.DiscNumber,
@@ -852,7 +889,16 @@ func resolvePendingTrackTx(
 	}
 
 	if strings.TrimSpace(draft.MusicBrainzID) != "" {
-		trackObj, err = model.GetTrackByMusicBrainzIDTx(tx, draft.MusicBrainzID)
+		trackObj, err = model.GetTrackByMusicBrainzIdentityTx(
+			tx,
+			draft.MusicBrainzID,
+			draft.TrackArtist,
+			resolvedAlbum.Name,
+			resolvedAlbum.NameSubtitle,
+			draft.Title,
+			draft.TrackNumber,
+			draft.DiscNumber,
+		)
 		if err == nil {
 			return trackObj, true, nil
 		}
@@ -876,6 +922,7 @@ func resolvePendingTrackTx(
 			Artist:        draft.TrackArtist,
 			AlbumArtist:   draft.AlbumArtist,
 			Album:         resolvedAlbum.Name,
+			AlbumSubtitle: resolvedAlbum.NameSubtitle,
 			Track:         draft.Title,
 			TrackNumber:   draft.TrackNumber,
 			DiscNumber:    draft.DiscNumber,

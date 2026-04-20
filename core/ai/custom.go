@@ -234,8 +234,8 @@ func (p *CustomProvider) buildRequest(ctx context.Context, req TrackAnalysisRequ
 	payload := customChatRequest{
 		Model: p.model,
 		Messages: []openAIChatMessage{
-			{Role: "system", Content: buildTrackInsightMergedPrompt(req)},
-			{Role: "user", Content: "开始的表演"},
+			{Role: "system", Content: buildTrackInsightSystemPromptAll()},
+			{Role: "user", Content: buildTrackInsightUserPrompt(req)},
 		},
 		Stream: stream,
 	}
@@ -262,8 +262,8 @@ func (p *CustomProvider) buildAlbumRequest(ctx context.Context, req AlbumAnalysi
 	payload := customChatRequest{
 		Model: p.model,
 		Messages: []openAIChatMessage{
-			{Role: "system", Content: buildAlbumInsightMergedPrompt(req)},
-			{Role: "user", Content: "开始专辑分析"},
+			{Role: "system", Content: buildAlbumInsightSystemPromptAll()},
+			{Role: "user", Content: buildAlbumInsightUserPrompt(req)},
 		},
 		Stream: false,
 	}
@@ -299,7 +299,7 @@ func (p *CustomProvider) buildCompletionsRequest(ctx context.Context, req TrackA
 	}
 
 	httpReq, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewReader(body),
+		ctx, http.MethodPost, p.baseURL+"/v1/completions", bytes.NewReader(body),
 	)
 	if err != nil {
 		return nil, "", err

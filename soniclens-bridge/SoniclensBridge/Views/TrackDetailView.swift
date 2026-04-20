@@ -243,7 +243,7 @@ struct TrackDetailView: View {
     }
 
     private var insightsSection: some View {
-        DetailSectionCard(title: "音眸", compact: isPhoneLayout) {
+        DetailSectionCard(title: "操作", compact: isPhoneLayout) {
             VStack(alignment: .leading, spacing: 12) {
                 insightActionRow
 
@@ -259,12 +259,22 @@ struct TrackDetailView: View {
                         .foregroundStyle(Color.orange)
                 }
 
-                InsightPrimaryContentView(
-                    insight: viewModel.insights.primaryInsight,
-                    style: .detail,
-                    emptyTitle: "暂无音眸",
-                    emptySubtitle: "当前曲目还没有可展示的音眸内容，可在此直接触发生成。"
-                )
+                if let currentInsight {
+                    InsightDetailView(
+                        insight: currentInsight,
+                        allInsights: viewModel.insights,
+                        selectedInsightIndex: $viewModel.selectedInsightIndex,
+                        insightViewMode: $viewModel.insightViewMode,
+                        showsContextHeader: false
+                    )
+                } else {
+                    InsightPrimaryContentView(
+                        insight: nil,
+                        style: .detail,
+                        emptyTitle: "暂无音眸",
+                        emptySubtitle: "当前曲目还没有可展示的音眸内容。"
+                    )
+                }
             }
         }
     }
@@ -305,13 +315,20 @@ struct TrackDetailView: View {
             )
     }
 
+    private var currentInsight: Insight? {
+        guard viewModel.insights.indices.contains(viewModel.selectedInsightIndex) else {
+            return viewModel.insights.primaryInsight
+        }
+        return viewModel.insights[viewModel.selectedInsightIndex]
+    }
+
     private func openSharePreview(scene: ShareScene) {
         let payload = SharePayloadBuilder.build(
             scene: scene,
             track: track,
             resolvedArtworkURL: viewModel.resolvedArtworkURL,
             lyrics: viewModel.lyrics,
-            insight: viewModel.insights.primaryInsight,
+            insight: currentInsight,
             isFavorite: isCurrentTrackFavorite
         )
         sharePreviewRequest = SharePreviewRequest(payload: payload)
@@ -379,6 +396,7 @@ struct TrackDetailView: View {
         guard let job = matchingInsightJob else { return "none" }
         return "\(job.id)::\(job.phase.rawValue)::\(job.updatedAt ?? "")"
     }
+
 
     private func formatDuration(_ duration: Int64) -> String {
         let totalSeconds = Int(duration)

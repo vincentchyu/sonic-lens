@@ -24,8 +24,11 @@ func newAlbumCleanupTestDB(t *testing.T, name string) *gorm.DB {
 			CREATE TABLE album (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				name TEXT NOT NULL,
+				name_subtitle TEXT,
+				title_metadata TEXT,
 				artist TEXT NOT NULL,
 				release_date TEXT,
+				original_release_date TEXT,
 				genre TEXT,
 				country TEXT,
 				status TEXT,

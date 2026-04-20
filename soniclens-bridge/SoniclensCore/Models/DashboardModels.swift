@@ -42,6 +42,7 @@ struct TopArtist: Codable, Identifiable {
 struct TopAlbum: Codable, Identifiable {
     let albumID: Int64
     let album: String
+    let albumSubtitle: String?
     let artist: String
     let playCount: Int
     let coverArtURL: String?
@@ -53,11 +54,18 @@ struct TopAlbum: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case albumID = "album_id"
         case album
+        case albumSubtitle = "album_subtitle"
         case artist
         case playCount = "play_count"
         case coverArtURL = "cover_art_url"
         case coverArtMime = "cover_art_mime"
         case coverArtObjectKey = "cover_art_object_key"
+    }
+
+    var displayAlbum: String {
+        let subtitle = albumSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !subtitle.isEmpty else { return album }
+        return "\(album) (\(subtitle))"
     }
 }
 
@@ -122,15 +130,25 @@ struct RecentPlayRecord: Codable, Identifiable {
     let id: Int64
     let artist: String
     let album: String
+    let albumSubtitle: String?
     let track: String
     let playTime: String
+    let coverArtPath: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case artist
         case album
+        case albumSubtitle = "album_subtitle"
         case track
         case playTime = "play_time"
+        case coverArtPath = "cover_art_path"
+    }
+
+    var displayAlbum: String {
+        let subtitle = albumSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !subtitle.isEmpty else { return album }
+        return "\(album) (\(subtitle))"
     }
 }
 

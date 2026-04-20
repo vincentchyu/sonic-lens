@@ -336,7 +336,7 @@ struct AlbumGridCard: View {
                         } else {
                             ArtworkSquareView(
                                 artworkURL: nil,
-                                fallbackTitle: album.name,
+                                fallbackTitle: album.displayName,
                                 size: 184,
                                 cornerRadius: 16,
                                 style: .vivid
@@ -346,7 +346,7 @@ struct AlbumGridCard: View {
                 } else {
                     ArtworkSquareView(
                         artworkURL: nil,
-                        fallbackTitle: album.name,
+                        fallbackTitle: album.displayName,
                         size: 184,
                         cornerRadius: 16,
                         style: .vivid
@@ -368,7 +368,7 @@ struct AlbumGridCard: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(album.name)
+                Text(album.displayName)
                     .font(.headline)
                     .foregroundStyle(SonicTheme.textPrimary)
                     .lineLimit(2)
@@ -987,7 +987,7 @@ struct UnscrobbledListView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(record.track)
                             .font(.system(size: 14, weight: .semibold))
-                        Text("\(record.artist) · \(record.album)")
+                        Text("\(record.artist) · \(record.displayAlbum)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

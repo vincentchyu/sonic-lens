@@ -100,11 +100,13 @@ type (
 		GetArtist() string
 		GetAlbum() string
 		GetTrackNumber() int64
+		GetSampleRate() int64
 		GetMusicBrainzTrackId() string
 		GetGenre() string
 		GetComposer() string
 		GetDuration() int64
 		GetReleaseDate() string
+		GetOriginalReleaseDate() string
 		GetSource() string
 		GetBundleID() string
 		GetUniqueID() string
@@ -119,6 +121,7 @@ type (
 	ExiftoolInfo map[string]any
 	WavInfo      struct {
 		wav.Metadata
+		SampleRate int64
 	}
 	MRMediaNowPlaying struct {
 		Title            string  `json:"title"`
@@ -200,6 +203,7 @@ func BuildWavInfoHandle(file string) (MataDataHandle, error) {
 	if mwav := wav.NewDecoder(in); mwav.IsValidFile() {
 		mwav.ReadMetadata()
 		wavInfo.Metadata = *mwav.Metadata
+		wavInfo.SampleRate = int64(mwav.SampleRate)
 	}
 	return wavInfo, nil
 }
@@ -209,11 +213,15 @@ func (receiver ExiftoolInfo) GetTitle() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -229,15 +237,21 @@ func (receiver ExiftoolInfo) GetAlbum() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key3]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -249,12 +263,24 @@ func (receiver ExiftoolInfo) getFirstNonEmptyString(keys ...string) string {
 		if !ok {
 			continue
 		}
-		str := strings.TrimSpace(cast.ToString(val))
+		str := cleanMetadataString(cast.ToString(val))
 		if str != "" {
 			return str
 		}
 	}
 	return ""
+}
+
+// cleanMetadataString 过滤 exiftool 常见的二进制占位串，避免把脏值传进业务链路。
+func cleanMetadataString(raw string) string {
+	str := strings.TrimSpace(raw)
+	if str == "" {
+		return ""
+	}
+	if strings.HasPrefix(str, "(Binary data") {
+		return ""
+	}
+	return str
 }
 
 // GetTrackNumber GetTrackNumber
@@ -279,6 +305,36 @@ func (receiver ExiftoolInfo) GetTrackNumber() int64 {
 	val, ok = receiver[key3]
 	if ok {
 		return cast.ToInt64(val)
+	}
+	return 0
+}
+
+// GetSampleRate 返回音频采样率，单位 Hz。
+func (receiver ExiftoolInfo) GetSampleRate() int64 {
+	keys := []string{
+		"SampleRate",
+		"Sample Rate",
+		"AudioSampleRate",
+		"SamplingRate",
+		"sample_rate",
+		"sampleRate",
+	}
+	for _, key := range keys {
+		val, ok := receiver[key]
+		if !ok {
+			continue
+		}
+		raw := strings.TrimSpace(cast.ToString(val))
+		if raw == "" {
+			continue
+		}
+		raw = strings.TrimSuffix(raw, " Hz")
+		raw = strings.TrimSuffix(raw, "Hz")
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		return cast.ToInt64(raw)
 	}
 	return 0
 }
@@ -340,15 +396,21 @@ func (receiver ExiftoolInfo) GetGenre() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key3]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -359,15 +421,21 @@ func (receiver ExiftoolInfo) GetComposer() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key3]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -414,32 +482,49 @@ func (receiver ExiftoolInfo) GetReleaseDate() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key3]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key4]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
 func (receiver ExiftoolInfo) GetOriginalDate() string {
+	return receiver.GetOriginalReleaseDate()
+}
+
+// GetOriginalReleaseDate returns the original release date of the track.
+func (receiver ExiftoolInfo) GetOriginalReleaseDate() string {
 	key1, key2 := "Originaldate", "OriginalDate"
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -450,11 +535,15 @@ func (receiver ExiftoolInfo) GetSource() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -465,23 +554,33 @@ func (receiver ExiftoolInfo) GetBundleID() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key3]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key4]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key5]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -492,15 +591,21 @@ func (receiver ExiftoolInfo) GetUniqueID() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key3]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -520,11 +625,15 @@ func (receiver ExiftoolInfo) GetPictureMimeType() string {
 	var val any
 	val, ok := receiver[key1]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	val, ok = receiver[key2]
 	if ok {
-		return cast.ToString(val)
+		if cleaned := cleanMetadataString(cast.ToString(val)); cleaned != "" {
+			return cleaned
+		}
 	}
 	return ""
 }
@@ -552,6 +661,11 @@ func (receiver *WavInfo) GetAlbum() string {
 // GetTrackNumber returns the track number
 func (receiver *WavInfo) GetTrackNumber() int64 {
 	return castToInt64(receiver.TrackNbr)
+}
+
+// GetSampleRate 返回 WAV 文件采样率；当前未从 Metadata 结构体映射，默认返回 0。
+func (receiver *WavInfo) GetSampleRate() int64 {
+	return receiver.SampleRate
 }
 
 // GetMusicBrainzTrackId returns the MusicBrainz track ID
@@ -583,6 +697,11 @@ func (receiver *WavInfo) GetDuration() int64 {
 func (receiver *WavInfo) GetReleaseDate() string {
 	// WAV files have a CreationDate field in metadata
 	return receiver.CreationDate
+}
+
+// GetOriginalReleaseDate returns the original release date for WAV metadata when available.
+func (receiver *WavInfo) GetOriginalReleaseDate() string {
+	return ""
 }
 
 // GetSource returns the source of the track metadata

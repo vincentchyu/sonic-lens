@@ -31,8 +31,8 @@ type D1Client struct {
 const d1MaxParamsPerStatement = 31
 const d1ExecMaxRetries = 5
 const d1TrackUpsertFields = 14
-const d1PlayRecordUpsertFields = 18
-const d1TopAlbumUpsertFields = 7
+const d1PlayRecordUpsertFields = 20
+const d1TopAlbumUpsertFields = 8
 const d1DriverName = "cfd1"
 
 func batchSizeByParams(paramsPerRow int) int {
@@ -352,12 +352,20 @@ func (c *D1Client) ensureTrackPlayRecordsSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	hasCoverArtPath, err := c.tableHasColumn(ctx, "track_play_records", "cover_art_path")
+	if err != nil {
+		return err
+	}
 	hasMusicBrainzID, err := c.tableHasColumn(ctx, "track_play_records", "music_brainz_id")
 	if err != nil {
 		return err
 	}
+	hasAlbumSubtitle, err := c.tableHasColumn(ctx, "track_play_records", "album_subtitle")
+	if err != nil {
+		return err
+	}
 	if hasTrackNumber && hasDiscNumber && hasResolvedTrackID && hasResolutionStatus &&
-		hasResolutionConfidence && hasLibraryApplied && hasAlbumID && hasMusicBrainzID {
+		hasResolutionConfidence && hasLibraryApplied && hasAlbumID && hasCoverArtPath && hasMusicBrainzID && hasAlbumSubtitle {
 		return c.ensureTrackPlayRecordsIndexes(ctx)
 	}
 
@@ -370,7 +378,9 @@ func (c *D1Client) ensureTrackPlayRecordsSchema(ctx context.Context) error {
 		hasResolutionConfidence,
 		hasLibraryApplied,
 		hasAlbumID,
+		hasCoverArtPath,
 		hasMusicBrainzID,
+		hasAlbumSubtitle,
 	)
 }
 
@@ -382,6 +392,7 @@ func (c *D1Client) createTrackPlayRecordsTable(ctx context.Context) error {
 			artist TEXT NOT NULL,
 			album_artist TEXT,
 			album TEXT NOT NULL,
+			album_subtitle TEXT,
 			track TEXT NOT NULL,
 			album_id INTEGER DEFAULT 0,
 			duration INTEGER,
@@ -391,6 +402,7 @@ func (c *D1Client) createTrackPlayRecordsTable(ctx context.Context) error {
 				disc_number INTEGER DEFAULT 1,
 				music_brainz_id TEXT,
 				source TEXT,
+				cover_art_path TEXT,
 				resolved_track_id INTEGER DEFAULT 0,
 				resolution_status TEXT NOT NULL DEFAULT 'pending',
 				resolution_confidence INTEGER DEFAULT 0,
@@ -427,7 +439,7 @@ func (c *D1Client) ensureTrackPlayRecordsIndexes(ctx context.Context) error {
 func (c *D1Client) migrateTrackPlayRecordsTable(
 	ctx context.Context,
 	hasTrackNumber, hasDiscNumber, hasResolvedTrackID, hasResolutionStatus,
-	hasResolutionConfidence, hasLibraryApplied, hasAlbumID, hasMusicBrainzID bool,
+	hasResolutionConfidence, hasLibraryApplied, hasAlbumID, hasCoverArtPath, hasMusicBrainzID, hasAlbumSubtitle bool,
 ) error {
 	log.Info(
 		ctx, "Migrating D1 track_play_records schema",
@@ -438,7 +450,9 @@ func (c *D1Client) migrateTrackPlayRecordsTable(
 		zap.Bool("has_resolution_confidence", hasResolutionConfidence),
 		zap.Bool("has_library_applied", hasLibraryApplied),
 		zap.Bool("has_album_id", hasAlbumID),
+		zap.Bool("has_cover_art_path", hasCoverArtPath),
 		zap.Bool("has_music_brainz_id", hasMusicBrainzID),
+		zap.Bool("has_album_subtitle", hasAlbumSubtitle),
 	)
 
 	if _, err := c.execWithRetry(ctx, "DROP TABLE IF EXISTS track_play_records_legacy_backup"); err != nil {
@@ -483,20 +497,30 @@ func (c *D1Client) migrateTrackPlayRecordsTable(
 	if hasMusicBrainzID {
 		musicBrainzIDExpr = "COALESCE(music_brainz_id, '')"
 	}
+	coverArtPathExpr := "''"
+	if hasCoverArtPath {
+		coverArtPathExpr = "COALESCE(cover_art_path, '')"
+	}
+	albumSubtitleExpr := "''"
+	if hasAlbumSubtitle {
+		albumSubtitleExpr = "COALESCE(album_subtitle, '')"
+	}
 
 	copySQL := fmt.Sprintf(
 		`INSERT INTO track_play_records (
-			artist, album_artist, album, track, album_id, duration, play_time, scrobbled,
-			track_number, disc_number, music_brainz_id, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
+			artist, album_artist, album, album_subtitle, track, album_id, duration, play_time, scrobbled,
+			track_number, disc_number, music_brainz_id, source, cover_art_path, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
 		)
 		SELECT
-			artist, album_artist, album, track, %s, duration, play_time, COALESCE(scrobbled, 0),
-			%s, %s, %s, source, %s, %s, %s, %s, created_at, updated_at
+			artist, album_artist, album, %s, track, %s, duration, play_time, COALESCE(scrobbled, 0),
+			%s, %s, %s, source, %s, %s, %s, %s, %s, created_at, updated_at
 		FROM track_play_records_legacy_backup`,
+		albumSubtitleExpr,
 		albumIDExpr,
 		trackNumberExpr,
 		discNumberExpr,
 		musicBrainzIDExpr,
+		coverArtPathExpr,
 		resolvedTrackIDExpr,
 		resolutionStatusExpr,
 		resolutionConfidenceExpr,
@@ -524,6 +548,7 @@ func (c *D1Client) ensureTopAlbumStatSchema(ctx context.Context) error {
 			period_days INTEGER NOT NULL,
 			album_id INTEGER DEFAULT 0,
 			album TEXT NOT NULL,
+			album_subtitle TEXT,
 			artist TEXT DEFAULT '',
 			play_count INTEGER DEFAULT 0,
 			rank INTEGER NOT NULL,
@@ -543,6 +568,15 @@ func (c *D1Client) ensureTopAlbumStatSchema(ctx context.Context) error {
 	if !hasAlbumID {
 		if _, err := c.execWithRetry(ctx, "ALTER TABLE top_album_stat ADD COLUMN album_id INTEGER DEFAULT 0"); err != nil {
 			return fmt.Errorf("failed to add album_id column to top_album_stat: %w", err)
+		}
+	}
+	hasAlbumSubtitle, err := c.tableHasColumn(ctx, "top_album_stat", "album_subtitle")
+	if err != nil {
+		return err
+	}
+	if !hasAlbumSubtitle {
+		if _, err := c.execWithRetry(ctx, "ALTER TABLE top_album_stat ADD COLUMN album_subtitle TEXT"); err != nil {
+			return fmt.Errorf("failed to add album_subtitle column to top_album_stat: %w", err)
 		}
 	}
 
@@ -830,12 +864,13 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 	args := make([]interface{}, 0, len(records)*numFields)
 
 	for i, record := range records {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 		args = append(
 			args,
 			record.Artist,
 			record.AlbumArtist,
 			record.Album,
+			record.AlbumSubtitle,
 			record.Track,
 			record.AlbumID,
 			record.Duration,
@@ -845,6 +880,7 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 			record.DiscNumber,
 			record.MusicBrainzID,
 			record.Source,
+			record.CoverArtPath,
 			record.ResolvedTrackID,
 			record.ResolutionStatus,
 			record.ResolutionConfidence,
@@ -857,7 +893,7 @@ func (c *D1Client) upsertPlayRecordsBatch(ctx context.Context, records []*model.
 	query := fmt.Sprintf(
 		`
 		INSERT OR REPLACE INTO track_play_records (
-			artist, album_artist, album, track, album_id, duration, play_time, scrobbled, track_number, disc_number, music_brainz_id, source, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
+			artist, album_artist, album, album_subtitle, track, album_id, duration, play_time, scrobbled, track_number, disc_number, music_brainz_id, source, cover_art_path, resolved_track_id, resolution_status, resolution_confidence, library_applied, created_at, updated_at
 		) VALUES %s
 	`, strings.Join(placeholders, ", "),
 	)
@@ -1169,11 +1205,11 @@ func (c *D1Client) upsertTopAlbumStatsBatch(ctx context.Context, rows []*model.T
 	placeholders := make([]string, len(rows))
 	args := make([]interface{}, 0, len(rows)*d1TopAlbumUpsertFields)
 	for i, row := range rows {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?)"
-		args = append(args, row.PeriodDays, row.AlbumID, row.Album, row.Artist, row.PlayCount, row.Rank, row.UpdatedAt.Format(time.RFC3339))
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?)"
+		args = append(args, row.PeriodDays, row.AlbumID, row.Album, row.AlbumSubtitle, row.Artist, row.PlayCount, row.Rank, row.UpdatedAt.Format(time.RFC3339))
 	}
 	query := fmt.Sprintf(
-		"INSERT OR REPLACE INTO top_album_stat (period_days, album_id, album, artist, play_count, rank, updated_at) VALUES %s",
+		"INSERT OR REPLACE INTO top_album_stat (period_days, album_id, album, album_subtitle, artist, play_count, rank, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
 	_, err := c.execWithRetry(ctx, query, args...)

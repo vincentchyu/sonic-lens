@@ -140,6 +140,7 @@ final class InsightAnalysisCoordinator: ObservableObject {
 
         if let activeJob, activeJob.id == jobID {
             pendingRoute = resolvedRoute(for: activeJob)
+            await dismissTerminalLiveActivityIfNeeded(for: activeJob, route: pendingRoute)
             return
         }
 
@@ -147,6 +148,7 @@ final class InsightAnalysisCoordinator: ObservableObject {
             let persisted = try? JSONDecoder().decode(PersistedInsightAnalysisState.self, from: data),
            persisted.job.id == jobID {
             apply(job: persisted.job, route: persisted.route, eventDate: lastInsightJobEventAt, shouldQueueRoute: true)
+            await dismissTerminalLiveActivityIfNeeded(for: persisted.job, route: persisted.route)
             return
         }
 
@@ -155,6 +157,7 @@ final class InsightAnalysisCoordinator: ObservableObject {
             let response: InsightJobResponse = try await APIClient(baseURL: server.baseURL).getJSON(path: APIPath.insightJob(id: jobID))
             let route = resolvedRoute(for: response.job)
             apply(job: response.job, route: route, eventDate: Date(), shouldQueueRoute: true)
+            await dismissTerminalLiveActivityIfNeeded(for: response.job, route: route)
         } catch {
             logger.error("处理音眸深链失败 id=\(jobID, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
@@ -192,6 +195,15 @@ final class InsightAnalysisCoordinator: ObservableObject {
         } catch {
             logger.error("上报 Live Activity token 失败 id=\(jobID, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func dismissTerminalLiveActivityIfNeeded(
+        for job: InsightAnalysisJob,
+        route: InsightAnalysisRouteSnapshot?
+    ) async {
+        #if os(iOS)
+        await liveActivityManager.dismissCurrentActivityIfNeeded(for: job, route: route)
+        #endif
     }
 
     private func persist(routeOverride: InsightAnalysisRouteSnapshot? = nil) {

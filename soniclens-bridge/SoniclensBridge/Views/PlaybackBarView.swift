@@ -1,12 +1,15 @@
 import SwiftUI
 import NukeUI
+#if !os(macOS)
+import UIKit
+#endif
 
 struct PlaybackBarView: View {
     @Environment(PlaybackStore.self) private var playbackStore
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
     @Binding var isExpanded: Bool
     var style: PlaybackBarStyle = .regular
-    @StateObject private var progressModel = PlaybackBarProgressModel()
+    @StateObject private var contentModel = PlaybackBarContentModel()
 
     static let regularHeight: CGFloat = 82
     static let compactHeight: CGFloat = 72
@@ -21,74 +24,144 @@ struct PlaybackBarView: View {
     }
 
     var body: some View {
-        let nowPlaying = playbackStore.nowPlaying
-        let playbackState = progressModel.playbackState
-
-        Button(action: {
-            guard nowPlaying != nil, !playbackState.isInactive else { return }
-            isExpanded = true
-        }) {
-            VStack(spacing: style == .compact ? 7 : 8) {
-                playbackContent(nowPlaying: nowPlaying, playbackState: playbackState)
-            }
-            .padding(.horizontal, style == .compact ? 14 : 18)
-            .padding(.vertical, style == .compact ? 10 : 11)
-            .frame(height: height)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: style == .compact ? 16 : 18, style: .continuous)
-                    .fill(SonicTheme.card.opacity(performanceModeEnabled ? 0.96 : 0.90))
-                //.fill(.regularMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: style == .compact ? 16 : 18, style: .continuous)
-                    .stroke(SonicTheme.glassBorder.opacity(0.75), lineWidth: 1)
-                    //.fill(Color.black.opacity(performanceModeEnabled ? 0.08 : 0.14))
-            )
-
-            .clipShape(RoundedRectangle(cornerRadius: style == .compact ? 16 : 18, style: .continuous))
-            .shadow(
-                color: Color.black.opacity(performanceModeEnabled ? 0.03 : 0.06),
-                radius: performanceModeEnabled ? 6 : 10,
-                x: 0,
-                y: performanceModeEnabled ? 2 : 4
+        PlaybackBarSurface(
+            style: style,
+            height: height,
+            performanceModeEnabled: contentModel.performanceModeEnabled
+        ) {
+            PlaybackBarContentView(
+                model: contentModel,
+                style: style,
+                onActivate: activatePlaybackBar
             )
         }
-        .buttonStyle(.plain)
-        .buttonStyle(PressableButtonStyle())
         .padding(.horizontal, style == .compact ? 12 : 16)
         .padding(.bottom, style == .compact ? 8 : 10)
         .onAppear {
-            syncPlaybackProgress()
+            syncContentModel()
         }
-        .onChange(of: playbackIdentity) { _, _ in
-            syncPlaybackProgress(forceRestart: true)
+        .onChange(of: playbackSyncToken) { _, _ in
+            syncContentModel()
         }
-        .onChange(of: playbackStore.nowPlaying?.position) { _, _ in
-            syncPlaybackProgress()
-        }
-        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, _ in
-            syncPlaybackProgress()
+        .onChange(of: performanceModeEnabled) { _, _ in
+            syncContentModel()
         }
         .onDisappear {
-            progressModel.stop()
+            contentModel.stop()
         }
+    }
+
+    private var playbackSyncToken: PlaybackProgressSyncToken {
+        PlaybackProgressSyncToken(nowPlaying: playbackStore.nowPlaying)
+    }
+
+    private func syncContentModel() {
+        contentModel.update(
+            nowPlaying: playbackStore.nowPlaying,
+            performanceModeEnabled: performanceModeEnabled
+        )
+    }
+
+    private func activatePlaybackBar() {
+        let playbackState = contentModel.progressModel.playbackState
+        guard playbackStore.nowPlaying != nil, playbackState.isActive else { return }
+        isExpanded = true
+    }
+}
+
+enum PlaybackBarStyle {
+    case regular
+    case compact
+}
+
+@MainActor
+final class PlaybackBarContentModel: ObservableObject {
+    @Published private(set) var nowPlaying: NowPlaying?
+    @Published private(set) var performanceModeEnabled: Bool = false
+
+    fileprivate let progressModel = PlaybackBarProgressModel()
+    private var lastIdentity: String = ""
+
+    func update(nowPlaying: NowPlaying?, performanceModeEnabled: Bool) {
+        self.performanceModeEnabled = performanceModeEnabled
+        self.nowPlaying = nowPlaying
+
+        let identity = Self.playbackIdentity(for: nowPlaying)
+        defer { lastIdentity = identity }
+
+        guard let nowPlaying else {
+            progressModel.stop()
+            return
+        }
+
+        if identity != lastIdentity {
+            progressModel.start(
+                position: nowPlaying.position,
+                positionMs: nowPlaying.positionMs,
+                receivedAt: nowPlaying.receivedAt
+            )
+        } else {
+            progressModel.sync(
+                position: nowPlaying.position,
+                positionMs: nowPlaying.positionMs,
+                receivedAt: nowPlaying.receivedAt
+            )
+        }
+    }
+
+    func stop() {
+        progressModel.stop()
+    }
+
+    static func playbackIdentity(for nowPlaying: NowPlaying?) -> String {
+        [
+            nowPlaying?.artist ?? "",
+            nowPlaying?.album ?? "",
+            nowPlaying?.track ?? "",
+            String(nowPlaying?.duration ?? 0)
+        ].joined(separator: "•")
+    }
+}
+
+struct PlaybackBarContentView: View {
+    @ObservedObject var model: PlaybackBarContentModel
+    let style: PlaybackBarStyle
+    let onActivate: () -> Void
+
+    var body: some View {
+        VStack(spacing: style == .compact ? 7 : 8) {
+            playbackContent(
+                nowPlaying: model.nowPlaying,
+                playbackState: model.progressModel.playbackState
+            )
+        }
+        .padding(.horizontal, style == .compact ? 14 : 18)
+        .padding(.vertical, style == .compact ? 10 : 11)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(
+            RoundedRectangle(
+                cornerRadius: style == .compact ? 16 : 18,
+                style: .continuous
+            )
+        )
+        .onTapGesture(perform: onActivate)
+        .accessibilityElement(children: .combine)
     }
 
     private var progressValue: Double {
-        guard let duration = playbackStore.nowPlaying?.duration,
+        guard let duration = model.nowPlaying?.duration,
               duration > 0 else {
             return 0
         }
-        return min(max(progressModel.currentTime / Double(duration), 0), 1)
+        return min(max(model.progressModel.currentTime / Double(duration), 0), 1)
     }
 
     private var currentTimeText: String {
-        formatTime(progressModel.currentTime)
+        formatTime(model.progressModel.currentTime)
     }
 
     private var durationText: String {
-        formatTime(Double(playbackStore.nowPlaying?.duration ?? 0))
+        formatTime(Double(model.nowPlaying?.duration ?? 0))
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -98,35 +171,12 @@ struct PlaybackBarView: View {
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 
-    private var playbackIdentity: String {
-        let current = playbackStore.nowPlaying
-        return [
-            current?.artist ?? "",
-            current?.album ?? "",
-            current?.track ?? "",
-            String(current?.duration ?? 0)
-        ].joined(separator: "•")
-    }
-
-    private func syncPlaybackProgress(forceRestart: Bool = false) {
-        guard let nowPlaying = playbackStore.nowPlaying else {
-            progressModel.stop()
-            return
-        }
-
-        if forceRestart {
-            progressModel.start(position: nowPlaying.position, positionMs: nowPlaying.positionMs)
-        } else {
-            progressModel.sync(position: nowPlaying.position, positionMs: nowPlaying.positionMs)
-        }
-    }
-
     @ViewBuilder
     private func playbackContent(
         nowPlaying: NowPlaying?,
         playbackState: PlaybackActivityState
     ) -> some View {
-        if playbackState.isInactive {
+        if !playbackState.isTransportVisible {
             inactivePlaybackContent
         } else {
             activePlaybackContent(nowPlaying: nowPlaying, playbackState: playbackState)
@@ -200,10 +250,85 @@ struct PlaybackBarView: View {
     }
 }
 
-enum PlaybackBarStyle {
-    case regular
-    case compact
+struct PlaybackBarSurface<Content: View>: View {
+    let style: PlaybackBarStyle
+    let height: CGFloat
+    let performanceModeEnabled: Bool
+    @ViewBuilder let content: () -> Content
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let cornerRadius = style == .compact ? 16.0 : 18.0
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let borderColor: Color = {
+            if colorScheme == .dark {
+                return Color.black.opacity(performanceModeEnabled ? 0.22 : 0.30)
+            }
+
+            return SonicTheme.glassBorder.opacity(performanceModeEnabled ? 0.50 : 0.75)
+        }()
+
+        content()
+            .frame(height: height)
+            .frame(maxWidth: .infinity)
+            .background {
+                if performanceModeEnabled {
+                    shape
+                        .fill(SonicTheme.card.opacity(0.92))
+                } else {
+                    PlaybackBackdropBlur()
+                        .clipShape(shape)
+                        .overlay {
+                            shape
+                                .fill(Color.white.opacity(0.08))
+                        }
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .clipShape(shape)
+            .shadow(
+                color: Color.black.opacity(performanceModeEnabled ? 0.03 : 0.06),
+                radius: performanceModeEnabled ? 6 : 10,
+                x: 0,
+                y: performanceModeEnabled ? 2 : 4
+            )
+    }
 }
+
+private struct PlaybackBackdropBlur: View {
+    var body: some View {
+        #if os(macOS)
+        Color.clear
+        #else
+        PlatformPlaybackBlurView()
+            .overlay {
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.10),
+                        Color.white.opacity(0.03)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        #endif
+    }
+}
+
+#if !os(macOS)
+private struct PlatformPlaybackBlurView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
+        uiView.effect = UIBlurEffect(style: .systemThinMaterial)
+    }
+}
+#endif
 
 struct PlaybackArtworkView: View {
     let artworkURL: String?
@@ -370,24 +495,22 @@ struct ProgressBarView: View {
 }
 
 @MainActor
-private final class PlaybackBarProgressModel: ObservableObject {
+fileprivate final class PlaybackBarProgressModel: ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var playbackState: PlaybackActivityState = .inactive
 
-    private static let pauseStaleTimeout: TimeInterval = 5
-    private static let inactiveTimeout: TimeInterval = 10
     private var timer: Timer?
     private var anchorDate: Date?
     private var anchorTime: TimeInterval = 0
     private var lastSyncDate: Date?
 
-    func start(position: Int?, positionMs: Int?) {
+    func start(position: Int?, positionMs: Int?, receivedAt: Date = Date()) {
         stop()
         let startTime = resolvedTime(position: position, positionMs: positionMs)
         anchorTime = startTime
         anchorDate = Date()
-        lastSyncDate = Date()
-        playbackState = .active
+        lastSyncDate = receivedAt
+        playbackState = activityState(for: receivedAt)
         currentTime = startTime
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
@@ -406,14 +529,14 @@ private final class PlaybackBarProgressModel: ObservableObject {
         currentTime = 0
     }
 
-    func sync(position: Int?, positionMs: Int?) {
-        lastSyncDate = Date()
+    func sync(position: Int?, positionMs: Int?, receivedAt: Date = Date()) {
+        lastSyncDate = receivedAt
         if timer == nil || playbackState.isInactive {
-            start(position: position, positionMs: positionMs)
+            start(position: position, positionMs: positionMs, receivedAt: receivedAt)
             return
         }
 
-        playbackState = .active
+        playbackState = activityState(for: receivedAt)
         let incoming = resolvedTime(position: position, positionMs: positionMs)
         if abs(incoming - currentTime) > 0.35 {
             anchorTime = incoming
@@ -425,11 +548,11 @@ private final class PlaybackBarProgressModel: ObservableObject {
     private func tick() {
         guard let anchorDate, let lastSyncDate else { return }
         let silence = Date().timeIntervalSince(lastSyncDate)
-        if silence >= Self.inactiveTimeout {
+        if silence >= NowPlaying.inactiveTimeout {
             stop()
             return
         }
-        if silence >= Self.pauseStaleTimeout {
+        if silence >= NowPlaying.pauseStaleTimeout {
             playbackState = .pausedStale
             return
         }
@@ -447,5 +570,16 @@ private final class PlaybackBarProgressModel: ObservableObject {
             return TimeInterval(positionMs) / 1000
         }
         return TimeInterval(position ?? 0)
+    }
+
+    private func activityState(for receivedAt: Date) -> PlaybackActivityState {
+        let silence = Date().timeIntervalSince(receivedAt)
+        if silence >= NowPlaying.inactiveTimeout {
+            return .inactive
+        }
+        if silence >= NowPlaying.pauseStaleTimeout {
+            return .pausedStale
+        }
+        return .active
     }
 }

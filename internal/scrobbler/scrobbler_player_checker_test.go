@@ -80,26 +80,31 @@ type stubPlayerInfo struct {
 	artist      string
 	position    float64
 	duration    int64
+	sampleRate  int64
 	trackNumber int64
 	discNumber  int8
 }
 
-func (s *stubPlayerInfo) GetTitle() string         { return s.title }
-func (s *stubPlayerInfo) GetAlbum() string         { return s.album }
-func (s *stubPlayerInfo) GetArtist() string        { return s.artist }
-func (s *stubPlayerInfo) GetPosition() float64     { return s.position }
-func (s *stubPlayerInfo) GetDuration() int64       { return s.duration }
-func (s *stubPlayerInfo) GetUrl() string           { return "" }
-func (s *stubPlayerInfo) GetAlbumArtist() string   { return s.artist }
-func (s *stubPlayerInfo) GetTrackNumber() int64    { return s.trackNumber }
-func (s *stubPlayerInfo) GetGenre() string         { return "" }
-func (s *stubPlayerInfo) GetComposer() string      { return "" }
-func (s *stubPlayerInfo) GetReleaseDate() string   { return "" }
-func (s *stubPlayerInfo) GetMusicBrainzID() string { return "mbid" }
-func (s *stubPlayerInfo) GetSource() string        { return string(common.PlayerAppleMusic) }
-func (s *stubPlayerInfo) GetBundleID() string      { return "bundle" }
-func (s *stubPlayerInfo) GetUniqueID() string      { return "unique" }
-func (s *stubPlayerInfo) GetDiscNumber() int8      { return s.discNumber }
+func (s *stubPlayerInfo) GetTitle() string                                  { return s.title }
+func (s *stubPlayerInfo) GetAlbum() string                                  { return s.album }
+func (s *stubPlayerInfo) GetAlbumSubtitle() string                          { return "" }
+func (s *stubPlayerInfo) GetAlbumTitleMetadata() *common.AlbumTitleMetadata { return nil }
+func (s *stubPlayerInfo) GetArtist() string                                 { return s.artist }
+func (s *stubPlayerInfo) GetPosition() float64                              { return s.position }
+func (s *stubPlayerInfo) GetDuration() int64                                { return s.duration }
+func (s *stubPlayerInfo) GetSampleRate() int64                              { return s.sampleRate }
+func (s *stubPlayerInfo) GetUrl() string                                    { return "" }
+func (s *stubPlayerInfo) GetAlbumArtist() string                            { return s.artist }
+func (s *stubPlayerInfo) GetTrackNumber() int64                             { return s.trackNumber }
+func (s *stubPlayerInfo) GetGenre() string                                  { return "" }
+func (s *stubPlayerInfo) GetComposer() string                               { return "" }
+func (s *stubPlayerInfo) GetReleaseDate() string                            { return "" }
+func (s *stubPlayerInfo) GetOriginalReleaseDate() string                    { return "" }
+func (s *stubPlayerInfo) GetMusicBrainzID() string                          { return "mbid" }
+func (s *stubPlayerInfo) GetSource() string                                 { return string(common.PlayerAppleMusic) }
+func (s *stubPlayerInfo) GetBundleID() string                               { return "bundle" }
+func (s *stubPlayerInfo) GetUniqueID() string                               { return "unique" }
+func (s *stubPlayerInfo) GetDiscNumber() int8                               { return s.discNumber }
 
 func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 	corelog.Logger = zap.NewNop()
@@ -129,6 +134,7 @@ func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 		artist:      "Artist",
 		position:    70,
 		duration:    100,
+		sampleRate:  44100,
 		trackNumber: 3,
 		discNumber:  1,
 	}
@@ -153,6 +159,7 @@ func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 	require.True(t, wsInfo.Data.AppleMusic)
 	require.True(t, wsInfo.Data.LastFM)
 	require.Equal(t, common.TrackFavoriteStateFavorited, wsInfo.Data.FavoriteState)
+	require.Equal(t, int64(44100), wsInfo.Data.SampleRate)
 }
 
 func TestProcessPlayingTrackReusesArtworkForSameTrack(t *testing.T) {
@@ -190,6 +197,7 @@ func TestProcessPlayingTrackReusesArtworkForSameTrack(t *testing.T) {
 		artist:      "Artist",
 		position:    10,
 		duration:    100,
+		sampleRate:  44100,
 		trackNumber: 3,
 		discNumber:  1,
 	}
@@ -483,19 +491,23 @@ func TestProcessPlayingTrackCreatesTrackPlaybackSpanBySession(t *testing.T) {
 		t, spans, string(common.PlayerAppleMusic)+"_TrackPlayback", "Track A",
 	)
 	require.NotNil(t, rootSpan)
-	require.Equal(t, map[string]string{
-		"player.source":             string(common.PlayerAppleMusic),
-		"track.title":               "Track A",
-		"track.artist":              "Artist",
-		"track.album":               "Album",
-		"track.album_artist":        "Artist",
-		"track.metadata_confidence": "medium",
-	}, spanStringAttributes(rootSpan))
-	require.Equal(t, map[string]int64{
-		"track.track_number": 1,
-		"track.disc_number":  1,
-		"track.duration_sec": 100,
-	}, spanInt64Attributes(rootSpan))
+	require.Equal(
+		t, map[string]string{
+			"player.source":             string(common.PlayerAppleMusic),
+			"track.title":               "Track A",
+			"track.artist":              "Artist",
+			"track.album":               "Album",
+			"track.album_artist":        "Artist",
+			"track.metadata_confidence": "medium",
+		}, spanStringAttributes(rootSpan),
+	)
+	require.Equal(
+		t, map[string]int64{
+			"track.track_number": 1,
+			"track.disc_number":  1,
+			"track.duration_sec": 100,
+		}, spanInt64Attributes(rootSpan),
+	)
 	require.ElementsMatch(
 		t,
 		[]string{

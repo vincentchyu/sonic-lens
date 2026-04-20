@@ -9,12 +9,17 @@ final class NowPlayingService {
     var onUpdate: ((NowPlaying?, String?) -> Void)?
     var onLibraryUpdate: ((Int64) -> Void)?
     var onInsightJobUpdate: ((InsightAnalysisJob) -> Void)?
+    var onRecentPlaysUpdate: (() -> Void)?
+    var onConnectionStateChange: ((Bool) -> Void)?
 
     init(server: ServerConfig) {
         self.server = server
         client = WebSocketClient(url: server.webSocketURL)
         client.onMessage = { [weak self] message in
             self?.handle(message)
+        }
+        client.onStateChange = { [weak self] isConnected in
+            self?.onConnectionStateChange?(isConnected)
         }
     }
 
@@ -27,6 +32,7 @@ final class NowPlayingService {
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
+        onConnectionStateChange?(true)
         switch message {
         case .string(let text):
             guard let data = text.data(using: .utf8) else { return }
@@ -70,22 +76,28 @@ final class NowPlayingService {
             }
             logger.debug("dispatch insight_job_updated id=\(msg.data.id, privacy: .public) phase=\(msg.data.phase.rawValue, privacy: .public)")
             onInsightJobUpdate?(msg.data)
+        } else if envelope.type == "recent_plays_updated" {
+            guard (try? JSONDecoders.defaultDecoder().decode(RecentPlaysUpdatedMessage.self, from: data)) != nil else {
+                logger.error("decode recent_plays_updated message failed")
+                return
+            }
+            logger.debug("dispatch recent_plays_updated")
+            onRecentPlaysUpdate?()
         }
     }
 
     private func normalizedNowPlaying(from nowPlaying: NowPlaying?) -> NowPlaying? {
         guard let nowPlaying else { return nil }
         let artwork = resolveArtworkURL(nowPlaying.artwork)
-        if let artwork {
-            logger.info("normalized now_playing artwork url=\(artwork, privacy: .public)")
-        }
         return NowPlaying(
             artist: nowPlaying.artist,
             album: nowPlaying.album,
+            albumSubtitle: nowPlaying.albumSubtitle,
             track: nowPlaying.track,
             duration: nowPlaying.duration,
             position: nowPlaying.position,
             positionMs: nowPlaying.positionMs,
+            sampleRate: nowPlaying.sampleRate,
             artwork: artwork,
             isAppleMusicFav: nowPlaying.isAppleMusicFav,
             isLastFmFav: nowPlaying.isLastFmFav,
@@ -93,7 +105,8 @@ final class NowPlayingService {
             lastfmState: nowPlaying.lastfmState,
             favoriteState: nowPlaying.favoriteState,
             trackNumber: nowPlaying.trackNumber,
-            discNumber: nowPlaying.discNumber
+            discNumber: nowPlaying.discNumber,
+            receivedAt: Date()
         )
     }
 

@@ -25,6 +25,8 @@ type playingTrackSnapshot struct {
 	traceID                  string
 	rootSpanID               string
 	traceSampled             bool
+
+	// albumTitleMetadata *common.AlbumTitleMetadata
 }
 
 func (s playingTrackSnapshot) toPlaybackEventInput(
@@ -34,6 +36,8 @@ func (s playingTrackSnapshot) toPlaybackEventInput(
 		Artist:                  s.playerInfo.GetArtist(),
 		AlbumArtist:             s.playerInfo.GetAlbumArtist(),
 		Album:                   s.playerInfo.GetAlbum(),
+		AlbumSubtitle:           s.playerInfo.GetAlbumSubtitle(),
+		AlbumTitleMetadata:      s.playerInfo.GetAlbumTitleMetadata(),
 		Track:                   s.playerInfo.GetTitle(),
 		TrackNumber:             int8(s.playerInfo.GetTrackNumber()),
 		DiscNumber:              s.playerInfo.GetDiscNumber(),

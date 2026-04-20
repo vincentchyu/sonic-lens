@@ -559,15 +559,15 @@ struct ListeningProfileSummarySidebar: View {
                 subtitle: summaryText,
                 accentKey: accentKey
             )
-            Text(footnoteText)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(SonicTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            //Text(footnoteText)
+             //   .font(.system(size: 11, weight: .medium))
+             //   .foregroundStyle(SonicTheme.textSecondary)
+             //   .fixedSize(horizontal: false, vertical: true)
                 
 
             VStack(spacing: 10) {
                 ListeningProfileGenrePanel(
-                    items: Array(genres.prefix(3)),
+                    items: Array(genres.prefix(4)),
                     accentKey: accentKey,
                     style: .compactSummary
                 )
@@ -693,7 +693,7 @@ private struct ListeningProfileGenrePanel: View {
                         .frame(width: 96, height: 96)
 
                         VStack(alignment: .leading, spacing: 7) {
-                            ForEach(Array(genreSlices.prefix(2))) { slice in
+                            ForEach(Array(genreSlices.prefix(3))) { slice in
                                 CompactProfileLegendRow(
                                     slice: slice,
                                     trailingText: compactCount(slice.count)
@@ -785,7 +785,7 @@ private struct ListeningProfileSourcePanel: View {
                         .frame(width: 96, height: 96)
 
                         VStack(alignment: .leading, spacing: 7) {
-                            ForEach(Array(sourceSlices.prefix(2))) { slice in
+                            ForEach(Array(sourceSlices.prefix(3))) { slice in
                                 CompactProfileLegendRow(
                                     slice: slice,
                                     trailingText: "\(percentLabel(slice.share)) · \(compactCount(slice.count))"
@@ -860,6 +860,8 @@ private struct ListeningProfilePanelShell<Content: View>: View {
 }
 
 struct ArtistLadderCard: View {
+    static let homeMinimumWidth: CGFloat = 300
+
     let items: [HomeHotArtistPresentationItem]
     let artworkBaseURL: URL?
     var collectionCount: Int64? = nil
@@ -1018,6 +1020,8 @@ struct AlbumShelfCard: View {
         case rail
         case compactGrid
     }
+
+    static let homeMinimumWidth: CGFloat = 360
 
     let items: [HomeHotAlbumPresentationItem]
     let artworkBaseURL: URL?
@@ -1230,9 +1234,12 @@ struct TrackShelfCard: View {
         case compactGrid
     }
 
+    static let homeMinimumWidth: CGFloat = 360
+
     let items: [HomeHotTrackPresentationItem]
     let artworkBaseURL: URL?
     let style: Style
+    var visibleItemCount: Int = 5
     var totalTracksCount: Int64? = nil
     var accentKey: HomeHotAccentKey? = nil
     var actionTitle: String? = nil
@@ -1277,14 +1284,17 @@ struct TrackShelfCard: View {
         }
     }
 
+    @ViewBuilder
     private var featureGrid: some View {
+        let displayItems = Array(items.prefix(max(visibleItemCount, 0)))
+
         VStack(alignment: .leading, spacing: 12) {
-            if let hero = items.first {
+            if let hero = displayItems.first {
                 trackFeatureCard(hero, artworkSize: 152, isHero: true)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(Array(items.dropFirst().prefix(4))) { item in
+                ForEach(Array(displayItems.dropFirst())) { item in
                     trackFeatureCard(item, artworkSize: 72, isHero: false)
                 }
             }

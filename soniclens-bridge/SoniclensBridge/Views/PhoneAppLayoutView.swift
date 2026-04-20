@@ -94,7 +94,7 @@ struct PhoneAppLayoutView: View {
         }
         .fullScreenCover(isPresented: $showNowPlaying) {
             Group {
-                if let nowPlaying = playbackStore.nowPlaying {
+                if let nowPlaying = playbackStore.nowPlaying, playbackStore.hasActiveNowPlaying {
                     PhoneNowPlayingView(nowPlaying: nowPlaying) {
                         showNowPlaying = false
                     }
@@ -106,7 +106,7 @@ struct PhoneAppLayoutView: View {
                         }
                 }
             }
-            .onChange(of: playbackStore.nowPlaying != nil) { _, newValue in
+            .onChange(of: playbackStore.hasActiveNowPlaying) { _, newValue in
                 if !newValue {
                     showNowPlaying = false
                 }
@@ -121,8 +121,10 @@ struct PhoneAppLayoutView: View {
             Task { await libraryViewModel.load(using: server) }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, let server = store.currentServer else { return }
+            guard phase == .active else { return }
             Task {
+                await store.performForegroundConnectionHealthCheckIfNeeded()
+                guard let server = store.currentServer, store.isConnectionHealthy else { return }
                 await libraryViewModel.refresh(using: server)
                 await insightCoordinator.reconcileIfNeeded(using: server)
             }
@@ -198,7 +200,7 @@ struct PhoneAppLayoutView: View {
     }
 
     private func openNowPlaying() {
-        guard playbackStore.nowPlaying != nil else { return }
+        guard playbackStore.hasActiveNowPlaying else { return }
         showNowPlaying = true
     }
 

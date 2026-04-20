@@ -97,6 +97,40 @@ final class SharePayloadBuilderTests: XCTestCase {
         ])
     }
 
+    func testAlbumDetailDecodesOriginalReleaseDate() throws {
+        let json = """
+        {
+          "id": 42,
+          "name": "The Album",
+          "artist": "The Artist",
+          "release_date": "2024-01-01",
+          "original_release_date": "2023-11-17",
+          "cover_art_url": null,
+          "cover_art_mime": null,
+          "cover_art_object_key": null,
+          "genre": "Art Pop",
+          "total_discs": 1,
+          "tracks": [],
+          "release_mb": null
+        }
+        """
+
+        let detail = try JSONDecoder().decode(AlbumDetail.self, from: Data(json.utf8))
+
+        XCTAssertEqual(detail.releaseDate, "2024-01-01")
+        XCTAssertEqual(detail.originalReleaseDate, "2023-11-17")
+    }
+
+    func testPrimaryInsightSelectionRemainsFirstForShareContract() throws {
+        let trackPrimary = try makeTrackInsight()
+        let trackAlternate = try makeTrackInsight(id: 2, provider: "AltProvider", createdAt: "2026-03-27 09:00")
+        XCTAssertEqual([trackPrimary, trackAlternate].primaryInsight?.id, trackPrimary.id)
+
+        let albumPrimary = try makeAlbumInsight()
+        let albumAlternate = try makeAlbumInsight(id: 11, provider: "AltProvider", createdAt: "2026-03-27 11:00")
+        XCTAssertEqual([albumPrimary, albumAlternate].primaryInsight?.id, albumPrimary.id)
+    }
+
     private func makeTrack(duration: Int64?, discNumber: Int?, trackNumber: Int?) -> Track {
         Track(
             id: 1,
@@ -129,10 +163,14 @@ final class SharePayloadBuilderTests: XCTestCase {
         )
     }
 
-    private func makeTrackInsight() throws -> Insight {
+    private func makeTrackInsight(
+        id: Int64 = 1,
+        provider: String = "MockProvider",
+        createdAt: String = "2026-03-24 12:00"
+    ) throws -> Insight {
         let json = """
         {
-          "id": 1,
+          "id": \(id),
           "artist": "The Artist",
           "album": "The Album",
           "track": "The Track",
@@ -144,9 +182,9 @@ final class SharePayloadBuilderTests: XCTestCase {
           },
           "background_info": "录制于巡演结束后的间歇期。",
           "era_context": "发布时正值风格转型期。",
-          "llm_provider": "MockProvider",
+          "llm_provider": "\(provider)",
           "metadata": null,
-          "created_at": "2026-03-24 12:00",
+          "created_at": "\(createdAt)",
           "total_score": 95
         }
         """
@@ -154,10 +192,14 @@ final class SharePayloadBuilderTests: XCTestCase {
         return try JSONDecoder().decode(Insight.self, from: Data(json.utf8))
     }
 
-    private func makeAlbumInsight() throws -> AlbumInsight {
+    private func makeAlbumInsight(
+        id: Int64 = 10,
+        provider: String = "MockProvider",
+        createdAt: String = "2026-03-26 10:00"
+    ) throws -> AlbumInsight {
         let json = """
         {
-          "id": 10,
+          "id": \(id),
           "album_id": 42,
           "artist": "The Artist",
           "album": "The Album",
@@ -174,13 +216,13 @@ final class SharePayloadBuilderTests: XCTestCase {
           },
           "background_info": "制作期横跨两个城市。",
           "era_context": "它发布在流媒体审美趋同最明显的几年里。",
-          "llm_provider": "MockProvider",
+          "llm_provider": "\(provider)",
           "metadata": {
             "album_id": 42,
             "analyzed_tracks": 2,
             "total_tracks": 2
           },
-          "created_at": "2026-03-26 10:00"
+          "created_at": "\(createdAt)"
         }
         """
 

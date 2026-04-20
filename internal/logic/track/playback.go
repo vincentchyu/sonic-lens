@@ -36,6 +36,8 @@ type PlaybackEventInput struct {
 	Artist                  string
 	AlbumArtist             string
 	Album                   string
+	AlbumSubtitle           string
+	AlbumTitleMetadata      *common.AlbumTitleMetadata
 	Track                   string
 	TrackNumber             int8
 	DiscNumber              int8
@@ -98,12 +100,13 @@ func (s *TrackServiceImpl) ProbeAndSyncTrackFavorite(
 		Confidence: input.Metadata.Confidence,
 	}
 	projectionInput := FavoriteProjectionInput{
-		Artist:      input.Artist,
-		Album:       input.Album,
-		Track:       input.Track,
-		TrackNumber: input.TrackNumber,
-		DiscNumber:  input.DiscNumber,
-		Metadata:    input.Metadata,
+		Artist:        input.Artist,
+		Album:         input.Album,
+		AlbumSubtitle: input.AlbumSubtitle,
+		Track:         input.Track,
+		TrackNumber:   input.TrackNumber,
+		DiscNumber:    input.DiscNumber,
+		Metadata:      input.Metadata,
 	}
 	trackKey := s.buildLikeTrackKey(input)
 	cacheVersion := favoriteProjectionVersion.Load()
@@ -168,47 +171,49 @@ func (s *TrackServiceImpl) ProbeAndSyncTrackFavorite(
 	}
 
 	lockKey := s.buildLikeLockKey(input)
-	if err := s.withLikeWriteLock(ctx, lockKey, func() error {
-		currentTrack, _ := modelGetTrackByIdentity(
-			ctx, input.Artist, input.Album, input.Track, input.TrackNumber, input.DiscNumber,
-		)
-		trackAppleFav := currentTrack != nil && currentTrack.IsAppleMusicFav
-		trackLastFav := currentTrack != nil && currentTrack.IsLastFmFav
+	if err := s.withLikeWriteLock(
+		ctx, lockKey, func() error {
+			currentTrack, _ := modelGetTrackByIdentityWithSubtitle(
+				ctx, input.Artist, input.Album, input.AlbumSubtitle, input.Track, input.TrackNumber, input.DiscNumber,
+			)
+			trackAppleFav := currentTrack != nil && currentTrack.IsAppleMusicFav
+			trackLastFav := currentTrack != nil && currentTrack.IsLastFmFav
 
-		if input.PlayerSource == common.PlayerAppleMusic {
-			shouldApplyFavorite := (probe.appleKnown && probe.appleLiked) || (probe.lastKnown && probe.lastLiked)
-			if shouldApplyFavorite && (!trackAppleFav || !trackLastFav) {
+			if input.PlayerSource == common.PlayerAppleMusic {
+				shouldApplyFavorite := (probe.appleKnown && probe.appleLiked) || (probe.lastKnown && probe.lastLiked)
+				if shouldApplyFavorite && (!trackAppleFav || !trackLastFav) {
+					projection, err := s.SetTrackFavorite(
+						ctx,
+						input.Artist,
+						input.Album,
+						input.Track,
+						model.TrackFavoriteEventSourceAppleMusic,
+						true,
+						input.Metadata,
+					)
+					result.TrackFavoriteProjection = projection
+					return err
+				}
+				return nil
+			}
+
+			if probe.lastKnown && probe.lastLiked && !trackLastFav {
 				projection, err := s.SetTrackFavorite(
 					ctx,
 					input.Artist,
 					input.Album,
 					input.Track,
-					model.TrackFavoriteEventSourceAppleMusic,
+					model.TrackFavoriteEventSourceLastFm,
 					true,
 					input.Metadata,
 				)
 				result.TrackFavoriteProjection = projection
 				return err
 			}
+
 			return nil
-		}
-
-		if probe.lastKnown && probe.lastLiked && !trackLastFav {
-			projection, err := s.SetTrackFavorite(
-				ctx,
-				input.Artist,
-				input.Album,
-				input.Track,
-				model.TrackFavoriteEventSourceLastFm,
-				true,
-				input.Metadata,
-			)
-			result.TrackFavoriteProjection = projection
-			return err
-		}
-
-		return nil
-	}); err != nil {
+		},
+	); err != nil {
 		log.Warn(ctx, "ProbeAndSyncTrackFavorite sync favorite err", zap.Error(err))
 	}
 
@@ -295,6 +300,7 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		AlbumArtist:   req.AlbumArtist,
 		Track:         req.Track,
 		Album:         req.Album,
+		AlbumSubtitle: input.AlbumSubtitle,
 		Duration:      req.Duration,
 		PlayTime:      time.Unix(req.Timestamp, 0),
 		Scrobbled:     true,
@@ -302,6 +308,7 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		TrackNumber:   input.TrackNumber,
 		DiscNumber:    input.DiscNumber,
 		Source:        string(input.PlayerSource),
+		CoverArtPath:  model.BuildTrackPlayRecordArtworkPath(input.CoverArtURL, input.CoverArtObjectKey),
 		TraceID:       input.TraceID,
 		RootSpanID:    input.RootSpanID,
 		TraceSampled:  input.TraceSampled,
@@ -317,24 +324,36 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		log.Warn(ctx, "HandleTrackPlaybackThreshold insert play record err", zap.Error(insertErr))
 	} else if processErr := modelProcessTrackPlayRecord(ctx, record.ID, input.Metadata); processErr != nil {
 		log.Warn(ctx, "HandleTrackPlaybackThreshold process play record err", zap.Error(processErr))
-	} else if input.CoverArtURL != "" || input.CoverArtObjectKey != "" {
+	} else {
+		telemetryGoOnlySafe(
+			ctx, func(goCtx context.Context) {
+				websocketBroadcastRecentPlaysUpdated(goCtx)
+			},
+		)
+
 		stored, getErr := modelGetTrackPlayRecordByID(ctx, record.ID)
 		if getErr != nil {
 			log.Warn(ctx, "HandleTrackPlaybackThreshold query play record err", zap.Error(getErr))
 		} else if stored != nil && stored.AlbumID > 0 {
-			if coverErr := artworkEnsureAlbumCover(
-				ctx,
-				artworklogic.EnsureAlbumCoverInput{
-					AlbumID:           stored.AlbumID,
-					AlbumArtist:       input.AlbumArtist,
-					Artist:            input.Artist,
-					Album:             input.Album,
-					CoverArtURL:       input.CoverArtURL,
-					CoverArtMime:      input.CoverArtMime,
-					CoverArtObjectKey: input.CoverArtObjectKey,
-				},
-			); coverErr != nil {
-				log.Warn(ctx, "HandleTrackPlaybackThreshold update album cover err", zap.Error(coverErr))
+			if input.CoverArtURL != "" || input.CoverArtObjectKey != "" {
+				if coverErr := artworkEnsureAlbumCover(
+					ctx,
+					artworklogic.EnsureAlbumCoverInput{
+						AlbumID:           stored.AlbumID,
+						AlbumArtist:       input.AlbumArtist,
+						Artist:            input.Artist,
+						Album:             input.Album,
+						CoverArtURL:       input.CoverArtURL,
+						CoverArtMime:      input.CoverArtMime,
+						CoverArtObjectKey: input.CoverArtObjectKey,
+					},
+				); coverErr != nil {
+					log.Warn(ctx, "HandleTrackPlaybackThreshold update album cover err", zap.Error(coverErr))
+				}
+			}
+
+			if metadataErr := modelUpdateAlbumTitleMetadataByID(ctx, stored.AlbumID, input.AlbumTitleMetadata); metadataErr != nil {
+				log.Warn(ctx, "HandleTrackPlaybackThreshold update album title metadata err", zap.Error(metadataErr))
 			}
 		}
 	}

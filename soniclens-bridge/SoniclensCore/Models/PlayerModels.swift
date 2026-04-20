@@ -27,6 +27,10 @@ enum PlaybackActivityState: Equatable {
         self == .active
     }
 
+    var isTransportVisible: Bool {
+        self == .active
+    }
+
     var bannerText: String? {
         switch self {
         case .active:
@@ -40,6 +44,26 @@ enum PlaybackActivityState: Equatable {
 
     var isInactive: Bool {
         self == .inactive
+    }
+}
+
+/// 收敛播放进度同步触发键，避免同一条 WS 更新被 position / positionMs 重复驱动两次。
+struct PlaybackProgressSyncToken: Equatable {
+    let trackKey: String
+    let position: Int?
+    let positionMs: Int?
+    let receivedAt: Date?
+
+    init(nowPlaying: NowPlaying?) {
+        trackKey = [
+            nowPlaying?.artist ?? "",
+            nowPlaying?.album ?? "",
+            nowPlaying?.track ?? "",
+            String(nowPlaying?.duration ?? 0)
+        ].joined(separator: "•")
+        position = nowPlaying?.position
+        positionMs = nowPlaying?.positionMs
+        receivedAt = nowPlaying?.receivedAt
     }
 }
 
@@ -144,10 +168,22 @@ enum LRCParser {
 
 struct TrackInsightResponse: Decodable {
     let insights: [Insight]
+    let recommendedInsightID: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case insights
+        case recommendedInsightID = "recommended_insight_id"
+    }
 }
 
 struct AlbumInsightResponse: Decodable {
     let insights: [AlbumInsight]
+    let recommendedInsightID: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case insights
+        case recommendedInsightID = "recommended_insight_id"
+    }
 }
 
 struct AIPlatformOption: Decodable, Identifiable, Hashable {
@@ -205,6 +241,13 @@ struct TrackInsightGenerateRequest: Encodable {
 struct TrackInsightGenerateResponse: Decodable {
     let insights: [Insight]
     let cached: Bool?
+    let recommendedInsightID: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case insights
+        case cached
+        case recommendedInsightID = "recommended_insight_id"
+    }
 }
 
 struct AlbumInsightGenerateRequest: Encodable {
@@ -222,6 +265,13 @@ struct AlbumInsightGenerateRequest: Encodable {
 struct AlbumInsightGenerateResponse: Decodable {
     let insights: [AlbumInsight]
     let cached: Bool?
+    let recommendedInsightID: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case insights
+        case cached
+        case recommendedInsightID = "recommended_insight_id"
+    }
 }
 
 struct HealthResponse: Decodable {
@@ -235,4 +285,8 @@ struct WebSocketEnvelope: Decodable {
 struct LibraryUpdatedMessage: Decodable {
     let type: String
     let version: Int64
+}
+
+struct RecentPlaysUpdatedMessage: Decodable {
+    let type: String
 }

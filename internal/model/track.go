@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -38,16 +39,17 @@ import (
 }*/
 type Track struct {
 	ID              int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Artist          string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_t_aatdntn" json:"artist"`
-	Album           string    `gorm:"column:album;type:varchar(255);not null;index:idx_track_album;uniqueIndex:uidx_t_aatdntn" json:"album"`
-	Track           string    `gorm:"column:track;type:varchar(255);not null;index:idx_track_track;uniqueIndex:uidx_t_aatdntn" json:"track"`
+	Artist          string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_t_aaastdntn" json:"artist"`
+	Album           string    `gorm:"column:album;type:varchar(255);not null;index:idx_track_album;uniqueIndex:uidx_t_aaastdntn" json:"album"`
+	AlbumSubtitle   string    `gorm:"column:album_subtitle;type:varchar(255);uniqueIndex:uidx_t_aaastdntn" json:"album_subtitle"`
+	Track           string    `gorm:"column:track;type:varchar(255);not null;index:idx_track_track;uniqueIndex:uidx_t_aaastdntn" json:"track"`
 	PlayCount       int       `gorm:"column:play_count;type:int;default:0" json:"play_count"`
 	IsAppleMusicFav bool      `gorm:"column:is_apple_music_fav;type:tinyint(1);default:0" json:"is_apple_music_fav"`
 	IsLastFmFav     bool      `gorm:"column:is_last_fm_fav;type:tinyint(1);default:0" json:"is_last_fm_fav"`
 	Version         int       `gorm:"column:version;type:int;default:1" json:"version"`
 	AlbumArtist     string    `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
-	TrackNumber     int8      `gorm:"column:track_number;type:tinyint;uniqueIndex:uidx_t_aatdntn" json:"track_number"`
-	DiscNumber      int8      `gorm:"column:disc_number;type:tinyint;default:1;uniqueIndex:uidx_t_aatdntn" json:"disc_number"` // 碟号
+	TrackNumber     int8      `gorm:"column:track_number;type:tinyint;uniqueIndex:uidx_t_aaastdntn" json:"track_number"`
+	DiscNumber      int8      `gorm:"column:disc_number;type:tinyint;default:1;uniqueIndex:uidx_t_aaastdntn" json:"disc_number"` // 碟号
 	Duration        int64     `gorm:"column:duration;type:int" json:"duration"`
 	Genre           string    `gorm:"column:genre;type:varchar(255);index:idx_track_genre" json:"genre"`
 	Composer        string    `gorm:"column:composer;type:varchar(255)" json:"composer"`
@@ -79,23 +81,25 @@ func (t *Track) AfterDelete(tx *gorm.DB) error {
 
 // TrackMetadata represents metadata for a music track
 type TrackMetadata struct {
-	AlbumArtist       string                         `json:"album_artist"`         // 专辑艺术家
-	TrackNumber       int8                           `json:"track_number"`         // 曲目编号
-	Duration          int64                          `json:"duration"`             // 持续时间(秒)
-	Genre             string                         `json:"genre"`                // 流派
-	Composer          string                         `json:"composer"`             // 作曲家
-	ReleaseDate       string                         `json:"release_date"`         // 发布日期
-	MusicBrainzID     string                         `json:"musicbrainz_id"`       // MusicBrainz ID
-	Source            string                         `json:"source"`               // 数据来源：Apple Music, Audirvana, Roon等
-	BundleID          string                         `json:"bundle_id"`            // 应用标识符 (用于media-control)
-	UniqueID          string                         `json:"unique_id"`            // 唯一标识符 (用于media-control)
-	DiscNumber        int8                           `json:"disc_number"`          // 盘编号
-	PlayerType        string                         `json:"player_type"`          // 播放器类型
-	Confidence        common.TrackMetadataConfidence `json:"confidence"`           // 元数据置信度
-	ReleaseYear       int                            `json:"release_year"`         // 仅有年份时的弱提示
-	CoverArtURL       string                         `json:"cover_art_url"`        // 播放期封面访问地址
-	CoverArtMime      string                         `json:"cover_art_mime"`       // 封面 MIME
-	CoverArtObjectKey string                         `json:"cover_art_object_key"` // 封面对象存储键
+	AlbumArtist         string                         `json:"album_artist"`          // 专辑艺术家
+	AlbumSubtitle       string                         `json:"album_subtitle"`        // 专辑补充说明
+	TrackNumber         int8                           `json:"track_number"`          // 曲目编号
+	Duration            int64                          `json:"duration"`              // 持续时间(秒)
+	Genre               string                         `json:"genre"`                 // 流派
+	Composer            string                         `json:"composer"`              // 作曲家
+	ReleaseDate         string                         `json:"release_date"`          // 发布日期
+	OriginalReleaseDate string                         `json:"original_release_date"` // 原始发布日期
+	MusicBrainzID       string                         `json:"musicbrainz_id"`        // MusicBrainz ID
+	Source              string                         `json:"source"`                // 数据来源：Apple Music, Audirvana, Roon等
+	BundleID            string                         `json:"bundle_id"`             // 应用标识符 (用于media-control)
+	UniqueID            string                         `json:"unique_id"`             // 唯一标识符 (用于media-control)
+	DiscNumber          int8                           `json:"disc_number"`           // 盘编号
+	PlayerType          string                         `json:"player_type"`           // 播放器类型
+	Confidence          common.TrackMetadataConfidence `json:"confidence"`            // 元数据置信度
+	ReleaseYear         int                            `json:"release_year"`          // 仅有年份时的弱提示
+	CoverArtURL         string                         `json:"cover_art_url"`         // 播放期封面访问地址
+	CoverArtMime        string                         `json:"cover_art_mime"`        // 封面 MIME
+	CoverArtObjectKey   string                         `json:"cover_art_object_key"`  // 封面对象存储键
 }
 
 // IncrementTrackPlayCountParams represents parameters for IncrementTrackPlayCount function
@@ -119,14 +123,59 @@ type SetFavoriteParams struct {
 
 // TrackIdentity 表示曲目的稳定身份键
 type TrackIdentity struct {
-	Artist      string
-	Album       string
-	Track       string
-	TrackNumber int8
-	DiscNumber  int8
+	Artist        string
+	Album         string
+	AlbumSubtitle string
+	Track         string
+	TrackNumber   int8
+	DiscNumber    int8
+}
+
+func normalizeTrackStorageText(value string) string {
+	return strings.TrimSpace(common.ConversionSimplifiedFx(common.UnityFixAll(value)))
+}
+
+func normalizeTrackStorageMetadata(metadata *TrackMetadata) {
+	if metadata == nil {
+		return
+	}
+
+	metadata.AlbumArtist = normalizeTrackStorageText(metadata.AlbumArtist)
+	metadata.AlbumSubtitle = normalizeTrackStorageText(metadata.AlbumSubtitle)
+	metadata.Genre = normalizeTrackStorageText(metadata.Genre)
+	metadata.Composer = normalizeTrackStorageText(metadata.Composer)
+	metadata.ReleaseDate = strings.TrimSpace(metadata.ReleaseDate)
+	metadata.OriginalReleaseDate = strings.TrimSpace(metadata.OriginalReleaseDate)
+	metadata.MusicBrainzID = strings.TrimSpace(metadata.MusicBrainzID)
+	metadata.Source = strings.TrimSpace(metadata.Source)
+	metadata.BundleID = strings.TrimSpace(metadata.BundleID)
+	metadata.UniqueID = strings.TrimSpace(metadata.UniqueID)
+}
+
+func normalizeTrackForStorage(track *Track) {
+	if track == nil {
+		return
+	}
+
+	track.Artist = normalizeTrackStorageText(track.Artist)
+	track.Album = normalizeTrackStorageText(track.Album)
+	track.AlbumSubtitle = normalizeTrackStorageText(track.AlbumSubtitle)
+	track.Track = normalizeTrackStorageText(track.Track)
+	track.AlbumArtist = normalizeTrackStorageText(track.AlbumArtist)
+	track.Genre = normalizeTrackStorageText(track.Genre)
+	track.Composer = normalizeTrackStorageText(track.Composer)
+	track.ReleaseDate = strings.TrimSpace(track.ReleaseDate)
+	track.MusicBrainzID = strings.TrimSpace(track.MusicBrainzID)
+	track.Source = strings.TrimSpace(track.Source)
+	track.BundleID = strings.TrimSpace(track.BundleID)
+	track.UniqueID = strings.TrimSpace(track.UniqueID)
 }
 
 func normalizeTrackIdentity(identity TrackIdentity) TrackIdentity {
+	identity.Artist = normalizeTrackStorageText(identity.Artist)
+	identity.Album = normalizeTrackStorageText(identity.Album)
+	identity.AlbumSubtitle = normalizeTrackStorageText(identity.AlbumSubtitle)
+	identity.Track = normalizeTrackStorageText(identity.Track)
 	if identity.DiscNumber == 0 && identity.TrackNumber > 0 {
 		identity.DiscNumber = 1
 	}
@@ -170,13 +219,21 @@ func findTrackByIdentityWithOptions(
 
 	if identity.TrackNumber > 0 || identity.DiscNumber > 0 {
 		err := tx.Where(
-			"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ?",
-			identity.Artist, identity.Album, identity.Track, identity.TrackNumber, identity.DiscNumber,
+			"artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track = ? AND track_number = ? AND disc_number = ?",
+			identity.Artist, identity.Album, identity.AlbumSubtitle, identity.Track, identity.TrackNumber,
+			identity.DiscNumber,
 		).First(&record).Error
 		if err == nil {
 			return &record, nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+
+		// 精确匹配失败，尝试进行位置优先的模糊对比 fallback
+		if fuzzyTrack, err := findTrackByFuzzyIdentityTx(tx, identity); err == nil {
+			return fuzzyTrack, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 	}
@@ -200,6 +257,35 @@ func findTrackByIdentityWithOptions(
 	return nil, gorm.ErrRecordNotFound
 }
 
+func findTrackByFuzzyIdentityTx(tx *gorm.DB, identity TrackIdentity) (*Track, error) {
+	if identity.Artist == "" || identity.Album == "" || (identity.TrackNumber <= 0 && identity.DiscNumber <= 0) {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	// 优先按 (artist, album, subtitle, disc, track_number) 获取候选。
+	// 在资料库中，位置相同的曲目通常是同一首歌的唯一事实。
+	var candidates []Track
+	err := tx.Where(
+		"artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track_number = ? AND disc_number = ?",
+		identity.Artist, identity.Album, identity.AlbumSubtitle, identity.TrackNumber, identity.DiscNumber,
+	).Limit(2).Find(&candidates).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(candidates) != 1 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	candidate := candidates[0]
+	// 对标题进行松散对比
+	if common.NormalizeForIdentity(candidate.Track) == common.NormalizeForIdentity(identity.Track) {
+		return &candidate, nil
+	}
+
+	return nil, gorm.ErrRecordNotFound
+}
+
 func findTracksByArtistAlbumTrack(tx *gorm.DB, artist, album, track string, limit int) ([]Track, error) {
 	var records []Track
 	err := tx.Where(
@@ -213,13 +299,13 @@ func findTracksByArtistAlbumTrack(tx *gorm.DB, artist, album, track string, limi
 }
 
 func findUniqueTrackByDuration(
-	tx *gorm.DB, artist, album, track string, duration int64,
+	tx *gorm.DB, artist, album, albumSubtitle, track string, duration int64,
 ) (*Track, error) {
 	// todo 存在问题 duration只是播放歌曲的持续时间
 	var records []Track
 	err := tx.Where(
-		"artist = ? AND album = ? AND track = ? AND duration BETWEEN ? AND ?",
-		artist, album, track, duration-2, duration+2,
+		"artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track = ? AND duration BETWEEN ? AND ?",
+		artist, album, albumSubtitle, track, duration-2, duration+2,
 	).Order("disc_number ASC, track_number ASC, id ASC").Limit(2).Find(&records).Error
 	if err != nil {
 		return nil, err
@@ -279,11 +365,12 @@ func resolveTrackIdentityWithOptions(
 ) (TrackIdentity, *Track, error) {
 	identity := normalizeTrackIdentity(
 		TrackIdentity{
-			Artist:      artist,
-			Album:       album,
-			Track:       track,
-			TrackNumber: metadata.TrackNumber,
-			DiscNumber:  metadata.DiscNumber,
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: metadata.AlbumSubtitle,
+			Track:         track,
+			TrackNumber:   metadata.TrackNumber,
+			DiscNumber:    metadata.DiscNumber,
 		},
 	)
 
@@ -292,11 +379,12 @@ func resolveTrackIdentityWithOptions(
 		if err == nil {
 			resolvedIdentity := mergeTrackIdentityWithMetadata(
 				TrackIdentity{
-					Artist:      byUniqueID.Artist,
-					Album:       byUniqueID.Album,
-					Track:       byUniqueID.Track,
-					TrackNumber: byUniqueID.TrackNumber,
-					DiscNumber:  byUniqueID.DiscNumber,
+					Artist:        byUniqueID.Artist,
+					Album:         byUniqueID.Album,
+					AlbumSubtitle: byUniqueID.AlbumSubtitle,
+					Track:         byUniqueID.Track,
+					TrackNumber:   byUniqueID.TrackNumber,
+					DiscNumber:    byUniqueID.DiscNumber,
 				}, metadata,
 			)
 			return resolvedIdentity, byUniqueID, nil
@@ -315,11 +403,12 @@ func resolveTrackIdentityWithOptions(
 		if err == nil {
 			resolvedIdentity := mergeTrackIdentityWithMetadata(
 				TrackIdentity{
-					Artist:      byMusicBrainzID.Artist,
-					Album:       byMusicBrainzID.Album,
-					Track:       byMusicBrainzID.Track,
-					TrackNumber: byMusicBrainzID.TrackNumber,
-					DiscNumber:  byMusicBrainzID.DiscNumber,
+					Artist:        byMusicBrainzID.Artist,
+					Album:         byMusicBrainzID.Album,
+					AlbumSubtitle: byMusicBrainzID.AlbumSubtitle,
+					Track:         byMusicBrainzID.Track,
+					TrackNumber:   byMusicBrainzID.TrackNumber,
+					DiscNumber:    byMusicBrainzID.DiscNumber,
 				}, metadata,
 			)
 			return resolvedIdentity, &byMusicBrainzID, nil
@@ -330,15 +419,18 @@ func resolveTrackIdentityWithOptions(
 	}
 
 	if metadata.Duration > 0 {
-		byDuration, err := findUniqueTrackByDuration(tx, artist, album, track, metadata.Duration)
+		byDuration, err := findUniqueTrackByDuration(
+			tx, artist, album, metadata.AlbumSubtitle, track, metadata.Duration,
+		)
 		if err == nil {
 			resolvedIdentity := mergeTrackIdentityWithMetadata(
 				TrackIdentity{
-					Artist:      byDuration.Artist,
-					Album:       byDuration.Album,
-					Track:       byDuration.Track,
-					TrackNumber: byDuration.TrackNumber,
-					DiscNumber:  byDuration.DiscNumber,
+					Artist:        byDuration.Artist,
+					Album:         byDuration.Album,
+					AlbumSubtitle: byDuration.AlbumSubtitle,
+					Track:         byDuration.Track,
+					TrackNumber:   byDuration.TrackNumber,
+					DiscNumber:    byDuration.DiscNumber,
 				}, metadata,
 			)
 			return resolvedIdentity, byDuration, nil
@@ -352,11 +444,12 @@ func resolveTrackIdentityWithOptions(
 	if err == nil {
 		resolvedIdentity := mergeTrackIdentityWithMetadata(
 			TrackIdentity{
-				Artist:      record.Artist,
-				Album:       record.Album,
-				Track:       record.Track,
-				TrackNumber: record.TrackNumber,
-				DiscNumber:  record.DiscNumber,
+				Artist:        record.Artist,
+				Album:         record.Album,
+				AlbumSubtitle: record.AlbumSubtitle,
+				Track:         record.Track,
+				TrackNumber:   record.TrackNumber,
+				DiscNumber:    record.DiscNumber,
 			}, metadata,
 		)
 		return resolvedIdentity, record, nil
@@ -426,13 +519,18 @@ func getOrCreatePlaybackAlbumTx(tx *gorm.DB, artist, albumName string, metadata 
 	}
 
 	album := &Album{
-		Name:        albumName,
-		Artist:      artist,
-		ReleaseDate: metadata.ReleaseDate,
-		Genre:       metadata.Genre,
+		Name:                albumName,
+		NameSubtitle:        metadata.AlbumSubtitle,
+		Artist:              artist,
+		ReleaseDate:         metadata.ReleaseDate,
+		OriginalReleaseDate: metadata.OriginalReleaseDate,
+		Genre:               metadata.Genre,
 	}
 	if err := getOrCreateAlbumTx(tx, album); err != nil {
 		return nil, err
+	}
+	if metadata.AlbumSubtitle == "" {
+		metadata.AlbumSubtitle = album.NameSubtitle
 	}
 	return album, nil
 }
@@ -486,26 +584,27 @@ func upsertTrackPlayCountTx(
 			existingTrack = nil
 		} else {
 			err = tx.Where(
-				"artist = ? AND album = ? AND track = ? AND track_number = ? AND disc_number = ?",
-				artist, albumName, trackName, metadata.TrackNumber, metadata.DiscNumber,
+				"artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track = ? AND track_number = ? AND disc_number = ?",
+				artist, albumName, metadata.AlbumSubtitle, trackName, metadata.TrackNumber, metadata.DiscNumber,
 			).First(&track).Error
 		}
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				track = Track{
-					Artist:        artist,
-					AlbumArtist:   metadata.AlbumArtist,
-					Album:         albumName,
-					Track:         trackName,
+					Artist:        normalizeTrackStorageText(artist),
+					AlbumArtist:   normalizeTrackStorageText(metadata.AlbumArtist),
+					Album:         normalizeTrackStorageText(albumName),
+					AlbumSubtitle: normalizeTrackStorageText(metadata.AlbumSubtitle),
+					Track:         normalizeTrackStorageText(trackName),
 					TrackNumber:   metadata.TrackNumber,
 					Duration:      metadata.Duration,
-					Genre:         metadata.Genre,
-					Composer:      metadata.Composer,
-					ReleaseDate:   metadata.ReleaseDate,
-					MusicBrainzID: metadata.MusicBrainzID,
-					Source:        metadata.Source,
-					BundleID:      metadata.BundleID,
-					UniqueID:      metadata.UniqueID,
+					Genre:         normalizeTrackStorageText(metadata.Genre),
+					Composer:      normalizeTrackStorageText(metadata.Composer),
+					ReleaseDate:   strings.TrimSpace(metadata.ReleaseDate),
+					MusicBrainzID: strings.TrimSpace(metadata.MusicBrainzID),
+					Source:        strings.TrimSpace(metadata.Source),
+					BundleID:      strings.TrimSpace(metadata.BundleID),
+					UniqueID:      strings.TrimSpace(metadata.UniqueID),
 					DiscNumber:    metadata.DiscNumber,
 					PlayCount:     1,
 					Version:       1,
@@ -671,6 +770,7 @@ func applyTrackPlayMutationTx(tx *gorm.DB, params IncrementTrackPlayCountParams)
 			tx,
 			params.Artist,
 			params.Album,
+			params.TrackMetadata.AlbumSubtitle,
 			params.Track,
 			params.TrackMetadata.Source,
 			params.TrackMetadata.TrackNumber,
@@ -725,35 +825,6 @@ func IncrementTrackPlayCount(params IncrementTrackPlayCountParams) error {
 		func(tx *gorm.DB) error {
 			_, err := applyTrackPlayMutationTx(tx, params)
 			return err
-		},
-	)
-}
-
-func incrementTrackPlayCountResolvedOnly(params IncrementTrackPlayCountParams) error {
-	return GetDB().WithContext(params.Ctx).Transaction(
-		func(tx *gorm.DB) error {
-			identity, existingTrack, err := resolveTrackIdentityWithOptions(
-				tx,
-				params.Artist,
-				params.Album,
-				params.Track,
-				params.TrackMetadata,
-				trackIdentityResolveOptions{
-					allowLooseNameFallback: false,
-					allowUniqueIDHint:      false,
-				},
-			)
-			if err != nil {
-				return err
-			}
-			if existingTrack == nil {
-				return nil
-			}
-
-			params.TrackMetadata.TrackNumber = identity.TrackNumber
-			params.TrackMetadata.DiscNumber = identity.DiscNumber
-
-			return incrementExistingTrackPlayCountTx(tx, existingTrack.ID)
 		},
 	)
 }
@@ -837,6 +908,7 @@ func findTrackForFavoriteWriteTx(
 		tx,
 		params.Artist,
 		params.Album,
+		params.TrackMetadata.AlbumSubtitle,
 		params.Track,
 		params.TrackMetadata.TrackNumber,
 		params.TrackMetadata.DiscNumber,
@@ -883,6 +955,7 @@ func SetAppleMusicFavorite(params SetFavoriteParams) error {
 				ProviderFavorite: params.IsFavorite,
 				Artist:           params.Artist,
 				Album:            params.Album,
+				AlbumSubtitle:    params.TrackMetadata.AlbumSubtitle,
 				Track:            params.Track,
 				AlbumArtist:      params.TrackMetadata.AlbumArtist,
 				TrackNumber:      params.TrackMetadata.TrackNumber,
@@ -899,7 +972,7 @@ func SetAppleMusicFavorite(params SetFavoriteParams) error {
 			}
 
 			if trackID, confidence, err := FindLatestResolvedTrackIDByIdentityTx(
-				tx, params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber,
+				tx, params.Artist, params.Album, params.TrackMetadata.AlbumSubtitle, params.Track, params.TrackMetadata.TrackNumber,
 				params.TrackMetadata.DiscNumber,
 			); err == nil {
 				if err := setAppleMusicFavoriteByTrackIDTx(tx, trackID, params.IsFavorite); err != nil {
@@ -965,6 +1038,7 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 				ProviderFavorite: params.IsFavorite,
 				Artist:           params.Artist,
 				Album:            params.Album,
+				AlbumSubtitle:    params.TrackMetadata.AlbumSubtitle,
 				Track:            params.Track,
 				AlbumArtist:      params.TrackMetadata.AlbumArtist,
 				TrackNumber:      params.TrackMetadata.TrackNumber,
@@ -981,7 +1055,7 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 			}
 
 			if trackID, confidence, err := FindLatestResolvedTrackIDByIdentityTx(
-				tx, params.Artist, params.Album, params.Track, params.TrackMetadata.TrackNumber,
+				tx, params.Artist, params.Album, params.TrackMetadata.AlbumSubtitle, params.Track, params.TrackMetadata.TrackNumber,
 				params.TrackMetadata.DiscNumber,
 			); err == nil {
 				if err := setLastFmFavoriteByTrackIDTx(tx, trackID, params.IsFavorite); err != nil {
@@ -1066,10 +1140,18 @@ func GetTrack(ctx context.Context, artist, album, track string) (*Track, error) 
 func GetTrackByIdentity(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (
 	*Track, error,
 ) {
+	return GetTrackByIdentityWithSubtitle(ctx, artist, album, "", track, trackNumber, discNumber)
+}
+
+// GetTrackByIdentityWithSubtitle 按五元组和专辑副标题优先查询曲目，缺少编号时回退到旧三元组。
+func GetTrackByIdentityWithSubtitle(
+	ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+) (*Track, error) {
 	record, err := GetTrackByIdentityTx(
 		GetDB().WithContext(ctx),
 		artist,
 		album,
+		albumSubtitle,
 		track,
 		trackNumber,
 		discNumber,
@@ -1082,18 +1164,39 @@ func GetTrackByIdentity(ctx context.Context, artist, album, track string, trackN
 
 // GetTrackByIdentityTx 在事务内按五元组优先查询曲目，缺少编号时回退到旧三元组。
 func GetTrackByIdentityTx(
-	tx *gorm.DB, artist, album, track string, trackNumber, discNumber int8,
+	tx *gorm.DB, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
 ) (*Track, error) {
 	return findTrackByIdentity(
 		tx,
 		TrackIdentity{
-			Artist:      artist,
-			Album:       album,
-			Track:       track,
-			TrackNumber: trackNumber,
-			DiscNumber:  discNumber,
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
 		},
 	)
+}
+
+// ResolveTrackForFavoriteProjection 以只读方式复用收藏写入的弱匹配规则，给当前播放收藏投影读取稳定事实。
+func ResolveTrackForFavoriteProjection(
+	ctx context.Context, artist, album, track string, metadata TrackMetadata,
+) (*Track, TrackIdentity, error) {
+	trackObj, identity, err := findTrackForFavoriteWriteTx(
+		GetDB().WithContext(ctx),
+		SetFavoriteParams{
+			Ctx:           ctx,
+			Artist:        artist,
+			Album:         album,
+			Track:         track,
+			TrackMetadata: metadata,
+		},
+	)
+	if err != nil {
+		return nil, identity, err
+	}
+	return trackObj, identity, nil
 }
 
 // GetTrackByIDTx 在事务内按主键获取曲目，供上层编排多个 DAO 时复用。
@@ -1117,6 +1220,75 @@ func GetTrackByMusicBrainzIDTx(tx *gorm.DB, musicBrainzID string) (*Track, error
 	return &track, nil
 }
 
+// GetTrackByMusicBrainzIdentityTx 在事务内按 MusicBrainz ID 和专辑身份获取曲目，避免跨版本误复用。
+func GetTrackByMusicBrainzIdentityTx(
+	tx *gorm.DB,
+	musicBrainzID string,
+	artist string,
+	album string,
+	albumSubtitle string,
+	track string,
+	trackNumber int8,
+	discNumber int8,
+) (*Track, error) {
+	if musicBrainzID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	identity := normalizeTrackIdentity(
+		TrackIdentity{
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
+		},
+	)
+
+	query := tx.Where(
+		"music_brainz_id = ? AND artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ?",
+		musicBrainzID,
+		identity.Artist,
+		identity.Album,
+		identity.AlbumSubtitle,
+	)
+	if identity.TrackNumber > 0 {
+		query = query.Where("track_number = ? AND disc_number = ?", identity.TrackNumber, identity.DiscNumber)
+	}
+	if identity.Track != "" {
+		query = query.Where("track = ?", identity.Track)
+	}
+
+	var exact Track
+	if err := query.Order("id ASC").First(&exact).Error; err == nil {
+		return &exact, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	if identity.TrackNumber > 0 {
+		var positional Track
+		err := tx.Where(
+			"music_brainz_id = ? AND artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track_number = ? AND disc_number = ?",
+			musicBrainzID,
+			identity.Artist,
+			identity.Album,
+			identity.AlbumSubtitle,
+			identity.TrackNumber,
+			identity.DiscNumber,
+		).Order("id ASC").First(&positional).Error
+		if err == nil {
+			return &positional, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+
+	return nil, gorm.ErrRecordNotFound
+}
+
 // GetOrCreateTrackByIdentityTx 在事务内按五元组获取或创建曲目，创建时默认播放次数为 0。
 func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error) {
 	if candidate == nil {
@@ -1124,11 +1296,12 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 	}
 
 	identity := TrackIdentity{
-		Artist:      candidate.Artist,
-		Album:       candidate.Album,
-		Track:       candidate.Track,
-		TrackNumber: candidate.TrackNumber,
-		DiscNumber:  candidate.DiscNumber,
+		Artist:        candidate.Artist,
+		Album:         candidate.Album,
+		AlbumSubtitle: candidate.AlbumSubtitle,
+		Track:         candidate.Track,
+		TrackNumber:   candidate.TrackNumber,
+		DiscNumber:    candidate.DiscNumber,
 	}
 
 	existing, err := findTrackByIdentityWithOptions(
@@ -1142,6 +1315,7 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 			&updated,
 			&TrackMetadata{
 				AlbumArtist:   candidate.AlbumArtist,
+				AlbumSubtitle: candidate.AlbumSubtitle,
 				TrackNumber:   candidate.TrackNumber,
 				DiscNumber:    candidate.DiscNumber,
 				Duration:      candidate.Duration,
@@ -1157,6 +1331,7 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 		result := tx.Model(&Track{}).Where("id = ?", existing.ID).Updates(
 			map[string]interface{}{
 				"album_artist":    updated.AlbumArtist,
+				"album_subtitle":  updated.AlbumSubtitle,
 				"duration":        updated.Duration,
 				"genre":           updated.Genre,
 				"composer":        updated.Composer,
@@ -1183,11 +1358,76 @@ func GetOrCreateTrackByIdentityTx(tx *gorm.DB, candidate *Track) (*Track, error)
 		return nil, err
 	}
 
+	normalizedIdentity := TrackIdentity{
+		Artist:        normalizeTrackStorageText(candidate.Artist),
+		Album:         normalizeTrackStorageText(candidate.Album),
+		AlbumSubtitle: normalizeTrackStorageText(candidate.AlbumSubtitle),
+		Track:         normalizeTrackStorageText(candidate.Track),
+		TrackNumber:   candidate.TrackNumber,
+		DiscNumber:    candidate.DiscNumber,
+	}
+	if normalizedIdentity != identity {
+		existing, err = findTrackByIdentityWithOptions(
+			tx,
+			normalizedIdentity,
+			trackIdentityResolveOptions{allowLooseNameFallback: false},
+		)
+		if err == nil {
+			updated := *existing
+			UpdateTrackWithTrackMetadata(
+				&updated,
+				&TrackMetadata{
+					AlbumArtist:   candidate.AlbumArtist,
+					AlbumSubtitle: candidate.AlbumSubtitle,
+					TrackNumber:   candidate.TrackNumber,
+					DiscNumber:    candidate.DiscNumber,
+					Duration:      candidate.Duration,
+					Genre:         candidate.Genre,
+					Composer:      candidate.Composer,
+					ReleaseDate:   candidate.ReleaseDate,
+					MusicBrainzID: candidate.MusicBrainzID,
+					Source:        candidate.Source,
+					BundleID:      candidate.BundleID,
+					UniqueID:      candidate.UniqueID,
+				},
+			)
+			result := tx.Model(&Track{}).Where("id = ?", existing.ID).Updates(
+				map[string]interface{}{
+					"album_artist":    updated.AlbumArtist,
+					"album_subtitle":  updated.AlbumSubtitle,
+					"duration":        updated.Duration,
+					"genre":           updated.Genre,
+					"composer":        updated.Composer,
+					"release_date":    updated.ReleaseDate,
+					"music_brainz_id": updated.MusicBrainzID,
+					"source":          updated.Source,
+					"bundle_id":       updated.BundleID,
+					"unique_id":       updated.UniqueID,
+					"disc_number":     updated.DiscNumber,
+					"track_number":    updated.TrackNumber,
+				},
+			)
+			if result.Error != nil {
+				return nil, result.Error
+			}
+			if result.RowsAffected > 0 {
+				if err := appendLibraryChangeTx(tx, LibraryEntityTrack, existing.ID, LibraryOpUpsert); err != nil {
+					return nil, err
+				}
+			}
+			return GetTrackByIDTx(tx, existing.ID)
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+
 	newTrack := *candidate
 	newTrack.PlayCount = 0
 	if newTrack.Version <= 0 {
 		newTrack.Version = 1
 	}
+	normalizeTrackForStorage(&newTrack)
 	if err := tx.Create(&newTrack).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return GetOrCreateTrackByIdentityTx(tx, candidate)
@@ -1255,9 +1495,10 @@ func UpdateTrackCuratedMetadataTx(
 
 		updated := *current
 		if identity != nil {
-			updated.Artist = identity.Artist
-			updated.Album = identity.Album
-			updated.Track = identity.Track
+			updated.Artist = normalizeTrackStorageText(identity.Artist)
+			updated.Album = normalizeTrackStorageText(identity.Album)
+			updated.AlbumSubtitle = normalizeTrackStorageText(identity.AlbumSubtitle)
+			updated.Track = normalizeTrackStorageText(identity.Track)
 			if identity.TrackNumber > 0 {
 				updated.TrackNumber = identity.TrackNumber
 			}
@@ -1266,43 +1507,67 @@ func UpdateTrackCuratedMetadataTx(
 			}
 		}
 		if metadata != nil {
+			normalizedMetadata := *metadata
+			normalizeTrackStorageMetadata(&normalizedMetadata)
 			if metadata.TrackNumber > 0 {
-				updated.TrackNumber = metadata.TrackNumber
+				updated.TrackNumber = normalizedMetadata.TrackNumber
 			}
 			if metadata.DiscNumber > 0 {
-				updated.DiscNumber = metadata.DiscNumber
+				updated.DiscNumber = normalizedMetadata.DiscNumber
 			}
 			if metadata.Duration > 0 {
-				updated.Duration = metadata.Duration
+				updated.Duration = normalizedMetadata.Duration
 			}
-			if metadata.AlbumArtist != "" {
-				updated.AlbumArtist = metadata.AlbumArtist
+			if normalizedMetadata.AlbumArtist != "" {
+				updated.AlbumArtist = normalizedMetadata.AlbumArtist
 			}
-			if metadata.Genre != "" {
-				updated.Genre = metadata.Genre
+			if normalizedMetadata.AlbumSubtitle != "" {
+				updated.AlbumSubtitle = normalizedMetadata.AlbumSubtitle
 			}
-			if metadata.Composer != "" {
-				updated.Composer = metadata.Composer
+			if normalizedMetadata.Genre != "" {
+				updated.Genre = normalizedMetadata.Genre
 			}
-			if metadata.ReleaseDate != "" {
-				updated.ReleaseDate = metadata.ReleaseDate
+			if normalizedMetadata.Composer != "" {
+				updated.Composer = normalizedMetadata.Composer
 			}
-			if metadata.MusicBrainzID != "" {
-				updated.MusicBrainzID = metadata.MusicBrainzID
+			if normalizedMetadata.ReleaseDate != "" {
+				updated.ReleaseDate = normalizedMetadata.ReleaseDate
 			}
-			if metadata.Source != "" {
-				updated.Source = metadata.Source
+			if normalizedMetadata.MusicBrainzID != "" {
+				updated.MusicBrainzID = normalizedMetadata.MusicBrainzID
 			}
-			if metadata.BundleID != "" {
-				updated.BundleID = metadata.BundleID
+			if normalizedMetadata.Source != "" {
+				updated.Source = normalizedMetadata.Source
 			}
-			if metadata.UniqueID != "" {
-				updated.UniqueID = metadata.UniqueID
+			if normalizedMetadata.BundleID != "" {
+				updated.BundleID = normalizedMetadata.BundleID
+			}
+			if normalizedMetadata.UniqueID != "" {
+				updated.UniqueID = normalizedMetadata.UniqueID
 			}
 		}
 		updated.Version = current.Version + 1
 
-		result := tx.Where("id = ? AND version = ?", current.ID, current.Version).Updates(&updated)
+		updates := map[string]interface{}{
+			"artist":          updated.Artist,
+			"album":           updated.Album,
+			"album_subtitle":  updated.AlbumSubtitle,
+			"track":           updated.Track,
+			"album_artist":    updated.AlbumArtist,
+			"track_number":    updated.TrackNumber,
+			"disc_number":     updated.DiscNumber,
+			"duration":        updated.Duration,
+			"genre":           updated.Genre,
+			"composer":        updated.Composer,
+			"release_date":    updated.ReleaseDate,
+			"music_brainz_id": updated.MusicBrainzID,
+			"source":          updated.Source,
+			"bundle_id":       updated.BundleID,
+			"unique_id":       updated.UniqueID,
+			"version":         updated.Version,
+		}
+
+		result := tx.Model(&Track{}).Where("id = ? AND version = ?", current.ID, current.Version).Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -1552,7 +1817,11 @@ func UpdateTrackWithTrackMetadata(track *Track, newTrack *TrackMetadata) {
 	}
 
 	if track.AlbumArtist == "" && newTrack.AlbumArtist != "" {
-		track.AlbumArtist = newTrack.AlbumArtist
+		track.AlbumArtist = normalizeTrackStorageText(newTrack.AlbumArtist)
+	}
+
+	if track.AlbumSubtitle == "" && newTrack.AlbumSubtitle != "" {
+		track.AlbumSubtitle = normalizeTrackStorageText(newTrack.AlbumSubtitle)
 	}
 
 	if track.TrackNumber == 0 && newTrack.TrackNumber > 0 {
@@ -1568,7 +1837,7 @@ func UpdateTrackWithTrackMetadata(track *Track, newTrack *TrackMetadata) {
 	}
 
 	if track.Genre == "" && newTrack.Genre != "" {
-		track.Genre = newTrack.Genre
+		track.Genre = normalizeTrackStorageText(newTrack.Genre)
 	}
 
 	if track.ReleaseDate == "" && newTrack.ReleaseDate != "" {
@@ -1576,7 +1845,7 @@ func UpdateTrackWithTrackMetadata(track *Track, newTrack *TrackMetadata) {
 	}
 
 	if track.Composer == "" && newTrack.Composer != "" {
-		track.Composer = newTrack.Composer
+		track.Composer = normalizeTrackStorageText(newTrack.Composer)
 	}
 
 	if track.BundleID == "" && newTrack.BundleID != "" {
@@ -1589,7 +1858,7 @@ func UpdateTrackWithTrackMetadata(track *Track, newTrack *TrackMetadata) {
 
 	// Update source if not set
 	if track.Source == "" && newTrack.Source != "" {
-		track.Source = newTrack.Source
+		track.Source = strings.TrimSpace(newTrack.Source)
 	}
 }
 

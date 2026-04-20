@@ -25,6 +25,7 @@ func TestGetPendingTrackFavoriteSnapshotReturnsLatestBySource(t *testing.T) {
 			ProviderFavorite: true,
 			Artist:           "Artist",
 			Album:            "Album",
+			AlbumSubtitle:    "Standard",
 			Track:            "Track",
 			TrackNumber:      0,
 			DiscNumber:       0,
@@ -36,6 +37,7 @@ func TestGetPendingTrackFavoriteSnapshotReturnsLatestBySource(t *testing.T) {
 			ProviderFavorite: true,
 			Artist:           "Artist",
 			Album:            "Album",
+			AlbumSubtitle:    "Deluxe",
 			Track:            "Track",
 			TrackNumber:      3,
 			DiscNumber:       1,
@@ -47,6 +49,7 @@ func TestGetPendingTrackFavoriteSnapshotReturnsLatestBySource(t *testing.T) {
 			ProviderFavorite: false,
 			Artist:           "Artist",
 			Album:            "Album",
+			AlbumSubtitle:    "Deluxe",
 			Track:            "Track",
 			TrackNumber:      3,
 			DiscNumber:       1,
@@ -58,6 +61,7 @@ func TestGetPendingTrackFavoriteSnapshotReturnsLatestBySource(t *testing.T) {
 			ProviderFavorite: true,
 			Artist:           "Artist",
 			Album:            "Album",
+			AlbumSubtitle:    "Deluxe",
 			Track:            "Track",
 			TrackNumber:      3,
 			DiscNumber:       1,
@@ -70,11 +74,12 @@ func TestGetPendingTrackFavoriteSnapshotReturnsLatestBySource(t *testing.T) {
 	}
 
 	snapshot, err := GetPendingTrackFavoriteSnapshot(ctx, TrackIdentity{
-		Artist:      "Artist",
-		Album:       "Album",
-		Track:       "Track",
-		TrackNumber: 3,
-		DiscNumber:  1,
+		Artist:        "Artist",
+		Album:         "Album",
+		AlbumSubtitle: "Deluxe",
+		Track:         "Track",
+		TrackNumber:   3,
+		DiscNumber:    1,
 	})
 
 	require.NoError(t, err)

@@ -97,6 +97,7 @@ targets:
           - Info-macOS.plist
           - SoniclensBridgeApp.swift
           - SoniclensBridgePhoneApp.swift
+          - Views/PlaybackBarWindowOverlayController.swift
       - path: SoniclensCore
     dependencies:
       - package: Nuke
@@ -130,6 +131,7 @@ targets:
           - Info-macOS.plist
           - SoniclensBridgeApp.swift
           - SoniclensBridgePadApp.swift
+          - Views/PlaybackBarWindowOverlayController.swift
       - path: SoniclensCore
     dependencies:
       - package: Nuke
@@ -163,6 +165,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.phone.activities
         INFOPLIST_FILE: SoniclensActivities/Info.plist
         CODE_SIGN_ENTITLEMENTS: SoniclensActivities/SoniclensActivities.entitlements
+        CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION: YES
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         APPLICATION_EXTENSION_API_ONLY: YES

@@ -122,7 +122,11 @@ struct PlayerView: View {
                     trackNumber: currentNowPlaying.trackNumber,
                     discNumber: currentNowPlaying.discNumber
                 )
-                viewModel.startProgress(position: currentNowPlaying.position, positionMs: currentNowPlaying.positionMs)
+                viewModel.startProgress(
+                    position: currentNowPlaying.position,
+                    positionMs: currentNowPlaying.positionMs,
+                    receivedAt: currentNowPlaying.receivedAt
+                )
             }
         }
         .onChange(of: playbackStore.nowPlaying?.track) { _, _ in
@@ -139,15 +143,20 @@ struct PlayerView: View {
                         trackNumber: updated.trackNumber,
                         discNumber: updated.discNumber
                     )
-                    viewModel.startProgress(position: updated.position, positionMs: updated.positionMs)
+                    viewModel.startProgress(
+                        position: updated.position,
+                        positionMs: updated.positionMs,
+                        receivedAt: updated.receivedAt
+                    )
                 }
             }
         }
-        .onChange(of: playbackStore.nowPlaying?.position) { _, position in
-            viewModel.syncProgress(position: position, positionMs: playbackStore.nowPlaying?.positionMs)
-        }
-        .onChange(of: playbackStore.nowPlaying?.positionMs) { _, positionMs in
-            viewModel.syncProgress(position: playbackStore.nowPlaying?.position, positionMs: positionMs)
+        .onChange(of: playbackSyncToken) { _, token in
+            viewModel.syncProgress(
+                position: token.position,
+                positionMs: token.positionMs,
+                receivedAt: token.receivedAt ?? currentNowPlaying.receivedAt
+            )
         }
         .onDisappear {
             viewModel.stopProgress()
@@ -168,8 +177,16 @@ struct PlayerView: View {
                 trackNumber: currentNowPlaying.trackNumber,
                 discNumber: currentNowPlaying.discNumber
             )
-            viewModel.startProgress(position: currentNowPlaying.position, positionMs: currentNowPlaying.positionMs)
+            viewModel.startProgress(
+                position: currentNowPlaying.position,
+                positionMs: currentNowPlaying.positionMs,
+                receivedAt: currentNowPlaying.receivedAt
+            )
         }
+    }
+
+    private var playbackSyncToken: PlaybackProgressSyncToken {
+        PlaybackProgressSyncToken(nowPlaying: playbackStore.nowPlaying)
     }
 
     private func updateFavoriteStatus(from nowPlaying: NowPlaying) {
@@ -223,7 +240,7 @@ struct LyricsTopBar: View {
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(SonicTheme.textPrimary)
                             .lineLimit(1)
-                        Text([nowPlaying.artist, nowPlaying.album].compactMap { $0 }.joined(separator: " · "))
+                        Text([nowPlaying.artist, nowPlaying.displayAlbumTitle].compactMap { $0 }.joined(separator: " · "))
                             .font(.subheadline)
                             .foregroundColor(SonicTheme.textSecondary)
                             .lineLimit(1)

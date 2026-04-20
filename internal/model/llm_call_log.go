@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/vincentchyu/sonic-lens/common"
 )
 
@@ -83,4 +85,33 @@ func GetLLMCallLogsByTrack(ctx context.Context, artist, album, track string, lim
 // GetLLMCallLogsByAlbumID 按专辑 ID 查询流水日志。
 func GetLLMCallLogsByAlbumID(ctx context.Context, albumID int64, limit int) ([]*LLMCallLog, error) {
 	return GetLLMCallLogsByTarget(ctx, common.AnalysisTargetTypeAlbum, BuildLLMCallLogAlbumKey(albumID), limit)
+}
+
+// DeleteLLMCallLogsByTarget 删除某个解析对象关联的所有调用流水。
+func DeleteLLMCallLogsByTarget(ctx context.Context, targetType common.AnalysisTargetType, targetKey, legacyTrackInfo string) error {
+	return deleteLLMCallLogsByTargetTx(GetDB().WithContext(ctx), targetType, targetKey, legacyTrackInfo)
+}
+
+func deleteLLMCallLogsByTargetTx(tx *gorm.DB, targetType common.AnalysisTargetType, targetKey, legacyTrackInfo string) error {
+	if tx == nil {
+		return nil
+	}
+
+	targetKey = strings.TrimSpace(targetKey)
+	legacyTrackInfo = strings.TrimSpace(legacyTrackInfo)
+	db := tx.Session(&gorm.Session{NewDB: true, SkipHooks: true})
+
+	if targetKey != "" {
+		if err := db.Where("analysis_target_type = ? AND target_key = ?", targetType, targetKey).Delete(&LLMCallLog{}).Error; err != nil {
+			return err
+		}
+	}
+
+	if legacyTrackInfo != "" && legacyTrackInfo != targetKey {
+		if err := db.Where("analysis_target_type = ? AND track_info = ?", targetType, legacyTrackInfo).Delete(&LLMCallLog{}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
