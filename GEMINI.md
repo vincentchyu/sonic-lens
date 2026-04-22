@@ -11,6 +11,7 @@
     1. 在 `memory/YYYY-MM-DD/` 线下创建详细的 `feature_manifest.md` 特性清单。
     2. 将该清单挂载到 `memory_index.md` 的顶部。
     3. 同步审查并更新本 `GEMINI.md` 文件，确保“核心业务记忆”章节反映最新的逻辑现状。
+- **公众号文章生成规约**: 详情见 [wechat_article_generation_constraint.md](./output/wechat_article_generation_constraint.md) 
 
 ---
 

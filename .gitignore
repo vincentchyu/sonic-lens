@@ -55,3 +55,4 @@ build/
 .codex/*
 web/dashboard-v2/*
 output/imagegen/sophie-zelmani-sing-and-dance-poster.png
+/output/
