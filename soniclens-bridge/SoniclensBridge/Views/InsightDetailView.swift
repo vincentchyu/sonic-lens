@@ -1296,24 +1296,76 @@ struct InsightWorkbenchVersionRow: View {
 }
 
 struct InsightVersionPicker: View {
+    enum LayoutAxis {
+        case horizontal
+        case vertical
+    }
+
     @Binding var viewMode: InsightViewMode
     let historyCount: Int?
+    var axis: LayoutAxis = .horizontal
 
     var body: some View {
-        HStack {
-            Picker("", selection: $viewMode) {
-                Text(InsightViewMode.current.rawValue).tag(InsightViewMode.current)
-                if let historyCount {
-                    Text("\(InsightViewMode.history.rawValue) (\(historyCount))").tag(InsightViewMode.history)
-                } else {
-                    Text(InsightViewMode.history.rawValue).tag(InsightViewMode.history)
+        Group {
+            if axis == .vertical {
+                VStack(alignment: .trailing, spacing: 10) {
+                    pickerButton(
+                        title: InsightViewMode.current.rawValue,
+                        mode: .current
+                    )
+                    pickerButton(
+                        title: historyTitle,
+                        mode: .history
+                    )
                 }
+                .frame(width: 132, alignment: .trailing)
+            } else {
+                HStack {
+                    Picker("", selection: $viewMode) {
+                        Text(InsightViewMode.current.rawValue).tag(InsightViewMode.current)
+                        Text(historyTitle).tag(InsightViewMode.history)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 8)
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 320)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 8)
+    }
+
+    private var historyTitle: String {
+        if let historyCount {
+            return "\(InsightViewMode.history.rawValue) (\(historyCount))"
+        }
+        return InsightViewMode.history.rawValue
+    }
+
+    @ViewBuilder
+    private func pickerButton(title: String, mode: InsightViewMode) -> some View {
+        let isSelected = viewMode == mode
+
+        Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                viewMode = mode
+            }
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.white.opacity(0.96) : Color.white.opacity(0.66))
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isSelected ? Color.white.opacity(0.16) : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isSelected ? Color.white.opacity(0.24) : Color.white.opacity(0.1), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -1565,6 +1617,34 @@ struct InsightRenderStyle {
         explainBackground: Color.black.opacity(0.04),
         plainBlockBackground: Color.black.opacity(0.03),
         plainBlockBorder: Color.black.opacity(0.07)
+    )
+
+    static let phoneImmersive = InsightRenderStyle(
+        sectionSpacing: 16,
+        blockSpacing: 16,
+        blockPadding: 14,
+        innerSpacing: 12,
+        rowSpacing: 10,
+        stacksTaggedRows: true,
+        wrapBlocksInCards: false,
+        showProviderLine: true,
+        simplifiedCards: true,
+        translationUsesItalic: false,
+        providerFont: .system(size: 13, weight: .medium),
+        blockTitleFont: .system(size: 19, weight: .bold, design: .rounded),
+        sectionTitleFont: .system(size: 14, weight: .semibold),
+        bodyFont: .system(size: 17, weight: .medium),
+        originalFont: .system(size: 16, weight: .medium),
+        translationFont: .system(size: 15, weight: .medium),
+        explainFont: .system(size: 18, weight: .semibold),
+        textColor: .white.opacity(0.95),
+        secondaryTextColor: .white.opacity(0.72),
+        originalColor: .white.opacity(0.86),
+        translationColor: .white.opacity(0.62),
+        explainColor: .white.opacity(0.95),
+        explainBackground: Color.white.opacity(0.06),
+        plainBlockBackground: .clear,
+        plainBlockBorder: .clear
     )
 }
 

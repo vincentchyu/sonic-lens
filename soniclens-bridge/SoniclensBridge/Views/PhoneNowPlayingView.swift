@@ -36,11 +36,11 @@ struct PhoneNowPlayingView: View {
                 liquidBackground
                 content(geo: geo)
             }
+            .overlay(alignment: .bottom) {
+                progressDock(bottomInset: max(geo.safeAreaInsets.bottom, 8))
+            }
         }
         .ignoresSafeArea()
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            progressDock(bottomInset: 8)
-        }
         .task {
             animate = !performanceModeEnabled
             await refreshNowPlaying(forcePaletteRefresh: true)
@@ -132,7 +132,8 @@ struct PhoneNowPlayingView: View {
     private func content(geo: GeometryProxy) -> some View {
         let current = currentNowPlaying
         let topInset: CGFloat = 25
-        let expandedLyricsHeight = max(geo.size.height - topInset - 220, 420)
+        let progressDockHeight = max(geo.safeAreaInsets.bottom, 8) + 46
+        let expandedLyricsHeight = max(geo.size.height - topInset - 220 - progressDockHeight, 360)
 
         VStack(spacing: 18) {
             PhoneNowPlayingTopBar(
@@ -151,12 +152,12 @@ struct PhoneNowPlayingView: View {
                         tabPanel(
                             lyricsHeight: 430,
                             lyricsInteractive: false,
-                            lyricsBottomInset: 42
+                            lyricsBottomInset: 24
                         )
                         .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 28)
+                    .padding(.bottom, 28 + progressDockHeight)
                 }
             } else {
                 VStack(spacing: 16) {
@@ -165,12 +166,12 @@ struct PhoneNowPlayingView: View {
                     tabPanel(
                         lyricsHeight: expandedLyricsHeight,
                         lyricsInteractive: true,
-                        lyricsBottomInset: 88
+                        lyricsBottomInset: progressDockHeight + 18
                     )
                     .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 12)
+                .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
@@ -515,18 +516,24 @@ private struct PhoneNowPlayingInsightPanel: View {
     let items: [Insight]
 
     var body: some View {
-        GlassPanel(cornerRadius: 22, padding: 0) {
-            ScrollView {
-                InsightPrimaryContentView(
-                    insight: items.primaryInsight,
-                    style: .phoneCompact,
-                    emptyTitle: "暂无音眸",
-                    emptySubtitle: "当前曲目还没有生成洞察内容。"
-                )
-                .padding(16)
-            }
-            .frame(minHeight: 320)
+        ScrollView(.vertical, showsIndicators: false) {
+            InsightPrimaryContentView(
+                insight: items.primaryInsight,
+                style: .phoneImmersive,
+                emptyTitle: "暂无音眸",
+                emptySubtitle: "当前曲目还没有生成洞察内容。"
+            )
+            .padding(.horizontal, 4)
+            .padding(.vertical, 8)
         }
+        .mask(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.94), .black, .black.opacity(0.94), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .frame(maxWidth: .infinity, minHeight: 320, alignment: .top)
     }
 }
 
@@ -671,6 +678,8 @@ private struct PhoneLyricsPreviewPanel: View {
     let highlightedIndex: Int?
     let onExpand: () -> Void
 
+    private let previewLineLimit = 7
+
     private var previewLines: [LyricLine] {
         let normalized = lines.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard !normalized.isEmpty else { return [] }
@@ -678,13 +687,14 @@ private struct PhoneLyricsPreviewPanel: View {
         if let currentLineID,
            let highlightedIndex {
             let normalizedIndex = normalized.firstIndex(where: { $0.id == currentLineID }) ?? highlightedIndex
-            let visibleCount = min(5, normalized.count)
-            let start = min(max(normalizedIndex - 2, 0), max(normalized.count - visibleCount, 0))
+            let visibleCount = min(previewLineLimit, normalized.count)
+            let leadingContext = visibleCount / 2
+            let start = min(max(normalizedIndex - leadingContext, 0), max(normalized.count - visibleCount, 0))
             let end = min(start + visibleCount, normalized.count)
             return Array(normalized[start..<end])
         }
 
-        return Array(normalized.prefix(5))
+        return Array(normalized.prefix(previewLineLimit))
     }
 
     var body: some View {

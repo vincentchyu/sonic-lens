@@ -543,16 +543,7 @@ struct MacNowPlayingInsightPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if items.count > 1 {
-                InsightVersionPicker(
-                    viewMode: $insightViewMode,
-                    historyCount: items.count
-                )
-                .padding(.horizontal, 14)
-                .padding(.bottom, 12)
-            }
-
+        HStack(alignment: .top, spacing: 24) {
             ScrollView(.vertical, showsIndicators: false) {
                 if insightViewMode == .history {
                     InsightHistoryList(
@@ -579,6 +570,15 @@ struct MacNowPlayingInsightPanel: View {
                     .id("insight-\(selectedInsightIndex)")
                 }
             }
+
+            if items.count > 1 {
+                InsightVersionPicker(
+                    viewMode: $insightViewMode,
+                    historyCount: items.count,
+                    axis: .vertical
+                )
+                .padding(.top, 6)
+            }
         }
         .mask(
             LinearGradient(
@@ -587,7 +587,7 @@ struct MacNowPlayingInsightPanel: View {
                 endPoint: .bottom
             )
         )
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

@@ -306,14 +306,20 @@ private struct PlaybackBarOverlayNowPlayingToken: Equatable {
     let album: String
     let track: String
     let duration: Int
+    let position: Int
+    let positionMs: Int
     let artwork: String
+    let receivedAt: Date?
 
     init(nowPlaying: NowPlaying?) {
         artist = nowPlaying?.artist ?? ""
         album = nowPlaying?.album ?? ""
         track = nowPlaying?.track ?? ""
         duration = nowPlaying?.duration ?? 0
+        position = nowPlaying?.position ?? 0
+        positionMs = nowPlaying?.positionMs ?? 0
         artwork = nowPlaying?.artwork ?? ""
+        receivedAt = nowPlaying?.receivedAt
     }
 }
 
@@ -554,12 +560,18 @@ private struct NowPlayingWindowOverlayToken: Equatable {
     let album: String
     let track: String
     let artwork: String
+    let position: Int
+    let positionMs: Int
+    let receivedAt: Date?
 
     init(nowPlaying: NowPlaying?) {
         artist = nowPlaying?.artist ?? ""
         album = nowPlaying?.album ?? ""
         track = nowPlaying?.track ?? ""
         artwork = nowPlaying?.artwork ?? ""
+        position = nowPlaying?.position ?? 0
+        positionMs = nowPlaying?.positionMs ?? 0
+        receivedAt = nowPlaying?.receivedAt
     }
 }
 

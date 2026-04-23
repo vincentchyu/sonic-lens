@@ -95,7 +95,7 @@
 - **Bridge 工程生成红线**: `soniclens-bridge/SoniclensBridge.xcodeproj` 是由 `soniclens-bridge/project.yml` 通过 `xcodegen generate` 生成的产物。任何 target、scheme、Info.plist 生成属性、extension 嵌入关系的改动，都必须先落在 `project.yml`，否则下一次 `xcodegen generate` 会回滚手改工程。
 - **Bridge macOS 玻璃宿主红线**: macOS mini 播放条若需要真实 backdrop blur，必须使用窗口级 `NSVisualEffectView` 宿主长期承载，再把 SwiftUI 内容嵌入其中；禁止继续把 `NSVisualEffectView` 塞进 SwiftUI `background`、`clipShape`、按钮样式或普通 overlay 修饰链里，否则前后台切换时容易退化成实色背景。
 - **Bridge 正在播放收藏红线**: 三端 `NowPlaying` 必须优先消费 `WS now_playing` 提供的 `apple_music_state`、`lastfm_state`、`favorite_state`。`favorite_pending` / `unfavorite_pending` 不能再被布尔位抹平；共享态应收口到 `SoniclensCore` 的 favorite projection，再由各端 UI 复用同一套状态推导与提示文案。
-- **Bridge 正在播放进度红线**: 三端正在播放页与全局播放条的本地进度只允许在最近一次 `now_playing` 更新仍然新鲜时继续自增；如果 WS 静默超过短阈值，就必须自动冻结当前进度，收到新的 `now_playing` 后再恢复推进，禁止在暂停后继续空跑计时器。Bridge 客户端必须保留每条 `now_playing` 快照的接收时间作为新鲜度事实源，不能在重新进入页面时把旧快照当成“刚同步”的活跃播放。
+- **Bridge 正在播放进度红线**: 三端正在播放页与全局播放条的本地进度只允许在最近一次 `now_playing` 更新仍然新鲜时继续自增；如果 WS 静默超过短阈值，就必须自动冻结当前进度，收到新的 `now_playing` 后再恢复推进，禁止在暂停后继续空跑计时器。Bridge 客户端必须保留每条 `now_playing` 快照的接收时间作为新鲜度事实源，不能在重新进入页面时把旧快照当成“刚同步”的活跃播放。与此同时，`WS now_playing` 也是“存在播放对象”的最高优先级事实源；客户端静默检测只允许影响进度推进与状态 banner，不允许把仍持有的播放对象直接降级成“无活动播放”空卡片。
 - **Bridge 连接链路红线**: Bonjour 自动发现若已拿到解析地址，连接链路必须优先直连解析地址；连接过程中必须同时提供顶部阶段反馈、行内反馈、取消能力与全局断开入口，不能让用户处于“点了没反应”的状态。
 - **Bridge 连接恢复红线**: 已连接过的服务端在下次启动时应优先做静默健康检查，成功后直接进 dashboard；失败时必须保留当前连接上下文并进入用户决策态，允许用户选择“退出当前连接”或“重新连接”，禁止软件在未告知用户的情况下自动断开。
 - **Bridge URL 编码红线**: `soniclens-bridge` 所有 GET 请求的 query 参数必须统一走 `SoniclensCore/Networking/APIClient.swift` 的百分号编码收口，禁止在业务层手写 query string 或依赖 `+` 的隐式语义。曲名、艺人名、专辑名等元数据只允许传原始值，由共享网络层负责把 `+` 编码为 `%2B`，避免后端将 `+` 还原成空格。

@@ -1,5 +1,6 @@
 import SwiftUI
 import NukeUI
+import Combine
 #if !os(macOS)
 import UIKit
 #endif
@@ -63,8 +64,7 @@ struct PlaybackBarView: View {
     }
 
     private func activatePlaybackBar() {
-        let playbackState = contentModel.progressModel.playbackState
-        guard playbackStore.nowPlaying != nil, playbackState.isActive else { return }
+        guard playbackStore.nowPlaying != nil else { return }
         isExpanded = true
     }
 }
@@ -81,6 +81,14 @@ final class PlaybackBarContentModel: ObservableObject {
 
     fileprivate let progressModel = PlaybackBarProgressModel()
     private var lastIdentity: String = ""
+    private var progressObservation: AnyCancellable?
+
+    init() {
+        // 转发内层进度对象的更新，确保 minibar 会随着本地定时器持续刷新。
+        progressObservation = progressModel.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
 
     func update(nowPlaying: NowPlaying?, performanceModeEnabled: Bool) {
         self.performanceModeEnabled = performanceModeEnabled
@@ -176,7 +184,7 @@ struct PlaybackBarContentView: View {
         nowPlaying: NowPlaying?,
         playbackState: PlaybackActivityState
     ) -> some View {
-        if !playbackState.isTransportVisible {
+        if nowPlaying == nil {
             inactivePlaybackContent
         } else {
             activePlaybackContent(nowPlaying: nowPlaying, playbackState: playbackState)

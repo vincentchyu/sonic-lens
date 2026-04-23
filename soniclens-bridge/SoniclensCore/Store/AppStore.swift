@@ -34,8 +34,7 @@ final class PlaybackStore {
     var nowPlayingSource: String?
 
     var hasActiveNowPlaying: Bool {
-        guard let nowPlaying else { return false }
-        return nowPlaying.playbackActivityState().isActive
+        nowPlaying != nil
     }
 
     func update(nowPlaying: NowPlaying?, source: String?) {
