@@ -251,23 +251,146 @@
         }
 
         .nav-toggle {
-            background: var(--primary-gradient) !important;
-            color: #ffffff !important;
-            border-color: rgba(255, 255, 255, 0.72) !important;
-            box-shadow: 0 10px 24px rgba(79, 70, 229, 0.28);
+            right: 0.7rem !important;
+            top: 1rem !important;
+            width: 1.45rem !important;
+            height: 1.45rem !important;
+            background: rgba(99, 102, 241, 0.1) !important;
+            color: var(--primary-color) !important;
+            border-color: rgba(99, 102, 241, 0.12) !important;
+            box-shadow: none;
         }
 
         .dark-mode .nav-toggle {
-            border-color: rgba(148, 163, 184, 0.32) !important;
-            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.42);
+            background: rgba(141, 162, 251, 0.14) !important;
+            border-color: rgba(141, 162, 251, 0.16) !important;
+            box-shadow: none;
+        }
+
+        .nav-header {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            padding: 0 0.25rem;
+            text-decoration: none;
+        }
+
+        .nav-brand-mark {
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(79, 70, 229, 0.18), rgba(139, 92, 246, 0.22));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+            font-size: 1.25rem;
+        }
+
+        .nav-brand-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            min-width: 0;
+        }
+
+        .nav-brand-kicker {
+            font-size: 0.68rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .nav-status-card {
+            position: relative;
+            overflow: hidden;
+            padding: 0.95rem 1rem;
+            border-radius: 1rem;
+            background: linear-gradient(160deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .nav-status-card::before {
+            content: "";
+            position: absolute;
+            inset: auto -18% -45% auto;
+            width: 6rem;
+            height: 6rem;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.22), transparent 70%);
+            pointer-events: none;
+        }
+
+        .nav-status-kicker {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.35rem;
+        }
+
+        .nav-status-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .nav-status-meta {
+            margin-top: 0.55rem;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+
+        .nav-status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 999px;
+            background: var(--queue-success);
+            box-shadow: 0 0 0 0.22rem rgba(16, 185, 129, 0.14);
+        }
+
+        .nav-group {
+            margin-top: 0.6rem;
+        }
+
+        .nav-section-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0 0.75rem;
+            margin-bottom: 0.55rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .nav-section-label::before {
+            content: "";
+            width: 0.4rem;
+            height: 0.4rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.12);
         }
 
         .side-nav-link,
         .library-summary,
         .side-nav-sublink {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.8rem;
             width: 100%;
             color: var(--text-primary) !important;
             text-decoration: none;
@@ -275,21 +398,82 @@
                 background-color 0.25s ease,
                 color 0.25s ease,
                 transform 0.25s ease,
-                box-shadow 0.25s ease;
+                box-shadow 0.25s ease,
+                border-color 0.25s ease;
         }
 
         .side-nav-link,
         .library-summary {
-            min-height: 52px;
-            padding: 0.85rem 1rem;
+            min-height: 56px;
+            padding: 0.9rem 0.95rem;
             border-radius: 1rem;
             font-weight: 600;
+            border: 1px solid transparent;
+        }
+
+        .nav-item-icon {
+            width: 2.15rem;
+            height: 2.15rem;
+            border-radius: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.32);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        }
+
+        .dark-mode .nav-item-icon {
+            background: rgba(148, 163, 184, 0.12);
+        }
+
+        .nav-item-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.12rem;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .nav-text {
+            font-size: 0.92rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .nav-item-meta {
+            font-size: 0.74rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .nav-item-badge {
+            padding: 0.2rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            white-space: nowrap;
+            color: var(--primary-color);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .nav-item-badge.warn {
+            color: #b45309;
+            background: rgba(245, 158, 11, 0.14);
+        }
+
+        .dark-mode .nav-item-badge.warn {
+            color: #fcd34d;
+            background: rgba(245, 158, 11, 0.18);
         }
 
         .side-nav-link:hover,
         .library-summary:hover,
         .side-nav-sublink:hover {
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(99, 102, 241, 0.08);
+            border-color: rgba(99, 102, 241, 0.12);
             color: var(--text-primary) !important;
             transform: translateX(2px);
         }
@@ -298,18 +482,32 @@
         .dark-mode .library-summary:hover,
         .dark-mode .side-nav-sublink:hover {
             background: rgba(141, 162, 251, 0.12);
+            border-color: rgba(141, 162, 251, 0.18);
         }
 
         .side-nav-link.active,
         .side-nav-sublink.active {
             background: var(--primary-gradient) !important;
             color: #ffffff !important;
+            border-color: transparent;
             box-shadow: 0 12px 28px rgba(79, 70, 229, 0.22);
         }
 
+        .side-nav-link.active .nav-item-meta,
+        .side-nav-sublink.active .nav-item-meta,
+        .side-nav-link.active .nav-item-badge,
+        .side-nav-sublink.active .nav-item-badge,
+        .side-nav-link.active .nav-item-icon,
+        .side-nav-sublink.active .nav-item-icon,
         .side-nav-link.active span,
         .side-nav-sublink.active span {
             color: inherit !important;
+        }
+
+        .side-nav-link.active .nav-item-icon,
+        .side-nav-sublink.active .nav-item-icon {
+            background: rgba(255, 255, 255, 0.18);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
         }
 
         .library-summary {
@@ -335,124 +533,273 @@
             color: var(--text-primary);
         }
 
-        .dark-mode .side-nav-sublink {
-            color: rgba(226, 232, 240, 0.78) !important;
-        }
-
-        /* --- 菜单树状线 (Git Tree 风格) 样式 --- */
-        /* --- 菜单树状线 (精细调整结构) 样式 --- */
         .library-submenu {
             position: relative;
-            margin-top: 0.5rem !important;
-            margin-left: 1.15rem !important;
-            padding-left: 0 !important;
-            border-left: none !important;
+            margin-top: 0.55rem !important;
+            margin-left: 1.45rem !important;
+            padding-left: 0.9rem !important;
             overflow: visible !important;
         }
 
-        /* 贯穿全过程的最左侧弱实线（背景引导线） */
         .library-submenu::before {
             content: "";
             position: absolute;
-            left: 0;
-            top: 20px; /* 从第一个元素中间开始 */
-            bottom: 20px; /* 到最后一个元素中间结束 */
-            width: 1.5px;
-            background: rgba(148, 163, 184, 0.15);
-            z-index: 1;
+            left: 0.1rem;
+            top: 0.35rem;
+            bottom: 0.35rem;
+            width: 1px;
+            background: linear-gradient(180deg, rgba(148, 163, 184, 0.3), rgba(148, 163, 184, 0.08));
         }
 
-        /* 所有的子项 (包括非分组和分组内的) 基础样式 */
         .library-submenu li {
             position: relative;
-            padding-left: 1.5rem !important; /* 统一的强制缩进，保证所有文字左侧对齐 */
             list-style: none !important;
-            height: 40px; /* 锁定高度确保物理连接对齐 */
-            display: flex;
-            align-items: center;
+            margin: 0.1rem 0;
         }
 
-        /* 所有单项的水平短线 */
         .library-submenu li::before {
             content: "";
             position: absolute;
-            left: 0;
+            left: -0.8rem;
             top: 50%;
-            width: 1rem;
-            height: 1.5px;
-            background: rgba(148, 163, 184, 0.4);
-            transform: translateY(-50%);
-            z-index: 2;
-        }
-
-        /* 分组结构包裹层 */
-        .tree-line-group {
-            position: relative;
-            width: 100%;
-            margin: 0;
-            padding: 0;
-        }
-
-        /* 分组内的垂直粗线，用于闭合水平短线形成树节点 */
-        .tree-line-group::after {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 20px; /* 组内第一个项的 50% 高度 */
-            bottom: 20px; /* 组内最后一个项的 50% 高度 */
-            width: 1.5px;
-            background: rgba(148, 163, 184, 0.4);
-            z-index: 2;
-            border: none !important;
-        }
-
-        /* 去除多余的伪元素防止污染 */
-        .tree-line-group::before, 
-        .library-submenu li::after {
-            display: none !important;
-        }
-
-        /* 适配暗色模式 */
-        .dark-mode .library-submenu::before {
-            background: rgba(148, 163, 184, 0.08); /* 极弱背景线 */
-        }
-        .dark-mode .library-submenu li::before,
-        .dark-mode .tree-line-group::after {
-            background: rgba(148, 163, 184, 0.3); /* 实节点粗线 */
+            width: 0.65rem;
+            height: 1px;
+            background: rgba(148, 163, 184, 0.26);
         }
 
         .library-submenu .side-nav-sublink {
-            position: relative;
-            z-index: 3;
-            width: 100%;
-            background: transparent;
-            padding: 0.5rem 0.5rem;
+            min-height: 42px;
+            border-radius: 0.85rem;
+            padding: 0.65rem 0.75rem;
             color: var(--text-secondary);
-            transition: all 0.2s ease;
-        }
-        
-        .library-submenu .side-nav-sublink:hover {
-            color: var(--text-primary);
+            border: 1px solid transparent;
         }
 
-        /* 修复选中状态下的高亮遮挡与文字颜色冲突 */
-        .library-submenu .side-nav-sublink.active {
-            background: var(--primary-gradient) !important;
-            color: #ffffff !important;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
-            /* z-index 不变，确保背景应用在这个 a 标签上，而不是外层的 li 防止遮盖 ::before 连线 */
+        .dark-mode .library-submenu .side-nav-sublink {
+            color: rgba(226, 232, 240, 0.78) !important;
         }
 
-        /* 当项被选中时，使其对应的横线（li::before）变为白色，以融入紫色的按钮背景 */
-        .library-submenu li:has(.side-nav-sublink.active)::before {
-            background: rgba(255, 255, 255, 0.6) !important;
-            z-index: 4; /* 确保线浮在紫色背景上方 */
+        .tree-line-group {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
         }
 
-        /* 暗色模式下的选中线适配 */
-        .dark-mode .library-submenu li:has(.side-nav-sublink.active)::before {
-            background: rgba(255, 255, 255, 0.5) !important;
+        .nav-footer {
+            margin-top: auto;
+            padding-top: 1rem;
+        }
+
+        .nav-footer-note {
+            padding: 0.85rem 0.95rem;
+            border-radius: 1rem;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            line-height: 1.45;
+        }
+
+        .dark-mode .nav-footer-note {
+            background: rgba(148, 163, 184, 0.08);
+            border-color: rgba(148, 163, 184, 0.14);
+        }
+
+        /* 简约模式：侧栏只承担定位与跳转，不抢占仪表板内容注意力 */
+        .navbar {
+            width: 13.5rem !important;
+            left: 1rem !important;
+            padding: 0.8rem !important;
+            border-radius: 1.25rem !important;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.48)),
+                var(--card-bg) !important;
+            box-shadow:
+                0 18px 44px rgba(15, 23, 42, 0.08),
+                inset 0 1px 0 rgba(255, 255, 255, 0.58);
+        }
+
+        .dark-mode .navbar {
+            background:
+                linear-gradient(180deg, rgba(18, 22, 30, 0.86), rgba(18, 22, 30, 0.68)),
+                var(--card-bg) !important;
+            box-shadow:
+                0 18px 46px rgba(2, 6, 23, 0.32),
+                inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+
+        .navbar::before {
+            opacity: 0.18;
+        }
+
+        .nav-header {
+            margin-bottom: 1rem;
+        }
+
+        .nav-brand {
+            gap: 0.65rem;
+            padding: 0.35rem 0.45rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .nav-brand-mark {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.75rem;
+            background: rgba(99, 102, 241, 0.1);
+            box-shadow: none;
+            font-size: 0.95rem;
+        }
+
+        .nav-brand-kicker,
+        .nav-status-card,
+        .nav-footer,
+        .nav-item-meta,
+        .nav-item-badge {
+            display: none !important;
+        }
+
+        .logo-text {
+            font-size: 0.95rem !important;
+            font-weight: 760 !important;
+        }
+
+        .navbar .menu {
+            gap: 0.15rem;
+        }
+
+        .nav-group {
+            margin-top: 0.75rem;
+        }
+
+        .nav-section-label {
+            margin: 0 0 0.25rem;
+            padding: 0 0.55rem;
+            font-size: 0.66rem;
+            font-weight: 650;
+            letter-spacing: 0;
+            color: rgba(100, 116, 139, 0.74);
+        }
+
+        .nav-section-label::before {
+            display: none;
+        }
+
+        .side-nav-link,
+        .library-summary,
+        .side-nav-sublink {
+            gap: 0.6rem;
+            border-radius: 0.7rem;
+            border: 1px solid transparent;
+        }
+
+        .side-nav-link,
+        .library-summary {
+            min-height: 2.55rem;
+            padding: 0.45rem 0.55rem;
+            font-weight: 620;
+        }
+
+        .nav-item-icon {
+            width: 1.55rem;
+            height: 1.55rem;
+            border-radius: 0.55rem;
+            background: transparent;
+            box-shadow: none;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .nav-text {
+            font-size: 0.86rem;
+            font-weight: 650;
+        }
+
+        .side-nav-link:hover,
+        .library-summary:hover,
+        .side-nav-sublink:hover {
+            background: rgba(15, 23, 42, 0.045);
+            border-color: rgba(148, 163, 184, 0.16);
+            transform: none;
+        }
+
+        .dark-mode .side-nav-link:hover,
+        .dark-mode .library-summary:hover,
+        .dark-mode .side-nav-sublink:hover {
+            background: rgba(148, 163, 184, 0.09);
+            border-color: rgba(148, 163, 184, 0.14);
+        }
+
+        .side-nav-link.active,
+        .library-summary.active,
+        .side-nav-sublink.active {
+            background: rgba(99, 102, 241, 0.09) !important;
+            color: var(--text-primary) !important;
+            border-color: rgba(99, 102, 241, 0.14);
+            box-shadow: none;
+        }
+
+        .dark-mode .side-nav-link.active,
+        .dark-mode .library-summary.active,
+        .dark-mode .side-nav-sublink.active {
+            background: rgba(141, 162, 251, 0.14) !important;
+            border-color: rgba(141, 162, 251, 0.18);
+        }
+
+        .side-nav-link.active::before,
+        .library-summary.active::before,
+        .side-nav-sublink.active::before {
+            content: "";
+            position: absolute;
+            left: 0.28rem;
+            top: 50%;
+            width: 0.18rem;
+            height: 1rem;
+            border-radius: 999px;
+            background: var(--primary-color);
+            transform: translateY(-50%);
+        }
+
+        .side-nav-link.active .nav-item-icon,
+        .library-summary.active .nav-item-icon,
+        .side-nav-sublink.active .nav-item-icon {
+            color: var(--primary-color) !important;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .library-summary::after {
+            content: "⌄";
+            font-size: 0.75rem;
+            transform: rotate(0deg);
+        }
+
+        details[open] > .library-summary::after {
+            transform: rotate(180deg);
+        }
+
+        .library-submenu {
+            margin-top: 0.2rem !important;
+            margin-left: 0 !important;
+            padding-left: 1.75rem !important;
+        }
+
+        .library-submenu::before {
+            left: 1rem;
+            top: 0.25rem;
+            bottom: 0.25rem;
+            background: rgba(148, 163, 184, 0.18);
+        }
+
+        .library-submenu li::before {
+            display: none;
+        }
+
+        .library-submenu .side-nav-sublink {
+            min-height: 2.2rem;
+            padding: 0.38rem 0.55rem;
+            border-radius: 0.65rem;
         }
 
         /* 性能模式：针对低性能设备/安卓盒子降低 GPU 压力 */
@@ -1446,7 +1793,7 @@
 
         /* 布局重构：使用全屏规避方案，确保居中与避挡并存 */
         body {
-            padding-left: 260px; /* 默认展开宽度 */
+            padding-left: 235px; /* 默认展开宽度 */
         }
         body.collapsed-sidebar {
             padding-left: 90px;
@@ -1459,10 +1806,9 @@
             width: 100%;
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 768px) {
             body { padding-left: 0 !important; }
             .container { padding: 15px !important; }
-            .navbar { display: none; }
         }
 
         /* 统计卡片 */
@@ -1913,10 +2259,11 @@
                 width: 100% !important;
                 height: auto;
                 flex-direction: row;
-                border-radius: 16px 16px 0 0;
-                padding: 10px;
+                border-radius: 14px 14px 0 0 !important;
+                padding: 7px 10px !important;
                 border-right: none;
                 border-top: 1px solid var(--glass-border);
+                box-shadow: 0 -10px 32px rgba(15, 23, 42, 0.08);
             }
 
             .navbar.collapsed {
@@ -1932,19 +2279,35 @@
             .navbar-content {
                 flex-direction: row;
                 justify-content: space-around;
+                align-items: center;
                 width: 100%;
             }
 
-            .logo {
+            .logo,
+            .nav-header,
+            .nav-section-label,
+            .library-submenu,
+            .nav-footer {
                 display: none; /* 手机端导航底栏隐藏 Logo */
             }
 
+            #navLinks,
             .nav-links {
                 flex-direction: row;
                 justify-content: space-around;
+                align-items: center;
                 margin-top: 0;
-                gap: 0;
+                gap: 4px;
                 width: 100%;
+                overflow: visible;
+            }
+
+            #navLinks > li.nav-group {
+                display: none;
+            }
+
+            #navLinks > li {
+                flex: 1;
             }
 
             .nav-links li {
@@ -1952,23 +2315,55 @@
                 flex: 1;
             }
 
+            .library-summary,
+            .side-nav-link,
+            .side-nav-sublink,
             .nav-links a {
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                padding: 5px 10px;
-                border-radius: 8px;
+                gap: 2px;
+                min-height: 48px;
+                padding: 5px 6px;
+                border-radius: 10px;
                 min-width: 0;
+            }
+
+            .library-summary::after {
+                display: none;
+            }
+
+            .nav-item-icon {
+                width: 1.25rem;
+                height: 1.25rem;
+                font-size: 0.78rem;
             }
 
             .nav-text {
                 display: block;
                 opacity: 1;
                 transform: none;
-                font-size: 0.7rem;
+                font-size: 0.66rem;
+                font-weight: 650;
                 margin-left: 0;
                 margin-top: 3px;
                 white-space: nowrap;
+            }
+
+            .nav-item-content {
+                align-items: center;
+                flex: 0;
+            }
+
+            .side-nav-link.active::before,
+            .library-summary.active::before,
+            .side-nav-sublink.active::before {
+                left: 50%;
+                top: auto;
+                bottom: 0.2rem;
+                width: 1rem;
+                height: 0.16rem;
+                transform: translateX(-50%);
             }
 
             .navbar:hover .nav-links a {
@@ -3615,8 +4010,13 @@
     <style>
         /* 收缩状态下的特殊样式处理 */
         .navbar.collapsed { width: 4.5rem !important; padding: 1rem 0.5rem !important; left: 1rem !important; }
-        .navbar.collapsed .logo-text, 
-        .navbar.collapsed .nav-text, 
+        .navbar.collapsed .logo-text,
+        .navbar.collapsed .nav-brand-copy,
+        .navbar.collapsed .nav-status-card,
+        .navbar.collapsed .nav-section-label,
+        .navbar.collapsed .nav-item-content,
+        .navbar.collapsed .nav-item-badge,
+        .navbar.collapsed .nav-footer,
         .navbar.collapsed summary::after,
         .navbar.collapsed details ul { 
             display: none !important; 
@@ -3626,55 +4026,93 @@
             justify-content: center !important; 
             padding: 0.75rem !important;
         }
-        .navbar.collapsed .menu li a span:first-child,
-        .navbar.collapsed summary span:first-child {
+        .navbar.collapsed .nav-brand {
+            justify-content: center;
+            padding: 0;
+        }
+        .navbar.collapsed .nav-brand-mark,
+        .navbar.collapsed .nav-item-icon {
             margin: 0 !important;
-            font-size: 1.5rem;
         }
     </style>
     <div class="nav-toggle absolute -right-2.5 top-10 w-5 h-5 rounded-full flex items-center justify-center cursor-pointer shadow-lg z-[2001] text-[10px] border-2" id="navToggle">◀</div>
     
     <div class="navbar-content w-full h-full flex flex-col">
-        <!-- Logo 区域 -->
-        <a href="/" class="flex items-center gap-3 px-4 mb-10 no-underline group">
-            <span class="text-2xl bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">🎵</span>
-            <span class="logo-text text-lg font-extrabold tracking-tight transition-all duration-300">音眸轨迹</span>
-        </a>
+        <div class="nav-header">
+            <a href="/" class="nav-brand group" title="音眸轨迹">
+                <span class="nav-brand-mark">🎵</span>
+                <span class="nav-brand-copy">
+                    <span class="logo-text text-lg font-extrabold tracking-tight transition-all duration-300">音眸轨迹</span>
+                </span>
+            </a>
+        </div>
 
         <!-- 菜单区域 -->
         <ul class="menu menu-md w-full p-0 gap-2 flex-nowrap overflow-y-auto" id="navLinks">
+            <li class="nav-group">
+                <div class="nav-section-label">概览</div>
+            </li>
             <li>
-                <a href="/" class="side-nav-link active" id="dashboardTab">
-                    <span class="text-xl">📊</span>
-                    <span class="nav-text">仪表板</span>
+                <a href="/" class="side-nav-link active" id="dashboardTab" title="仪表板">
+                    <span class="nav-item-icon">◫</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">仪表板</span>
+                    </span>
                 </a>
             </li>
-            
+
+            <li class="nav-group">
+                <div class="nav-section-label">资料库</div>
+            </li>
             <li>
                 <details id="libraryMenuDetails" open>
                     <summary class="library-summary">
-                        <span class="text-xl">🗂️</span>
-                        <span class="nav-text">我的资料库</span>
+                        <span class="nav-item-icon">⌘</span>
+                        <span class="nav-item-content">
+                            <span class="nav-text">我的资料库</span>
+                        </span>
                     </summary>
                     <ul class="library-submenu space-y-1">
-                        <!-- 分组 A: 专辑 -->
                         <div class="tree-line-group">
-                            <li><a href="#" id="albumListTab" class="side-nav-sublink">专辑</a></li>
-                            <li><a href="#" id="artistListTab" class="side-nav-sublink">艺术家</a></li>
-                            <li><a href="#" id="pendingAlbumListTab" class="side-nav-sublink">待归因专辑</a></li>
-                        </div>
-                        
-                        <!-- 分项: 音眸 -->
-                        <li><a href="#" id="insightListTab" class="side-nav-sublink">音眸</a></li>
-                        <li><a href="#" id="insightJobListTab" class="side-nav-sublink">音眸任务</a></li>
-
-                        <!-- 分组 B: 曲目 + 未上报 -->
-                        <div class="tree-line-group">
-                            <li><a href="#" id="trackListTab" class="side-nav-sublink">曲目</a></li>
-                            <li><a href="#" id="unscrobbledTab" class="side-nav-sublink">未上报</a></li>
+                            <li><a href="#" id="albumListTab" class="side-nav-sublink" title="专辑"><span class="nav-item-content"><span class="nav-text">专辑</span></span></a></li>
+                            <li><a href="#" id="artistListTab" class="side-nav-sublink" title="艺术家"><span class="nav-item-content"><span class="nav-text">艺术家</span></span></a></li>
+                            <li><a href="#" id="trackListTab" class="side-nav-sublink" title="曲目"><span class="nav-item-content"><span class="nav-text">曲目</span></span></a></li>
+                            <li><a href="#" id="pendingAlbumListTab" class="side-nav-sublink" title="待归因专辑"><span class="nav-item-content"><span class="nav-text">待归因专辑</span></span></a></li>
                         </div>
                     </ul>
                 </details>
+            </li>
+
+            <li class="nav-group">
+                <div class="nav-section-label">分析</div>
+            </li>
+            <li>
+                <a href="#" class="side-nav-link" id="insightListTab" title="音眸">
+                    <span class="nav-item-icon">✦</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">音眸</span>
+                    </span>
+                </a>
+            </li>
+
+            <li class="nav-group">
+                <div class="nav-section-label">队列</div>
+            </li>
+            <li>
+                <a href="#" class="side-nav-link" id="insightJobListTab" title="音眸任务">
+                    <span class="nav-item-icon">◌</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">音眸任务</span>
+                    </span>
+                </a>
+            </li>
+            <li>
+                <a href="#" class="side-nav-link" id="unscrobbledTab" title="未上报">
+                    <span class="nav-item-icon">!</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">未上报</span>
+                    </span>
+                </a>
             </li>
         </ul>
     </div>
@@ -12072,6 +12510,16 @@
             a.classList.remove('active');
         });
 
+        const librarySections = new Set(['albumList', 'artistList', 'pendingAlbumList', 'trackList']);
+        const details = document.getElementById('libraryMenuDetails');
+        if (details) {
+            details.open = librarySections.has(sectionId);
+        }
+        const librarySummary = document.querySelector('.library-summary');
+        if (librarySummary) {
+            librarySummary.classList.toggle('active', librarySections.has(sectionId));
+        }
+
         // 根据 sectionId 显示对应区域
         if (sectionId === 'dashboard') {
             document.querySelector('.stats-container').style.display = 'grid';
@@ -12100,20 +12548,6 @@
             }
             if (sectionId === 'unscrobbled') loadUnscrobbledRecords();
         }
-    }
-
-    // 处理侧边栏库菜单展开/折叠
-    const libraryMenuItem = document.getElementById('libraryMenuItem');
-    if (libraryMenuItem) {
-        libraryMenuItem.querySelector('a').addEventListener('click', (e) => {
-            e.preventDefault();
-            // 如果侧边栏是折叠的，先展开侧边栏
-            const navbar = document.getElementById('mainNavbar');
-            if (navbar.classList.contains('collapsed')) {
-                toggleNavbar();
-            }
-            libraryMenuItem.classList.toggle('expanded');
-        });
     }
 
     // 处理侧边栏导航点击 (DaisyUI 版)
@@ -12146,6 +12580,15 @@
             }
         });
     });
+
+    const librarySummary = document.querySelector('.library-summary');
+    if (librarySummary) {
+        librarySummary.addEventListener('click', (e) => {
+            if (!window.matchMedia('(max-width: 768px)').matches) return;
+            e.preventDefault();
+            showSection('albumList');
+        });
+    }
 
     // 默认激活仪表盘
     showSection('dashboard');
@@ -13206,8 +13649,10 @@
             navbar.classList.remove('collapsed', 'w-20');
             navbar.classList.add('w-60');
             localStorage.setItem('navbarCollapsed', 'false');
-            // 展开时打开库菜单
-            if (details) details.open = true;
+            if (details) {
+                const librarySections = new Set(['albumList', 'artistList', 'pendingAlbumList', 'trackList']);
+                details.open = librarySections.has(currentSectionID);
+            }
             if (navToggle) navToggle.textContent = '◀';
         } else {
             navbar.classList.add('collapsed', 'w-20');
@@ -13247,35 +13692,6 @@
         document.body.classList.remove('sidebar-animating');
     })();
 
-    // 初始化导航点击监听 (DaisyUI 版)
-    document.querySelectorAll('.menu a').forEach(a => {
-        a.addEventListener('click', (e) => {
-            const id = a.id;
-            if (!id || !id.endsWith('Tab')) return;
-            
-            e.preventDefault();
-            const sectionMap = {
-                'dashboardTab': 'dashboard',
-                'albumListTab': 'albumList',
-                'artistListTab': 'artistList',
-                'pendingAlbumListTab': 'pendingAlbumList',
-                'trackListTab': 'trackList',
-                'insightListTab': 'insightList',
-                'insightJobListTab': 'insightJobList',
-                'unscrobbledTab': 'unscrobbled'
-            };
-            
-            const section = sectionMap[id];
-            if (section) {
-                showSection(section);
-                // 更新子导航激活状态 (DaisyUI 类)
-                document.querySelectorAll('.menu a').forEach(el => {
-                    el.classList.remove('active');
-                });
-                a.classList.add('active');
-            }
-        });
-    });
 </script>
 
 <!-- Watermark Logo -->
