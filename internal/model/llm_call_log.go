@@ -16,8 +16,8 @@ type LLMCallLog struct {
 	ID                 int64                     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	Provider           string                    `gorm:"column:provider;type:varchar(64);index" json:"provider"`                                                                           // 提供方：doubao/ollama/openai
 	Model              string                    `gorm:"column:model;type:varchar(128)" json:"model"`                                                                                      // 模型名称
-	RequestJSON        string                    `gorm:"column:request_json;type:text" json:"request_json"`                                                                                // 请求体全文 JSON
-	ResponseJSON       string                    `gorm:"column:response_json;type:text" json:"response_json"`                                                                              // 响应体全文 JSON
+	RequestJSON        string                    `gorm:"column:request_json;type:longtext" json:"request_json"`                                                                            // 请求体全文 JSON
+	ResponseJSON       string                    `gorm:"column:response_json;type:longtext" json:"response_json"`                                                                          // 响应体全文 JSON
 	Status             string                    `gorm:"column:status;type:varchar(32);index" json:"status"`                                                                               // 调用状态：success/error
 	ErrorMsg           string                    `gorm:"column:error_msg;type:text" json:"error_msg"`                                                                                      // 错误信息
 	DurationMs         int64                     `gorm:"column:duration_ms;type:bigint" json:"duration_ms"`                                                                                // 调用耗时（毫秒）
@@ -26,7 +26,7 @@ type LLMCallLog struct {
 	TargetMetadata     string                    `gorm:"column:target_metadata;type:longtext" json:"target_metadata"`                                                                      // 对象元数据 JSON
 	TrackInfo          string                    `gorm:"column:track_info;type:varchar(512);index" json:"track_info"`                                                                      // 兼容展示字段
 	CallType           string                    `gorm:"column:call_type;type:varchar(32)" json:"call_type"`                                                                               // 调用类型：sync/stream
-	CreatedAt          time.Time                 `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
+	CreatedAt          time.Time                 `gorm:"column:created_at;type:datetime;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 // TableName 自定义表名

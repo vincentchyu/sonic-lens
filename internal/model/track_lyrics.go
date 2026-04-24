@@ -8,16 +8,16 @@ import (
 // TrackLyrics 存储歌曲歌词数据
 type TrackLyrics struct {
 	ID             int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	TrackID        int64     `gorm:"column:track_id;type:bigint;index" json:"track_id"`
-	Artist         string    `gorm:"column:artist;type:varchar(255);uniqueIndex:idx_lyrics_artist_album_track" json:"artist"`
-	Album          string    `gorm:"column:album;type:varchar(255);uniqueIndex:idx_lyrics_artist_album_track" json:"album"`
-	Track          string    `gorm:"column:track;type:varchar(255);uniqueIndex:idx_lyrics_artist_album_track" json:"track"`
+	TrackID        int64     `gorm:"column:track_id;type:bigint;not null;default:0;index" json:"track_id"`
+	Artist         string    `gorm:"column:artist;type:varchar(255);not null;default:'';uniqueIndex:idx_lyrics_artist_album_track" json:"artist"`
+	Album          string    `gorm:"column:album;type:varchar(255);not null;default:'';uniqueIndex:idx_lyrics_artist_album_track" json:"album"`
+	Track          string    `gorm:"column:track;type:varchar(255);not null;default:'';uniqueIndex:idx_lyrics_artist_album_track" json:"track"`
 	LyricsOriginal string    `gorm:"column:lyrics_original;type:text" json:"lyrics_original"`
-	LyricsSource   string    `gorm:"column:lyrics_source;type:varchar(64)" json:"lyrics_source"`
-	LangCode       string    `gorm:"column:lang_code;type:varchar(16)" json:"lang_code"`
-	Synced         bool      `gorm:"column:synced;type:tinyint(1);default:0" json:"synced"`
-	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	LyricsSource   string    `gorm:"column:lyrics_source;type:varchar(64);not null;default:''" json:"lyrics_source"`
+	LangCode       string    `gorm:"column:lang_code;type:varchar(16);not null;default:''" json:"lang_code"`
+	Synced         bool      `gorm:"column:synced;type:tinyint(1);not null;default:0" json:"synced"`
+	CreatedAt      time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;type:timestamp;not null;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 type TrackLyricsLookup struct {

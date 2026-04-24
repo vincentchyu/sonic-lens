@@ -39,18 +39,18 @@ import (
 }*/
 type Track struct {
 	ID              int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Artist          string    `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_t_aaastdntn" json:"artist"`
-	Album           string    `gorm:"column:album;type:varchar(255);not null;index:idx_track_album;uniqueIndex:uidx_t_aaastdntn" json:"album"`
-	AlbumSubtitle   string    `gorm:"column:album_subtitle;type:varchar(255);uniqueIndex:uidx_t_aaastdntn" json:"album_subtitle"`
-	Track           string    `gorm:"column:track;type:varchar(255);not null;index:idx_track_track;uniqueIndex:uidx_t_aaastdntn" json:"track"`
-	PlayCount       int       `gorm:"column:play_count;type:int;default:0" json:"play_count"`
+	Artist          string    `gorm:"column:artist;type:varchar(180);not null;uniqueIndex:uidx_t_aaastdntn" json:"artist"`
+	Album           string    `gorm:"column:album;type:varchar(180);not null;index:idx_track_album;uniqueIndex:uidx_t_aaastdntn" json:"album"`
+	AlbumSubtitle   string    `gorm:"column:album_subtitle;type:varchar(60);uniqueIndex:uidx_t_aaastdntn" json:"album_subtitle"`
+	Track           string    `gorm:"column:track;type:varchar(180);not null;index:idx_track_track;uniqueIndex:uidx_t_aaastdntn" json:"track"`
+	PlayCount       int       `gorm:"column:play_count;type:bigint;default:0;index:idx_track_play_count" json:"play_count"`
 	IsAppleMusicFav bool      `gorm:"column:is_apple_music_fav;type:tinyint(1);default:0" json:"is_apple_music_fav"`
 	IsLastFmFav     bool      `gorm:"column:is_last_fm_fav;type:tinyint(1);default:0" json:"is_last_fm_fav"`
-	Version         int       `gorm:"column:version;type:int;default:1" json:"version"`
+	Version         int       `gorm:"column:version;type:bigint;default:1" json:"version"`
 	AlbumArtist     string    `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
 	TrackNumber     int8      `gorm:"column:track_number;type:tinyint;uniqueIndex:uidx_t_aaastdntn" json:"track_number"`
 	DiscNumber      int8      `gorm:"column:disc_number;type:tinyint;default:1;uniqueIndex:uidx_t_aaastdntn" json:"disc_number"` // 碟号
-	Duration        int64     `gorm:"column:duration;type:int" json:"duration"`
+	Duration        int64     `gorm:"column:duration;type:bigint" json:"duration"`
 	Genre           string    `gorm:"column:genre;type:varchar(255);index:idx_track_genre" json:"genre"`
 	Composer        string    `gorm:"column:composer;type:varchar(255)" json:"composer"`
 	ReleaseDate     string    `gorm:"column:release_date;type:varchar(50)" json:"release_date"`

@@ -49,7 +49,7 @@ type MusixmatchConfig struct {
 }
 
 type DatabaseConfig struct {
-	Type  string      `yaml:"type"` // "sqlite" or "mysql"
+	Type  string      `yaml:"type"` // 当前仅支持 "mysql"
 	Path  string      `yaml:"path"`
 	Mysql MysqlConfig `yaml:"mysql"`
 }

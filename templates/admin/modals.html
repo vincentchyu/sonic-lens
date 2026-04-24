@@ -1,0 +1,517 @@
+{{ define "admin/modals" }}
+<!-- 关联流水日志 Modal -->
+<div id="callLogModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h3 id="callLogTitle">关联流水日志</h3>
+            <span class="close-modal" id="closeCallLogModal">&times;</span>
+        </div>
+        <div class="modal-body" id="callLogContent" style="max-height: 60vh; overflow-y: auto;">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<div id="insightJobModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 920px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h3 id="insightJobModalTitle">音眸任务详情</h3>
+            <span class="close-modal" id="closeInsightJobModal">&times;</span>
+        </div>
+        <div class="modal-body" id="insightJobModalContent">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+</div>
+
+
+
+<div id="pendingAlbumWorkItemModal" class="custom-modal" style="z-index: 3500;">
+    <div class="modal-content" style="max-width: 1080px; width: 92vw; max-height: 86vh; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="align-items: flex-start; flex-shrink: 0;">
+            <div>
+                <h3 style="color: var(--text-primary); margin-bottom: 8px;">待归因专辑维护</h3>
+                <div id="pendingAlbumWorkItemMeta" style="font-size: 0.85em; opacity: 0.65; color: var(--text-secondary);">-</div>
+            </div>
+            <span class="close" onclick="hideModal('pendingAlbumWorkItemModal')" style="font-size: 28px; color: var(--text-secondary); cursor: pointer;">&times;</span>
+        </div>
+        <div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr); gap: 18px; min-height: 0; flex: 1; overflow: hidden;">
+            <div style="display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding-right: 6px;">
+                <div id="pendingAlbumContextStaleBanner" style="display: none; padding: 12px; border-radius: 14px; border: 1px solid rgba(243, 156, 18, 0.35); background: rgba(243, 156, 18, 0.08);">
+                    <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;">
+                        <div style="min-width: 0;">
+                            <div style="font-weight: 700; margin-bottom: 4px; color: var(--text-primary);">冻结上下文已变化</div>
+                            <div id="pendingAlbumContextStaleText" style="font-size: 0.85em; line-height: 1.5; color: var(--text-secondary);">-</div>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                            <button class="time-filter" onclick="refreshPendingAlbumWorkItemContext()">刷新冻结上下文</button>
+                            <button class="time-filter" onclick="dismissPendingAlbumContextStale()">继续使用冻结</button>
+                        </div>
+                    </div>
+                </div>
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">上下文曲目摘要</div>
+                    <div id="pendingAlbumContextTracks" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                </div>
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">播放流水</div>
+                    <div id="pendingAlbumPlayRecords" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">点赞事件</div>
+                    <div id="pendingAlbumFavoriteEvents" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding-left: 6px;">
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <div style="font-weight: 700; color: var(--text-primary);">MusicBrainz 候选</div>
+                        <button class="time-filter" onclick="loadPendingAlbumCandidates()">搜索候选</button>
+                    </div>
+                    <div id="pendingAlbumSelectedMBID" style="font-size: 0.8em; opacity: 0.6; color: var(--text-secondary); margin-bottom: 10px;">未选择候选版本</div>
+                    <div id="pendingAlbumCandidates" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                </div>
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <div>
+                            <div style="font-weight: 700; color: var(--text-primary);">手动创建专辑</div>
+                            <div style="font-size: 0.8em; opacity: 0.7; color: var(--text-secondary); margin-top: 4px;">MusicBrainz 搜不到时，直接用冻结上下文预填并一次提交整专结构。</div>
+                        </div>
+                        <button class="time-filter" onclick="resetPendingManualFormFromContext()">重置默认值</button>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">专辑名</span>
+                            <input id="pendingManualAlbumName" class="search-input" type="text" placeholder="专辑名">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">默认来自冻结上下文的专辑名</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">专辑艺术家</span>
+                            <input id="pendingManualAlbumArtist" class="search-input" type="text" placeholder="专辑艺术家">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">默认来自冻结上下文的 album_artist / artist</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">显示艺人</span>
+                            <input id="pendingManualDisplayArtist" class="search-input" type="text" placeholder="显示艺人">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">默认来自冻结上下文的 artist</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">发行日期</span>
+                            <input id="pendingManualReleaseDate" class="search-input" type="text" placeholder="YYYY-MM-DD">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">流派</span>
+                            <input id="pendingManualGenre" class="search-input" type="text" placeholder="流派">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">国家/地区</span>
+                            <input id="pendingManualCountry" class="search-input" type="text" placeholder="国家/地区">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">发行状态</span>
+                            <input id="pendingManualStatus" class="search-input" type="text" placeholder="official / bootleg / ...">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">包装形式</span>
+                            <input id="pendingManualPackaging" class="search-input" type="text" placeholder="CD / Digital Media / ...">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">条码</span>
+                            <input id="pendingManualBarcode" class="search-input" type="text" placeholder="条码">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充</small>
+                        </label>
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.82em; color: var(--text-primary);">封面 URL</span>
+                            <input id="pendingManualCoverArtURL" class="search-input" type="text" placeholder="https://...">
+                            <small style="font-size: 0.75em; color: var(--text-secondary);">可手动补充，直接写入专辑封面</small>
+                        </label>
+                    </div>
+                    <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                        <div>
+                            <div style="font-weight: 700; color: var(--text-primary);">曲目列表</div>
+                            <div id="pendingManualTrackSourceHint" style="font-size: 0.78em; opacity: 0.7; color: var(--text-secondary); margin-top: 4px;">默认来自冻结上下文的曲名、位置和弱线索；没有位置的行需要手动补齐。</div>
+                        </div>
+                        <button class="time-filter" onclick="addPendingManualTrackRow()">新增曲目</button>
+                    </div>
+                    <div id="pendingManualTrackTable" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;"></div>
+                    <button id="pendingManualSubmitBtn" class="time-filter" style="margin-top: 14px; width: 100%; background: #2d8f5b; color: #fff;" onclick="submitPendingManualMaintenance()">手动创建并应用上下文</button>
+                </div>
+                <div style="padding: 14px; border: 1px solid var(--border-color); border-radius: 14px;">
+                    <div style="font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">执行结果</div>
+                    <div id="pendingAlbumExecutionReport" style="font-size: 0.9em; color: var(--text-secondary);">尚未执行</div>
+                    <button id="pendingAlbumDeepBtn" class="time-filter" style="margin-top: 14px; width: 100%; background: var(--primary-color); color: #fff;" onclick="runPendingAlbumDeepMaintenance()">深度维护并应用上下文</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MusicBrainz 候选版本详情模态框 -->
+<div id="mbCandidateDetailModal" class="custom-modal" style="z-index: 4000;">
+    <div class="modal-content" style="max-width: 500px; margin-top: 80px; background: var(--card-bg); border: 1px solid var(--border-color);">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
+            <h3 style="color: var(--text-primary);">候选版本详情</h3>
+            <span class="close" onclick="hideModal('mbCandidateDetailModal')" style="color: var(--text-secondary);">×</span>
+        </div>
+        <div class="tabs" style="display: flex; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--border-color); margin-bottom: 0;">
+            <div class="tab-item active" id="tab-mb-detail" onclick="switchMBDetailTab('detail')" style="padding: 10px 0; cursor: pointer; border-bottom: 2px solid var(--primary-color); font-size: 0.9em; color: var(--primary-color);">常规详情</div>
+            <div class="tab-item" id="tab-mb-json" onclick="switchMBDetailTab('json')" style="padding: 10px 0; cursor: pointer; border-bottom: 2px solid transparent; font-size: 0.9em; color: var(--text-secondary);">JSON 源码</div>
+        </div>
+        <div class="modal-body" style="padding: 0; color: var(--text-primary); max-height: 500px; overflow-y: auto;">
+            <div id="mbDetailContent" style="padding: 20px;">
+                <!-- 渲染后的 HTML -->
+            </div>
+            <div id="mbJsonContent" style="padding: 20px; display: none;">
+                <pre id="mbJsonPre" style="background: rgba(0,0,0,0.1); padding: 15px; border-radius: 6px; font-size: 0.75em; font-family: 'Fira Code', monospace; white-space: pre-wrap; word-break: break-all; color: var(--text-primary); border: 1px solid var(--border-color);"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 专辑详情模态框 -->
+<div id="albumDetailsModal" class="custom-modal">
+    <div class="modal-content album-modal-content" style="max-width: 1250px; width: 95vw;">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 15px 25px;">
+            <h2 id="albumDetailTitle" style="font-size: 1.4em; font-weight: 700; color: var(--text-primary);">专辑详情</h2>
+            <span class="close" onclick="hideModal('albumDetailsModal')" style="font-size: 28px; color: var(--text-secondary); transition: opacity 0.2s; cursor: pointer;">&times;</span>
+        </div>
+        <div class="modal-body album-detail-modal-body" id="albumDetailBody">
+            <div class="album-detail-tabs">
+                <div id="albumDetailTabBtnInfo" class="album-detail-tab active" onclick="switchAlbumDetailTab('info')">专辑详情</div>
+                <div id="albumDetailTabBtnInsight" class="album-detail-tab" onclick="switchAlbumDetailTab('insight')">音眸专辑</div>
+            </div>
+
+            <div id="albumDetailTabInfo" class="album-detail-tab-panel active">
+                <div class="album-detail-grid">
+                    <!-- 第一列：元数据与封面 -->
+                    <div class="album-detail-pane">
+                        <div id="albumCoverPlaceholder" class="artwork-slot" style="width: 176px; height: 176px; border-radius: 14px; align-self: center; flex-shrink: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.15);"></div>
+
+                        <div id="albumDetailInfo" class="album-detail-scroll" style="margin-top: 16px;">
+                            <h3 id="ad-name" style="margin: 0; font-size: 1.25em; font-weight: 700; color: var(--text-primary); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</h3>
+                            <p id="ad-artist" style="margin: 5px 0 20px 0; opacity: 0.7; font-size: 0.95em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="-">-</p>
+
+                            
+
+                            <div style="padding-top: 20px; border-top: 1px solid var(--border-color);">
+                                <div class="meta-row"><div class="meta-label">发行日期:</div><div class="meta-value" id="ad-release" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">风格流派:</div><div class="meta-value" id="ad-genre" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">国家区域:</div><div class="meta-value" id="ad-country" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">发行状态:</div><div class="meta-value" id="ad-status" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">包装形式:</div><div class="meta-value" id="ad-packaging" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">识别条码:</div><div class="meta-value" id="ad-barcode" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">总计碟数:</div><div class="meta-value" id="ad-total-discs" title="-">-</div></div>
+                                <div class="meta-row"><div class="meta-label">专辑 ID:</div><div class="meta-value" id="ad-id" title="-">-</div></div>
+                            </div>
+
+                            <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
+                                <div class="meta-label" style="margin-bottom: 6px; width: 100%;">MusicBrainz ID:</div>
+                                <div id="ad-mbid" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75em; opacity: 0.5; line-height: 1.4; word-break: break-all; color: var(--text-secondary); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default;" title="-">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 第二列：MusicBrainz 候选区 -->
+                    <div class="album-detail-pane">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h4 class="album-pane-heading">候选发行版本</h4>
+                            <div style="display: flex; gap: 8px;">
+                                <button id="mbSearchBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="syncAlbumMB('search')">查询</button>
+                                <button id="mbDeepBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(var(--primary-rgb), 0.2);" onclick="syncAlbumMB('deep')">精选维护</button>
+                            </div>
+                        </div>
+
+                        <div id="mbCandidateList" style="display: none; flex: 1; overflow: hidden;">
+                            <p style="font-size: 0.8em; margin-bottom: 15px; color: var(--text-secondary);">请点击版本进行关联校准：</p>
+                            <div id="mbCandidateContent" style="flex: 1; overflow-y: auto; padding-right: 5px; max-height: 100%;"></div>
+                        </div>
+                        <div id="mbInitialMsg" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0.3; text-align: center;">
+                            <div style="font-size: 3em; margin-bottom: 10px;">🔍</div>
+                            <p style="font-size: 0.9em; color: var(--text-secondary);">点击"查询"获取权威库对应版本</p>
+                        </div>
+                    </div>
+
+                    <!-- 第三列：本地曲目对账清单 -->
+                    <div class="album-detail-pane">
+                        <h4 class="album-pane-heading" style="margin-bottom: 20px;">专辑曲目</h4>
+                        <div class="album-detail-scroll" style="padding-right: 5px;">
+                            <ul class="ranking-list" id="albumTrackList" style="padding: 0;">
+                                <!-- 由 JS 生成带对齐 Grid 的列表项 -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="albumDetailTabInsight" class="album-detail-tab-panel">
+                <div class="album-detail-pane album-insight-pane" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px;">
+                        <div>
+                            <h4 class="album-pane-heading">音眸专辑分析</h4>
+                            <p class="album-pane-subtitle">按曲序聚合已有曲目音眸，完整返回整张专辑的结构化分析与来源信息。</p>
+                        </div>
+                        <div class="album-insight-toolbar">
+                            <button id="albumInsightRefreshBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="fetchAlbumInsight(false)">刷新</button>
+                            <button id="albumInsightAnalyzeBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: var(--primary-color); color: #fff;" onclick="showAlbumInsightModelPicker()">开始分析</button>
+                        </div>
+                    </div>
+                    <div id="albumInsightContent" class="album-detail-scroll">
+                        <div class="album-insight-status">
+                            <strong>正在准备专辑音眸</strong>
+                            <div>即将加载已有分析记录。</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 曲目详情模态框 -->
+<div id="trackDetailsModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="module-trail"></div>
+        <!-- 内容由 JavaScript 动态生成，包含 Tab 结构 -->
+    </div>
+</div>
+
+<!-- “正在播放” AI 歌词解析模态框 -->
+<div id="nowPlayingInsightModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h2>音眸 (正在播放)</h2>
+            <span class="close" onclick="hideModal('nowPlayingInsightModal')">×</span>
+        </div>
+        <div class="modal-body">
+            <!-- 页签导航 -->
+            <div class="insight-tabs">
+                <div class="insight-tab active" onclick="switchInsightTab('summary', 'nowPlaying')">解析详情</div>
+                <div class="insight-tab" onclick="switchInsightTab('feedback', 'nowPlaying')">用户反馈</div>
+                <div class="insight-tab" onclick="switchInsightTab('raw', 'nowPlaying')">原始数据</div>
+            </div>
+
+            <!-- 解析详情页签 -->
+            <div id="nowPlaying-insightSummaryTab" class="insight-tab-content">
+                <div id="nowPlaying-aiInsightStreamContent"
+                     style="white-space: pre-wrap; font-family: 'Segoe UI', system-ui, sans-serif; max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <div class="loading">准备中...</div>
+                </div>
+            </div>
+
+            <!-- 用户反馈页签 -->
+            <div id="nowPlaying-insightFeedbackTab" class="insight-tab-content" style="display: none;">
+                <div id="nowPlaying-insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 原始数据页签 -->
+            <div id="nowPlaying-insightRawTab" class="insight-tab-content" style="display: none;">
+                <div id="nowPlaying-insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <pre style="white-space: pre-wrap; font-size: 0.85em; color: var(--accent-color);"></pre>
+                </div>
+            </div>
+
+            <!-- 底部操作区 -->
+            <div id="nowPlaying-aiActionFooter"
+                 style="margin-top: 15px; padding: 10px 0; border-top: 1px solid var(--border-color); display: none; justify-content: space-between; align-items: center; gap: 20px;">
+                <button id="nowPlaying-aiReanalyzeBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;"
+                        onclick="showModelPicker(null, 'nowPlaying')">重新分析
+                </button>
+                <button id="nowPlaying-aiShareBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
+                        onclick="shareInsight('nowPlaying')">分享图片
+                </button>
+                <div id="nowPlaying-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);"
+                            onclick="recordAiFeedback(1, 'nowPlaying')">👍 赞
+                    </button>
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(231, 76, 60, 0.1); color: var(--accent-color); border-color: var(--accent-color);"
+                            onclick="recordAiFeedback(-1, 'nowPlaying')">👎 踩
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- “音眸列表” AI 歌词解析模态框 -->
+<div id="listInsightModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h2>音眸 (分析历史)</h2>
+            <span class="close" onclick="hideModal('listInsightModal')">×</span>
+        </div>
+        <div class="modal-body">
+            <!-- 页签导航 -->
+            <div class="insight-tabs">
+                <div class="insight-tab active" onclick="switchInsightTab('summary', 'list')">解析详情</div>
+                <div class="insight-tab" onclick="switchInsightTab('feedback', 'list')">用户反馈</div>
+                <div class="insight-tab" onclick="switchInsightTab('raw', 'list')">原始数据</div>
+            </div>
+
+            <!-- 解析详情页签 -->
+            <div id="list-insightSummaryTab" class="insight-tab-content">
+                <div id="list-aiInsightStreamContent"
+                     style="white-space: pre-wrap; font-family: 'Segoe UI', system-ui, sans-serif; max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <div class="loading">准备中...</div>
+                </div>
+            </div>
+
+            <!-- 用户反馈页签 -->
+            <div id="list-insightFeedbackTab" class="insight-tab-content" style="display: none;">
+                <div id="list-insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 原始数据页签 -->
+            <div id="list-insightRawTab" class="insight-tab-content" style="display: none;">
+                <div id="list-insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <pre style="white-space: pre-wrap; font-size: 0.85em; color: var(--accent-color);"></pre>
+                </div>
+            </div>
+
+            <!-- 底部操作区 -->
+            <div id="list-aiActionFooter"
+                 style="margin-top: 15px; padding: 10px 0; border-top: 1px solid var(--border-color); display: none; justify-content: space-between; align-items: center; gap: 20px;">
+                <button id="list-aiReanalyzeBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;"
+                        onclick="showModelPicker(null, 'list')">重新分析
+                </button>
+                <button id="list-aiShareBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
+                        onclick="shareInsight('list')">分享图片
+                </button>
+                <div id="list-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);"
+                            onclick="recordAiFeedback(1, 'list')">👍 赞
+                    </button>
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(231, 76, 60, 0.1); color: var(--accent-color); border-color: var(--accent-color);"
+                            onclick="recordAiFeedback(-1, 'list')">👎 踩
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- “歌曲详情” AI 歌词解析模态框 -->
+<div id="detailsInsightModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="module-trail"></div>
+        <div class="modal-header">
+            <h2>音眸 (歌曲详情)</h2>
+            <span class="close" onclick="hideModal('detailsInsightModal')">×</span>
+        </div>
+        <div class="modal-body">
+            <!-- 页签导航 -->
+            <div class="insight-tabs">
+                <div class="insight-tab active" onclick="switchInsightTab('summary', 'details')">解析详情</div>
+                <div class="insight-tab" onclick="switchInsightTab('feedback', 'details')">用户反馈</div>
+                <div class="insight-tab" onclick="switchInsightTab('raw', 'details')">原始数据</div>
+            </div>
+
+            <!-- 解析详情页签 -->
+            <div id="details-insightSummaryTab" class="insight-tab-content">
+                <div id="details-aiInsightStreamContent"
+                     style="white-space: pre-wrap; font-family: 'Segoe UI', system-ui, sans-serif; max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <div class="loading">准备中...</div>
+                </div>
+            </div>
+
+            <!-- 用户反馈页签 -->
+            <div id="details-insightFeedbackTab" class="insight-tab-content" style="display: none;">
+                <div id="details-insightFeedbackContent" style="max-height: 60vh; overflow-y: auto; padding: 10px;">
+                    <div class="loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 原始数据页签 -->
+            <div id="details-insightRawTab" class="insight-tab-content" style="display: none;">
+                <div id="details-insightRawContent" style="max-height: 60vh; overflow-y: auto; padding: 20px; background: var(--background-color); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <pre style="white-space: pre-wrap; font-size: 0.85em; color: var(--accent-color);"></pre>
+                </div>
+            </div>
+
+            <!-- 底部操作区 -->
+            <div id="details-aiActionFooter"
+                 style="margin-top: 15px; padding: 10px 0; border-top: 1px solid var(--border-color); display: none; justify-content: space-between; align-items: center; gap: 20px;">
+                <button id="details-aiReanalyzeBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600;"
+                        onclick="showModelPicker(null, 'details')">重新分析
+                </button>
+                <button id="details-aiShareBtn" class="action-btn"
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
+                        onclick="shareInsight('details')">分享图片
+                </button>
+                <div id="details-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(46, 204, 113, 0.1); color: var(--secondary-color); border-color: var(--secondary-color);"
+                            onclick="recordAiFeedback(1, 'details')">👍 赞
+                    </button>
+                    <button class="action-btn"
+                            style="padding: 6px 12px; border-radius: 15px; background: rgba(231, 76, 60, 0.1); color: var(--accent-color); border-color: var(--accent-color);"
+                            onclick="recordAiFeedback(-1, 'details')">👎 踩
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI 模型选择模态框 -->
+<div id="aiModelPickerModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 400px; padding: 25px;">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="margin-bottom: 20px;">
+            <h3>选择 AI 分析模型</h3>
+            <span class="close" onclick="hideModal('aiModelPickerModal')">×</span>
+        </div>
+        <div class="ai-model-selector" style="margin-bottom: 20px;">
+            <label for="aiProviderSelect">当前可用平台:</label>
+            <select id="aiProviderSelect"
+                    onchange="loadModelsForPlatform(this.value)"
+                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); margin-bottom: 12px;">
+                <option value="ollama">Ollama</option>
+            </select>
+            <label for="aiModelSelect">当前可用模型:</label>
+            <select id="aiModelSelect"
+                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); margin-bottom: 15px;">
+                <option value="">请先选择平台</option>
+            </select>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="aiModelSseToggle" checked style="width: auto;">
+                <label for="aiModelSseToggle" style="font-weight: normal; cursor: pointer;">流式输出结果</label>
+            </div>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button class="action-btn"
+                    style="flex: 1; padding: 10px; background: var(--primary-color); color: white; border-radius: 6px;"
+                    onclick="startAnalysisWithSelectedModel()">开始分析
+            </button>
+            <button class="action-btn"
+                    style="flex: 1; padding: 10px; background: var(--text-secondary); color: white; border-radius: 6px;"
+                    onclick="hideModal('aiModelPickerModal')">取消
+            </button>
+        </div>
+    </div>
+</div>
+{{ end }}

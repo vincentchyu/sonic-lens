@@ -15,15 +15,15 @@ type TrackFavoriteEvent struct {
 	ID                   int64                          `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	Source               string                         `gorm:"column:source;type:varchar(64);not null;index:idx_tfe_source" json:"source"`
 	ProviderFavorite     bool                           `gorm:"column:provider_favorite;type:tinyint(1);not null;default:0" json:"provider_favorite"`
-	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_tfe_identity_subtitle" json:"artist"`
-	Album                string                         `gorm:"column:album;type:varchar(255);not null;index:idx_tfe_identity_subtitle" json:"album"`
-	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(255);index:idx_tfe_identity_subtitle" json:"album_subtitle"`
+	Artist               string                         `gorm:"column:artist;type:varchar(180);not null;index:idx_tfe_identity_subtitle" json:"artist"`
+	Album                string                         `gorm:"column:album;type:varchar(180);not null;index:idx_tfe_identity_subtitle" json:"album"`
+	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(60);index:idx_tfe_identity_subtitle" json:"album_subtitle"`
 	Track                string                         `gorm:"column:track;type:varchar(255);not null;index:idx_tfe_identity_subtitle" json:"track"`
 	AlbumArtist          string                         `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
 	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint;index:idx_tfe_identity_subtitle" json:"track_number"`
 	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1;index:idx_tfe_identity_subtitle" json:"disc_number"`
 	MusicBrainzID        string                         `gorm:"column:music_brainz_id;type:varchar(255)" json:"music_brainz_id"`
-	Duration             int64                          `gorm:"column:duration;type:int" json:"duration"`
+	Duration             int64                          `gorm:"column:duration;type:bigint" json:"duration"`
 	BundleID             string                         `gorm:"column:bundle_id;type:varchar(255)" json:"bundle_id"`
 	UniqueID             string                         `gorm:"column:unique_id;type:varchar(255)" json:"unique_id"`
 	ResolvedTrackID      int64                          `gorm:"column:resolved_track_id;type:bigint;default:0;index:idx_tfe_resolved_track_id" json:"resolved_track_id"`

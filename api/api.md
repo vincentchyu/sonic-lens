@@ -6,13 +6,13 @@
 
 ## 1. 接口总览
 
-- HTTP 路由总数：`57`
+- HTTP 路由总数：`58`
 - 其中 API 路由（`/api/*`）：`52`
-- 页面路由：`3`（`/`、`/lyrics-live`、`/playCounts`）
+- 页面路由：`4`（`/`、`/admin`、`/lyrics-live`、`/playCounts`）
 - 实时路由：`1`（`/ws`）
 - 健康检查：`1`（`/health`）
 - 封面二进制路由：`1`（`/api/artwork/:key`）
-- 静态资源路由（`r.StaticFile`）：`10`
+- 静态资源路由（`r.StaticFile` / `r.Static`）：`11`（10 个显式文件 + admin 拆分资源目录）
 
 ## 2. 全量接口文档（按前端功能域）
 
@@ -20,10 +20,10 @@
 
 | 功能 | 方法 | 路径 | 主要用途 | 主要后端链路 |
 |---|---|---|---|---|
-| 仪表盘主页 | GET | `/` | 渲染 `templates/dashboard.html` | Gin + Go template |
-| 全屏歌词页 | GET | `/lyrics-live` | 渲染 `templates/lyrics_live.html` | Gin + Go template |
-| 播放统计页 | GET | `/playCounts` | HTML/JSON 双态播放统计 | `trackService.GetTrackPlayCounts` |
-| 静态资源 | GET | `/static/*`（10个显式文件） | 前端脚本、样式、Logo | `r.StaticFile` |
+| 后台总入口 | GET | `/`、`/admin` | 渲染 `templates/admin.html`，并组合 `templates/admin/*.html` 局部模板；`/` 保留历史入口，`/admin` 作为语义化别名 | Gin + Go template |
+| 全屏歌词页 | GET | `/lyrics-live` | 渲染 `templates/pages/lyrics_live.html` | Gin + Go template |
+| 播放统计页 | GET | `/playCounts` | 渲染 `templates/pages/track_play_counts.html`，HTML/JSON 双态播放统计 | `trackService.GetTrackPlayCounts` |
+| 静态资源 | GET | `/static/*`（10 个显式文件 + `/static/admin/*`） | 前端脚本、样式、Logo、Admin 入口拆分 CSS/JS | `r.StaticFile` / `r.Static` |
 
 ## 2.2 专辑封面（Artwork）
 
@@ -247,12 +247,3 @@ graph TD
 - `apple_music_state`、`lastfm_state`：按 source 暴露统一收藏枚举，取值为 `not_favorited`、`favorited`、`favorite_pending`、`unfavorite_pending`。
 - `favorite_state`：当前歌曲的聚合收藏态；优先级为 `unfavorite_pending` > `favorite_pending` > `favorited` > `not_favorited`。
 - `track` 表只表示已归因后的稳定事实；`track_favorite_event` 只表示待归因意图；API 与 WS 都必须走同一套 projection 逻辑，禁止客户端再自行混合判断。
-
-## 前端重构顺序. 
-- 模块E
-- 模块A
-- 模块F
-- 模块D
-- 模块C
-- 模块B
-- 模块G 

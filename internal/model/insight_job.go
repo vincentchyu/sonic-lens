@@ -30,6 +30,7 @@ type InsightJob struct {
 	ModelDisplayName      string                    `gorm:"column:model_display_name;type:varchar(255)" json:"model_display_name"`
 	ClientPlatform        string                    `gorm:"column:client_platform;type:varchar(64)" json:"client_platform"`
 	LiveActivityPushToken string                    `gorm:"column:live_activity_push_token;type:text" json:"-"`
+	CoverArtURL           string                    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
 	ResultInsightID       *int64                    `gorm:"column:result_insight_id;type:bigint;index:idx_insight_job_result_insight_id" json:"result_insight_id"`
 	ResultAvailable       bool                      `gorm:"column:result_available;type:tinyint(1);not null;default:0" json:"result_available"`
 	ErrorMessage          string                    `gorm:"column:error_message;type:text" json:"error_message"`

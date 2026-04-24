@@ -1,0 +1,444 @@
+{{ define "admin/main_sections" }}
+<div class="container">
+    <!-- 统计卡片 -->
+    <div class="stats-container">
+        <div class="stat-card">
+            <div class="module-trail"></div>
+            <div class="stat-header">
+                <div class="stat-title">总播放次数</div>
+                <div class="stat-icon icon-1">▶️</div>
+            </div>
+            <div class="stat-value" id="totalPlays">0</div>
+            <div class="stat-change positive">↑ 12% 本月</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="module-trail"></div>
+            <div class="stat-header">
+                <div class="stat-title">曲目总数</div>
+                <div class="stat-icon icon-2">🎵</div>
+            </div>
+            <div class="stat-value" id="totalTracks">0</div>
+            <div class="stat-change positive">↑ 5% 本月</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="module-trail"></div>
+            <div class="stat-header">
+                <div class="stat-title">艺术家数量</div>
+                <div class="stat-icon icon-3">🎤</div>
+            </div>
+            <div class="stat-value" id="totalArtists">0</div>
+            <div class="stat-change negative">↓ 2% 本月</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="module-trail"></div>
+            <div class="stat-header">
+                <div class="stat-title">专辑数量</div>
+                <div class="stat-icon icon-4">💿</div>
+            </div>
+            <div class="stat-value" id="totalAlbums">0</div>
+            <div class="stat-change positive">↑ 8% 本月</div>
+        </div>
+
+        <!-- 播放来源统计卡片 -->
+        <div class="stat-card">
+            <div class="module-trail"></div>
+            <div class="stat-header">
+                <div class="stat-title">播放来源分布</div>
+                <div class="stat-icon icon-1">📊</div>
+            </div>
+            <div
+                    class="chart-container"
+                    style="height: 120px; position: relative"
+            >
+                <canvas id="sourceChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="charts-container">
+        <!-- 热门艺术家 -->
+        <div class="chart-card" id="artistChartCard">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">热门艺术家</div>
+                <div class="time-filters">
+                    <div class="time-filter active" data-type="plays">播放次数</div>
+                    <div class="time-filter" data-type="tracks">曲目数</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="artistChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 热门专辑 -->
+        <div class="chart-card" id="albumChartCard">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">热门专辑</div>
+                <div class="time-filters">
+                    <div class="time-filter active" data-days="7">7天</div>
+                    <div class="time-filter" data-days="30">30天</div>
+                    <div class="time-filter" data-days="90">90天</div>
+                    <div class="time-filter" data-days="365">365天</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="albumChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 热门流派 -->
+        <div class="chart-card" id="genreChartCard">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">口味流派</div>
+                <button id="genreChartFullscreenBtn" class="fullscreen-btn">
+                    全屏
+                </button>
+            </div>
+            <div class="chart-container">
+                <canvas id="genreChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 播放趋势图 -->
+        <div class="chart-card" id="trendChartCard">
+            <div class="module-trail"></div>
+            <!-- <div class="chart-card" style="grid-column: span 2"> -->
+            <div class="card-header">
+                <div class="card-title">播放趋势</div>
+                <div style="display: flex; gap: 10px">
+                    <div class="time-filters">
+                        <div class="time-filter" data-range="7">7天</div>
+                        <div class="time-filter active" data-range="30">30天</div>
+                        <div class="time-filter" data-range="90">90天</div>
+                    </div>
+                    <button id="trendChartFullscreenBtn" class="fullscreen-btn">
+                        全屏
+                    </button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最近播放和播放排行并排显示 -->
+    <div class="rankings-container">
+        <!-- 最近播放 -->
+        <div class="ranking-card" id="recentPlaysCard">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">最近播放</div>
+            </div>
+            <ul class="ranking-list" id="recentPlaysList">
+                <!-- 最近播放项目将通过JavaScript动态加载 -->
+                <div class="loading">加载中...</div>
+            </ul>
+        </div>
+
+        <!-- 播放排行榜 -->
+        <div class="ranking-card" id="rankingCard">
+            <div class="module-trail"></div>
+            <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+                <div class="card-title">播放排行榜</div>
+                <div class="search-container" style="flex: 1; min-width: 150px;">
+                    <input type="text" id="rankingSearchInput" placeholder="搜索歌名或艺术家..." 
+                           style="width: 100%; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); outline: none; font-size: 0.85rem;">
+                </div>
+                <div class="time-filters">
+                    <div class="time-filter active" data-ranking="all">总排行</div>
+                    <div class="time-filter" data-ranking="month">本月</div>
+                    <div class="time-filter" data-ranking="week">本周</div>
+                </div>
+            </div>
+            <ul class="ranking-list" id="rankingList">
+                <!-- 排行榜项目将通过JavaScript动态加载 -->
+                <div class="loading">加载中...</div>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 专辑列表容器 -->
+    <div id="albumListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">专辑库</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="position: relative;">
+                        <input type="text" id="albumSearchInput" placeholder="搜索专辑或艺术家..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshAlbumListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div id="albumListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="albumPagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="albumPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="albumPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="albumNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="artistListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">艺术家资料库</div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative;">
+                        <input type="text" id="artistSearchInput" placeholder="搜索艺术家..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshArtistListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div style="padding: 0 20px 18px 20px;">
+                <div style="padding: 16px; border-radius: 16px; border: 1px solid var(--border-color); background: rgba(var(--primary-rgb), 0.05); display: flex; flex-direction: column; gap: 12px;">
+                    <div style="font-size: 0.95em; font-weight: 700; color: var(--text-primary);">从热门艺术家选择并上传头像</div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <select id="artistSourceSelect" style="min-width: 220px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); outline: none;">
+                            <option value="">选择热门艺术家</option>
+                        </select>
+                        <input id="artistAvatarFileInput" type="file" accept="image/*" style="max-width: 260px; color: var(--text-secondary);" />
+                        <button id="uploadArtistAvatarBtn" class="time-filter">上传头像</button>
+                    </div>
+                    <div id="artistUploadHint" style="font-size: 0.82em; color: var(--text-secondary);">图片会转为 data URL 后上传，并写入对象存储与 `artist_profile`。</div>
+                </div>
+            </div>
+            <div id="artistListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="artistPagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="artistPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="artistPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="artistNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="pendingAlbumListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">待归因专辑工作台</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="refreshPendingAlbumListBtn" class="time-filter">刷新同步</button>
+                </div>
+            </div>
+            
+            <div class="tabs-container" style="padding: 0 20px;">
+                <div class="time-filters" style="margin-bottom: 0;">
+                    <div class="time-filter active" id="tabPendingGroups" onclick="switchPendingWorkTab('pending_groups')">待归因聚合</div>
+                    <div class="time-filter" id="tabWorkingItems" onclick="switchPendingWorkTab('working_items')">维护中</div>
+                    <div class="time-filter" id="tabCompletedItems" onclick="switchPendingWorkTab('completed_items')">已深度维护</div>
+                </div>
+            </div>
+
+            <div id="pendingWorkSearchContainer" style="padding: 10px 20px; display: none; gap: 10px; align-items: center;">
+                <div style="position: relative; flex: 1;">
+                    <input type="text" id="pendingWorkSearchInput" placeholder="搜索艺术家或专辑..." 
+                        style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 100%; outline: none;">
+                    <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                </div>
+            </div>
+
+            <div id="pendingAlbumListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+
+            <div id="pendingWorkPagination" class="pagination-container" style="display: none; justify-content: center; margin: 20px 0;">
+                <button id="pendingWorkPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="pendingWorkPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="pendingWorkNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 曲目列表容器 -->
+    <div id="trackListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">曲目库</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="position: relative;">
+                        <input type="text" id="trackSearchInput" placeholder="搜索曲目、艺术家或专辑..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshTrackListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div id="trackListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="trackPagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="trackPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="trackPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="trackNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 未上报记录容器 -->
+    <div id="unscrobbledContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">未上报记录</div>
+                <div>
+                    <button
+                            id="syncSelectedBtn"
+                            class="time-filter"
+                            style="margin-right: 10px"
+                    >
+                        同步选中
+                    </button>
+                    <button id="refreshUnscrobbledBtn" class="time-filter">
+                        刷新
+                    </button>
+                </div>
+            </div>
+            <div id="unscrobbledContent">
+                <div class="loading">加载中...</div>
+            </div>
+            <div
+                    id="pagination"
+                    style="display: flex; justify-content: center; margin-top: 20px"
+            >
+                <button id="prevPage" class="time-filter" disabled>上一页</button>
+                <span
+                        id="pageInfo"
+                        style="margin: 0 15px; line-height: 36px"
+                ></span>
+                <button id="nextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 音眸列表容器 -->
+    <div id="insightListContainer" style="display: none">
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title">音眸解析列表</div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="position: relative;">
+                        <input type="text" id="insightSearchInput" placeholder="按曲目模糊搜索..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 200px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button id="refreshInsightListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div class="insight-tabs" id="insightListTargetTabs" style="margin: 0 18px 14px 18px;">
+                <div class="insight-tab active" data-target-type="track" onclick="switchInsightListTarget('track')">曲目解析</div>
+                <div class="insight-tab" data-target-type="album" onclick="switchInsightListTarget('album')">专辑解析</div>
+            </div>
+            <div id="insightListContent">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="insightPagination" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="insightPrevPage" class="time-filter" disabled>上一页</button>
+                <span id="insightPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="insightNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="insightJobListContainer" style="display: none">
+        <div class="queue-dashboard">
+            <div class="queue-toolbar">
+                <div class="queue-heading">
+                    <div class="queue-kicker">Queue Console</div>
+                    <h2>音眸任务队列</h2>
+                    <p>聚焦运行中、失败/已取消待清理和最近完成的音眸任务，实时回看任务状态与结果跳转。</p>
+                </div>
+                <div class="queue-toolbar-controls is-hidden">
+                    <label class="queue-search">
+                        <input type="text" id="insightJobSearchInput" placeholder="按任务、曲目、模型搜索..." />
+                        <span>🔍</span>
+                    </label>
+                    <select id="insightJobStatusFilter" class="time-filter" style="min-width: 128px;">
+                        <option value="">全部状态</option>
+                        <option value="queued">已排队</option>
+                        <option value="running">运行中</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                        <option value="canceled">已取消</option>
+                    </select>
+                    <select id="insightJobTargetFilter" class="time-filter" style="min-width: 128px;">
+                        <option value="">全部对象</option>
+                        <option value="track">曲目任务</option>
+                        <option value="album">专辑任务</option>
+                    </select>
+                    <button id="refreshInsightJobListBtn" class="time-filter">刷新</button>
+                    <div id="insightJobRealtimeIndicator" class="queue-chip queue-chip-polling">
+                        <span class="queue-chip-dot"></span>
+                        <span>实时通道连接中...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="insightJobSummaryBar" class="queue-summary-bar">
+                <div class="queue-summary-card">
+                    <div class="queue-summary-label">全部任务</div>
+                    <div class="queue-summary-value">-</div>
+                    <div class="queue-summary-note">最近状态快照</div>
+                </div>
+            </div>
+
+            <div class="insight-job-tabs">
+                <div class="insight-job-tab active" data-tab="monitor" onclick="switchInsightJobTab('monitor')">执行监控</div>
+                <div class="insight-job-tab" data-tab="list" onclick="switchInsightJobTab('list')">全部任务</div>
+            </div>
+
+            <div class="queue-workspace is-monitor" id="insightJobWorkspace">
+                <!-- Tab 1: 监控内容 (正在执行 + 失败/取消待处理) -->
+                <div id="insightJobMonitorView" class="queue-workspace-monitor">
+                    <div id="insightJobPriorityStrip" class="queue-priority-strip-vertical">
+                        <!-- 由 JS 填充 renderInsightJobPriorityStrip -->
+                    </div>
+                </div>
+
+                <!-- Tab 2: 任务对象列表 (全部任务) -->
+                <div id="insightJobListView" class="queue-feed" style="display: none; flex: 1; overflow-y: auto;">
+                    <div class="queue-feed-head">
+                        <div>任务对象</div>
+                        <div>执行环境</div>
+                        <div>状态与时间</div>
+                        <div>操作</div>
+                    </div>
+                    <div id="insightJobListContent" class="queue-feed-body">
+                        <div class="queue-empty">加载中...</div>
+                    </div>
+                    <div id="insightJobPagination" style="display: flex; justify-content: center; margin-top: 20px; padding-bottom: 20px;">
+                        <button id="insightJobPrevPage" class="time-filter" disabled>上一页</button>
+                        <span id="insightJobPageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                        <button id="insightJobNextPage" class="time-filter">下一页</button>
+                    </div>
+                </div>
+
+                <!-- 共享详情区 -->
+                <aside id="insightJobInspector" class="queue-inspector">
+                    <div class="queue-inspector-empty">选择一条任务后，这里会显示状态时间线、错误信息和结果跳转。</div>
+                </aside>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+{{ end }}

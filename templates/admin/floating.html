@@ -1,0 +1,80 @@
+{{ define "admin/floating" }}
+<!-- 动态氛围背景层：高级极光流光效果 -->
+<div class="ambient-background">
+    <div class="color-orb orb-1"></div>
+    <div class="color-orb orb-2"></div>
+    <div class="color-orb orb-3"></div>
+</div>
+<!-- 实时播放信息悬浮窗 -->
+<div id="nowPlaying">
+    <div class="module-trail"></div>
+    <div class="now-playing-header">
+        <h4>正在播放</h4>
+        <div class="now-playing-controls">
+            <div class="drag-handle">⋮</div>
+            <div class="minimize-handle">−</div>
+        </div>
+    </div>
+        <div id="nowPlayingInfo">
+            <div class="now-playing-media">
+                <div class="now-playing-cover">
+                    <div id="trackCoverArt" class="artwork-slot" data-artwork-compact="1"></div>
+                </div>
+                <div class="now-playing-copy">
+                <div class="track-title-favorite-container">
+                    <div class="track-title" id="trackTitle"></div>
+                    <button
+                            class="favorite-button unliked"
+                            id="favoriteButton"
+                            title="添加到喜欢"
+                    ></button>
+                </div>
+
+                <div class="track-artist" id="trackArtist"></div>
+                <div class="track-album" id="trackAlbum">-</div>
+            </div>
+        </div>
+
+        <!-- 播放进度显示 -->
+        <div class="progress-container">
+            <div class="progress-track" id="progressTrack">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-thumb" id="progressThumb"></div>
+            </div>
+            <div class="progress-time">
+                <span id="currentTime">00:00</span>
+                <span id="totalTime">00:00</span>
+            </div>
+        </div>
+
+        <div class="track-source" id="trackSource"></div>
+
+        <!-- 操作按钮区域 -->
+        <div class="now-playing-actions">
+            <div class="action-btns-group">
+                <button id="aiInsightButton" class="action-btn" onclick="handleAiInsightClick()">音眸</button>
+                <button id="lyricsButton" class="action-btn">歌词</button>
+            </div>
+        </div>
+
+        <div class="favorite-indicators-container">
+            <div class="favorite-indicators" id="favoriteIndicators"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 歌词悬浮窗 -->
+<div id="lyricsFloating">
+    <div class="module-trail"></div>
+    <div class="lyrics-header">
+        <h4>歌词</h4>
+        <div class="lyrics-controls">
+            <button class="lyrics-fullscreen-btn" id="lyricsFullscreenBtn">全屏</button>
+            <button class="lyrics-close-btn" id="lyricsCloseBtn">×</button>
+        </div>
+    </div>
+    <div class="lyrics-container" id="lyricsContainer">
+        <div class="lyrics-text">暂无歌词数据</div>
+    </div>
+</div>
+{{ end }}

@@ -1,0 +1,87 @@
+{{ define "admin/navbar" }}
+<!-- 悬浮侧边导航栏 (基于 DaisyUI) -->
+<nav class="navbar fixed left-5 top-1/2 -translate-y-1/2 h-[calc(100vh-80px)] w-60 z-[2000] p-4 flex-col rounded-2xl transition-all duration-500 ease-in-out overflow-hidden group/nav" id="mainNavbar">
+    
+    <div class="nav-toggle absolute -right-2.5 top-10 w-5 h-5 rounded-full flex items-center justify-center cursor-pointer shadow-lg z-[2001] text-[10px] border-2" id="navToggle">◀</div>
+    
+    <div class="navbar-content w-full h-full flex flex-col">
+        <div class="nav-header">
+            <a href="/" class="nav-brand group" title="音眸轨迹">
+                <span class="nav-brand-mark">🎵</span>
+                <span class="nav-brand-copy">
+                    <span class="logo-text text-lg font-extrabold tracking-tight transition-all duration-300">音眸轨迹</span>
+                </span>
+            </a>
+        </div>
+
+        <!-- 菜单区域 -->
+        <ul class="menu menu-md w-full p-0 gap-2 flex-nowrap overflow-y-auto" id="navLinks">
+            <li class="nav-group">
+                <div class="nav-section-label">概览</div>
+            </li>
+            <li>
+                <a href="/" class="side-nav-link active" id="dashboardTab" title="仪表板">
+                    <span class="nav-item-icon">◫</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">仪表板</span>
+                    </span>
+                </a>
+            </li>
+
+            <li class="nav-group">
+                <div class="nav-section-label">资料库</div>
+            </li>
+            <li>
+                <details id="libraryMenuDetails" open>
+                    <summary class="library-summary">
+                        <span class="nav-item-icon">⌘</span>
+                        <span class="nav-item-content">
+                            <span class="nav-text">我的资料库</span>
+                        </span>
+                    </summary>
+                    <ul class="library-submenu space-y-1">
+                        <div class="tree-line-group">
+                            <li><a href="#" id="albumListTab" class="side-nav-sublink" title="专辑"><span class="nav-item-content"><span class="nav-text">专辑</span></span></a></li>
+                            <li><a href="#" id="artistListTab" class="side-nav-sublink" title="艺术家"><span class="nav-item-content"><span class="nav-text">艺术家</span></span></a></li>
+                            <li><a href="#" id="trackListTab" class="side-nav-sublink" title="曲目"><span class="nav-item-content"><span class="nav-text">曲目</span></span></a></li>
+                            <li><a href="#" id="pendingAlbumListTab" class="side-nav-sublink" title="待归因专辑"><span class="nav-item-content"><span class="nav-text">待归因专辑</span></span></a></li>
+                        </div>
+                    </ul>
+                </details>
+            </li>
+
+            <li class="nav-group">
+                <div class="nav-section-label">分析</div>
+            </li>
+            <li>
+                <a href="#" class="side-nav-link" id="insightListTab" title="音眸">
+                    <span class="nav-item-icon">✦</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">音眸</span>
+                    </span>
+                </a>
+            </li>
+
+            <li class="nav-group">
+                <div class="nav-section-label">队列</div>
+            </li>
+            <li>
+                <a href="#" class="side-nav-link" id="insightJobListTab" title="音眸任务">
+                    <span class="nav-item-icon">◌</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">音眸任务</span>
+                    </span>
+                </a>
+            </li>
+            <li>
+                <a href="#" class="side-nav-link" id="unscrobbledTab" title="未上报">
+                    <span class="nav-item-icon">!</span>
+                    <span class="nav-item-content">
+                        <span class="nav-text">未上报</span>
+                    </span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>
+{{ end }}

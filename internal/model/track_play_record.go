@@ -82,15 +82,15 @@ type HourlyPlayTrendData struct {
 
 // TrackPlayRecord 对应 track_play_records 表
 type TrackPlayRecord struct {
-	ID                   int64                          `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Artist               string                         `gorm:"column:artist;type:varchar(255);not null;index:idx_track_play_records_artist;index:idx_track_play_records_identity_subtitle" json:"artist"`
-	AlbumArtist          string                         `gorm:"column:album_artist;type:varchar(255)" json:"album_artist"`
-	Track                string                         `gorm:"column:track;type:varchar(255);not null;index:idx_track_play_records_identity_subtitle" json:"track"`
-	Album                string                         `gorm:"column:album;type:varchar(255);not null;index:idx_track_play_records_identity_subtitle" json:"album"`
-	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(255);index:idx_track_play_records_identity_subtitle" json:"album_subtitle"`
+	ID                   int64                          `gorm:"column:id;type:bigint;primaryKey;autoIncrement;index:idx_play_time_id,sort:desc,priority:2" json:"id"`
+	Artist               string                         `gorm:"column:artist;type:varchar(180);not null;index:idx_track_play_records_artist;index:idx_track_play_records_identity_subtitle" json:"artist"`
+	AlbumArtist          string                         `gorm:"column:album_artist;type:varchar(180)" json:"album_artist"`
+	Track                string                         `gorm:"column:track;type:varchar(180);not null;index:idx_track_play_records_identity_subtitle" json:"track"`
+	Album                string                         `gorm:"column:album;type:varchar(180);not null;index:idx_track_play_records_identity_subtitle" json:"album"`
+	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(60);index:idx_track_play_records_identity_subtitle" json:"album_subtitle"`
 	AlbumID              int64                          `gorm:"column:album_id;type:bigint;default:0;index:idx_track_play_records_album_id" json:"album_id"`
-	Duration             int64                          `gorm:"column:duration;type:int" json:"duration"`
-	PlayTime             time.Time                      `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"play_time"`
+	Duration             int64                          `gorm:"column:duration;type:bigint" json:"duration"`
+	PlayTime             time.Time                      `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP;index:idx_play_time_id,sort:desc,priority:1" json:"play_time"`
 	Scrobbled            bool                           `gorm:"column:scrobbled;type:tinyint(1);not null;default:0;index:idx_track_play_records_scrobbled" json:"scrobbled"`
 	MusicBrainzID        string                         `gorm:"column:music_brainz_id;type:varchar(255)" json:"music_brainz_id"`
 	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint;index:idx_track_play_records_identity_subtitle" json:"track_number"`

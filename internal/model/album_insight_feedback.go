@@ -10,14 +10,14 @@ import (
 // AlbumInsightFeedback 存储用户对专辑音眸结果的反馈，便于和曲目反馈链路独立演进。
 type AlbumInsightFeedback struct {
 	ID             int64       `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	InsightID      int64       `gorm:"column:insight_id;type:bigint;index" json:"insight_id"`
-	Score          int         `gorm:"column:score;type:int" json:"score"`
+	InsightID      int64       `gorm:"column:insight_id;type:bigint;not null;index" json:"insight_id"`
+	Score          int         `gorm:"column:score;type:int;not null" json:"score"`
 	Comment        string      `gorm:"column:comment;type:text" json:"comment"`
-	ReasonCodes    StringArray `gorm:"column:reason_codes;type:text" json:"reason_codes"`
-	SectionKey     string      `gorm:"column:section_key;type:varchar(128)" json:"section_key"`
-	SourcePlatform string      `gorm:"column:source_platform;type:varchar(64)" json:"source_platform"`
+	ReasonCodes    StringArray `gorm:"column:reason_codes;type:longtext" json:"reason_codes"`
+	SectionKey     string      `gorm:"column:section_key;type:varchar(128);not null;default:''" json:"section_key"`
+	SourcePlatform string      `gorm:"column:source_platform;type:varchar(64);not null;default:''" json:"source_platform"`
 
-	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 // TableName 自定义表名，确保专辑反馈不和曲目反馈混表。

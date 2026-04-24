@@ -1,5 +1,15 @@
 # 记忆索引
 
+## 2026-04-24
+
+- **日期**: 2026-04-24
+    - **特性摘要**: MySQL `ensure*Schema()` 运行时补库逻辑完成一轮代码与 DDL 对照审计，补齐 `insight_job`、`album.title_metadata`、`track_play_records.cover_art_path`、`top_album_stat.album_subtitle` 等事实归档，并形成稳定期退场顺序清单
+    - **链接**: [ensure*Schema 退场审计](memory/2026-04-24/ensure_schema_retirement_audit.md)
+
+- **日期**: 2026-04-24
+    - **特性摘要**: Web Admin 后台总入口从单个巨型 dashboard 模板轻量拆分为 Go template partial、`static/admin/admin.css` 与按原始顺序加载的 Vanilla JS 文件，保留 `/` 渲染入口与现有 DOM/API/全局函数契约
+    - **链接**: [Admin 后台入口轻量拆分特性清单](memory/2026-04-24/admin_lightweight_split_manifest.md)
+
 ## 2026-04-23
 
 - **日期**: 2026-04-23

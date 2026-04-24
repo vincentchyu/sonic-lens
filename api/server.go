@@ -80,6 +80,7 @@ func setupRouter(name string) *gin.Engine {
 	r.StaticFile("/static/logo_black.svg", "./static/logo_black.svg")
 	r.StaticFile("/static/logo_all.svg", "./static/logo_all.svg")
 	r.StaticFile("/static/logo_all_black.svg", "./static/logo_all_black.svg")
+	r.Static("/static/admin", "./static/admin")
 
 	artworkService := artworklogic.NewService()
 	artistProfileService := artistprofilelogic.NewService()
@@ -132,32 +133,39 @@ func setupRouter(name string) *gin.Engine {
 			_, _ = c.Writer.Write(entry.Data)
 		},
 	)
-	// 首页
-	r.GET(
-		"/", func(c *gin.Context) {
-			// Load HTML template
-			tmplPath := filepath.Join("templates", "dashboard.html")
-			tmpl, err := template.New("dashboard.html").ParseFiles(tmplPath)
-			if err != nil {
-				log.Error(c.Request.Context(), "Failed to parse template", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load template"})
-				return
-			}
+	renderAdminPage := func(c *gin.Context) {
+		// 后台总入口由主模板和局部模板组合，避免单文件继续膨胀。
+		tmplPath := filepath.Join("templates", "admin.html")
+		partialPaths, err := filepath.Glob(filepath.Join("templates", "admin", "*.html"))
+		if err != nil {
+			log.Error(c.Request.Context(), "解析后台入口模板片段路径失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load template"})
+			return
+		}
+		templatePaths := append([]string{tmplPath}, partialPaths...)
+		tmpl, err := template.New("admin.html").ParseFiles(templatePaths...)
+		if err != nil {
+			log.Error(c.Request.Context(), "Failed to parse template", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load template"})
+			return
+		}
 
-			// Set content type and write HTML response
-			c.Header("Content-Type", "text/html; charset=utf-8")
-			if err := tmpl.Execute(c.Writer, nil); err != nil {
-				log.Error(c.Request.Context(), "Failed to execute template", zap.Error(err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template"})
-				return
-			}
-		},
-	)
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		if err := tmpl.Execute(c.Writer, nil); err != nil {
+			log.Error(c.Request.Context(), "Failed to execute template", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render template"})
+			return
+		}
+	}
+
+	// 首页保留历史入口，/admin 作为后台总入口的语义化别名。
+	r.GET("/", renderAdminPage)
+	r.GET("/admin", renderAdminPage)
 
 	// 全屏歌词简化页
 	r.GET(
 		"/lyrics-live", func(c *gin.Context) {
-			tmplPath := filepath.Join("templates", "lyrics_live.html")
+			tmplPath := filepath.Join("templates", "pages", "lyrics_live.html")
 			tmpl, err := template.New("lyrics_live.html").ParseFiles(tmplPath)
 			if err != nil {
 				log.Error(c.Request.Context(), "Failed to parse template", zap.Error(err))
@@ -209,7 +217,7 @@ func setupRouter(name string) *gin.Engine {
 			acceptHeader := c.GetHeader("Accept")
 			if strings.Contains(acceptHeader, "text/html") || c.Query("format") == "html" {
 				// Load HTML template
-				tmplPath := filepath.Join("templates", "track_play_counts.html")
+				tmplPath := filepath.Join("templates", "pages", "track_play_counts.html")
 				tmpl, err := template.New("track_play_counts.html").Funcs(
 					template.FuncMap{
 						"addOne": func(i int) int {
@@ -1203,7 +1211,7 @@ func setupRouter(name string) *gin.Engine {
 			acceptHeader := c.GetHeader("Accept")
 			if strings.Contains(acceptHeader, "text/html") || c.Query("format") == "html" {
 				// Load HTML template
-				tmplPath := filepath.Join("templates", "track_play_counts.html")
+				tmplPath := filepath.Join("templates", "pages", "track_play_counts.html")
 				tmpl, err := template.New("track_play_counts.html").Funcs(
 					template.FuncMap{
 						"addOne": func(i int) int {

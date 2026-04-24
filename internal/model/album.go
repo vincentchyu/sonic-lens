@@ -13,10 +13,10 @@ import (
 // Album represents a music album
 type Album struct {
 	ID                  int64                   `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Name                string                  `gorm:"column:name;type:varchar(255);not null;uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"name"`
-	NameSubtitle        string                  `gorm:"column:name_subtitle;type:varchar(255);uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"name_subtitle"`
+	Name                string                  `gorm:"column:name;type:varchar(180);not null;uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"name"`
+	NameSubtitle        string                  `gorm:"column:name_subtitle;type:varchar(60);uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"name_subtitle"`
 	TitleMetadata       *AlbumTitleMetadataJSON `gorm:"column:title_metadata;type:longtext;->" json:"title_metadata"`
-	Artist              string                  `gorm:"column:artist;type:varchar(255);not null;uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"artist"`
+	Artist              string                  `gorm:"column:artist;type:varchar(180);not null;uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"artist"`
 	ReleaseDate         string                  `gorm:"column:release_date;type:varchar(50);uniqueIndex:uidx_album_artist_name_subtitle_release_date" json:"release_date"`
 	OriginalReleaseDate string                  `gorm:"column:original_release_date;type:varchar(50)" json:"original_release_date"`
 	Genre               string                  `gorm:"column:genre;type:varchar(255)" json:"genre"`
@@ -24,9 +24,9 @@ type Album struct {
 	Status              string                  `gorm:"column:status;type:varchar(50)" json:"status"`
 	Packaging           string                  `gorm:"column:packaging;type:varchar(50)" json:"packaging"`
 	Barcode             string                  `gorm:"column:barcode;type:varchar(255)" json:"barcode"`
-	TotalDiscs          int                     `gorm:"column:total_discs;type:int;default:1" json:"total_discs"`     // 总碟数
-	DiscInfos           string                  `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`        // 各碟信息(如 track counts)
-	SyncStatus          int                     `gorm:"column:sync_status;type:tinyint;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成
+	TotalDiscs          int                     `gorm:"column:total_discs;type:int;default:1" json:"total_discs"`              // 总碟数
+	DiscInfos           string                  `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`                 // 各碟信息(如 track counts)
+	SyncStatus          int                     `gorm:"column:sync_status;type:tinyint;not null;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成
 	CoverArtURL         string                  `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
 	CoverArtMime        string                  `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
 	CoverArtObjectKey   string                  `gorm:"column:cover_art_object_key;type:varchar(512);index:idx_album_cover_art_object_key" json:"cover_art_object_key"`

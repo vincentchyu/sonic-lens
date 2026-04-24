@@ -947,9 +947,6 @@ func (c *D1Client) SyncGenres(ctx context.Context, incremental bool) error {
 // SyncDashboardStats 同步 dashboard 统计表到 D1
 func (c *D1Client) SyncDashboardStats(ctx context.Context) error {
 	log.Info(ctx, "Starting D1 dashboard stats sync")
-	if err := model.EnsureDashboardStatSchema(ctx); err != nil {
-		return fmt.Errorf("failed to ensure dashboard stat schema: %w", err)
-	}
 
 	lastSyncTime, err := c.getLastSyncTime(ctx, "dashboard_stats")
 	if err != nil {

@@ -53,11 +53,11 @@ func (PlaySourceStat) TableName() string {
 
 type TopArtistStat struct {
 	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodDays  int       `gorm:"column:period_days;type:int;not null;default:0" json:"period_days"`
+	PeriodDays  int       `gorm:"column:period_days;type:bigint;not null;default:0" json:"period_days"`
 	MetricType  string    `gorm:"column:metric_type;type:varchar(20);not null" json:"metric_type"`
 	Artist      string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
 	MetricValue int64     `gorm:"column:metric_value;type:bigint;default:0" json:"metric_value"`
-	Rank        int       `gorm:"column:rank;type:int;not null" json:"rank"`
+	Rank        int       `gorm:"column:rank;type:bigint;not null" json:"rank"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
@@ -67,13 +67,13 @@ func (TopArtistStat) TableName() string {
 
 type TopAlbumStat struct {
 	ID            int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodDays    int       `gorm:"column:period_days;type:int;not null" json:"period_days"`
+	PeriodDays    int       `gorm:"column:period_days;type:bigint;not null" json:"period_days"`
 	AlbumID       int64     `gorm:"column:album_id;type:bigint;index" json:"album_id"` // 新增关联
 	Album         string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
 	AlbumSubtitle string    `gorm:"column:album_subtitle;type:varchar(255)" json:"album_subtitle"`
 	Artist        string    `gorm:"column:artist;type:varchar(255);default:''" json:"artist"`
 	PlayCount     int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
-	Rank          int       `gorm:"column:rank;type:int;not null" json:"rank"`
+	Rank          int       `gorm:"column:rank;type:bigint;not null" json:"rank"`
 	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
@@ -87,7 +87,7 @@ type TopGenreStat struct {
 	GenreNameZh     string    `gorm:"column:genre_name_zh;type:varchar(255);default:''" json:"genre_name_zh"`
 	TrackGenreCount int64     `gorm:"column:track_genre_count;type:bigint;default:0" json:"track_genre_count"`
 	GenreCount      int64     `gorm:"column:genre_count;type:bigint;default:0" json:"genre_count"`
-	Rank            int       `gorm:"column:rank;type:int;not null" json:"rank"`
+	Rank            int       `gorm:"column:rank;type:bigint;not null" json:"rank"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
@@ -123,8 +123,8 @@ type TrackRankStat struct {
 	Artist            string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
 	Album             string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
 	Track             string    `gorm:"column:track;type:varchar(255);not null" json:"track"`
-	TrackNumber       int8      `gorm:"column:track_number;type:tinyint" json:"track_number"`
-	DiscNumber        int8      `gorm:"column:disc_number;type:tinyint" json:"disc_number"`
+	TrackNumber       int8      `gorm:"column:track_number;type:tinyint;default:1" json:"track_number"`
+	DiscNumber        int8      `gorm:"column:disc_number;type:tinyint;default:1" json:"disc_number"`
 	PlayCount         int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
 	Rank              int       `gorm:"column:rank;type:int;not null" json:"rank"`
 	CoverArtURL       string    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
@@ -185,122 +185,6 @@ func GetDashboardStatConfig() (enabled bool, intervalMinutes int, topN int, tren
 	return runtimeCfg.Enabled, runtimeCfg.IntervalMinutes, runtimeCfg.TopN, runtimeCfg.TrendDays
 }
 
-func EnsureDashboardStatSchema(ctx context.Context) error {
-	db := GetDB().WithContext(ctx)
-	migrator := db.Migrator()
-
-	if err := ensureTableAndColumns(
-		migrator, &DashboardStat{},
-		[]string{"ID", "TotalPlays", "TotalTracks", "TotalArtist", "TotalAlbums", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &PlaySourceStat{}, []string{"ID", "Source", "Count", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &TopArtistStat{},
-		[]string{"ID", "PeriodDays", "MetricType", "Artist", "MetricValue", "Rank", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &ArtistProfile{},
-		[]string{
-			"ID", "ArtistName", "NormalizedArtistKey",
-			"AvatarURL", "AvatarMime", "AvatarObjectKey",
-			"CreatedAt", "UpdatedAt",
-		},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &TopAlbumStat{},
-		[]string{"ID", "PeriodDays", "AlbumID", "Album", "Artist", "PlayCount", "Rank", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &TopGenreStat{},
-		[]string{"ID", "GenreName", "GenreNameZh", "TrackGenreCount", "GenreCount", "Rank", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &PlayTrendDailyStat{}, []string{"StatDate", "PlayCount", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &PlayTrendHourlyStat{}, []string{"StatDate", "Hour", "PlayCount", "UpdatedAt"},
-	); err != nil {
-		return err
-	}
-	if err := ensureTableAndColumns(
-		migrator, &TrackRankStat{},
-		[]string{
-			"ID", "PeriodType", "TrackID", "Artist", "Album", "Track",
-			"TrackNumber", "DiscNumber", "PlayCount", "Rank",
-			"CoverArtURL", "CoverArtMime", "CoverArtObjectKey", "UpdatedAt",
-		},
-	); err != nil {
-		return err
-	}
-	if err := ensureTrackRankStatIndexes(ctx); err != nil {
-		return err
-	}
-	if err := ensureArtistProfileIndexes(ctx); err != nil {
-		return err
-	}
-	/*if err := ensureDefaultArtistProfiles(ctx); err != nil {
-		return err
-	}*/
-
-	return nil
-}
-
-func EnsureArtistProfileSchema(ctx context.Context) error {
-	db := GetDB().WithContext(ctx)
-	migrator := db.Migrator()
-
-	if err := ensureTableAndColumns(
-		migrator, &ArtistProfile{},
-		[]string{
-			"ID", "ArtistName", "NormalizedArtistKey",
-			"AvatarURL", "AvatarMime", "AvatarObjectKey",
-			"CreatedAt", "UpdatedAt",
-		},
-	); err != nil {
-		return err
-	}
-	if err := ensureArtistProfileIndexes(ctx); err != nil {
-		return err
-	}
-	/*if err := ensureDefaultArtistProfiles(ctx); err != nil {
-		return err
-	}*/
-
-	return nil
-}
-
-func ensureTableAndColumns(migrator gorm.Migrator, model interface{}, columns []string) error {
-	if !migrator.HasTable(model) {
-		if err := migrator.CreateTable(model); err != nil {
-			return err
-		}
-	}
-	for _, col := range columns {
-		if !migrator.HasColumn(model, col) {
-			if err := migrator.AddColumn(model, col); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func RefreshDashboardStats(ctx context.Context) error {
 	runtimeCfg := GetDashboardStatRuntimeConfig()
 	if err := RefreshDashboardStatsLight(ctx); err != nil {
@@ -310,9 +194,6 @@ func RefreshDashboardStats(ctx context.Context) error {
 }
 
 func RefreshDashboardStatsLight(ctx context.Context) error {
-	if err := EnsureDashboardStatSchema(ctx); err != nil {
-		return err
-	}
 	cfg := GetDashboardStatRuntimeConfig()
 	if err := refreshDashboardStatsLightOnly(ctx, cfg.TopN); err != nil {
 		if isLegacyDashboardSchemaError(err) {
@@ -398,9 +279,6 @@ func refreshDashboardStatsLightOnly(ctx context.Context, topN int) error {
 }
 
 func refreshDashboardStatsHeavyWithOptions(ctx context.Context, topN, trendDays, hourlyTrendDays int) error {
-	if err := EnsureDashboardStatSchema(ctx); err != nil {
-		return err
-	}
 	periods := []string{"all", "week", "month"}
 	db := GetDB().WithContext(ctx)
 	err := db.Transaction(

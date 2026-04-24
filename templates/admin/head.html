@@ -1,0 +1,27 @@
+{{ define "admin/head" }}
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>音眸轨迹</title>
+    <link rel="icon" type="image/svg+xml" href="../static/logo.svg" media="(prefers-color-scheme: light)"/>
+    <link rel="icon" type="image/svg+xml" href="../static/logo_black.svg" media="(prefers-color-scheme: dark)"/>
+    <script src="../static/chart.js"></script>
+    <script src="../static/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="../static/html2canvas.min.js"></script>
+    <script src="/static/lrc-utils.js"></script>
+    <!-- 引入 Tailwind & DaisyUI CDN -->
+    <link href="../static/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="../static/3.4.17"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1',
+                    }
+                }
+            }
+        }
+    </script>
+        <link href="../static/admin/admin.css" rel="stylesheet" type="text/css" />
+{{ end }}

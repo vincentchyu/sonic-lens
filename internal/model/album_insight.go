@@ -13,25 +13,25 @@ import (
 // AlbumInsight 存储专辑级 AI 深度分析结果。
 type AlbumInsight struct {
 	ID      int64  `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	AlbumID int64  `gorm:"column:album_id;type:bigint;index" json:"album_id"`
-	Artist  string `gorm:"column:artist;type:varchar(255);index:idx_album_insight_artist_album" json:"artist"`
-	Album   string `gorm:"column:album;type:varchar(255);index:idx_album_insight_artist_album" json:"album"`
+	AlbumID int64  `gorm:"column:album_id;type:bigint;not null;index" json:"album_id"`
+	Artist  string `gorm:"column:artist;type:varchar(255);not null;default:'';index:idx_album_insight_artist_album" json:"artist"`
+	Album   string `gorm:"column:album;type:varchar(255);not null;default:'';index:idx_album_insight_artist_album" json:"album"`
 
 	AnalysisSummary   string   `gorm:"column:analysis_summary;type:text" json:"analysis_summary"`
-	AnalysisBySection JSONText `gorm:"type:text" json:"analysis_by_section"`
+	AnalysisBySection JSONText `gorm:"column:analysis_by_section;type:text" json:"analysis_by_section"`
 	BackgroundInfo    string   `gorm:"column:background_info;type:text" json:"background_info"`
 	EraContext        string   `gorm:"column:era_context;type:text" json:"era_context"`
-	LLMProvider       string   `gorm:"column:llm_provider;type:varchar(255)" json:"llm_provider"`
+	LLMProvider       string   `gorm:"column:llm_provider;type:varchar(255);not null;default:''" json:"llm_provider"`
 	Metadata          string   `gorm:"column:metadata;type:text" json:"metadata,omitempty"`
 
-	LikeCount    int64 `gorm:"column:like_count;type:bigint;default:0" json:"like_count"`
-	DislikeCount int64 `gorm:"column:dislike_count;type:bigint;default:0" json:"dislike_count"`
+	LikeCount    int64 `gorm:"column:like_count;type:bigint;not null;default:0" json:"like_count"`
+	DislikeCount int64 `gorm:"column:dislike_count;type:bigint;not null;default:0" json:"dislike_count"`
 
-	CreatedAt  time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
-	LastUsedAt time.Time `gorm:"column:last_used_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"last_used_at"`
+	CreatedAt  time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;type:timestamp;not null;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	LastUsedAt time.Time `gorm:"column:last_used_at;type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"last_used_at"`
 
-	IsDisabled bool `gorm:"column:is_disabled;type:tinyint(1);default:0;index" json:"is_disabled"`
+	IsDisabled bool `gorm:"column:is_disabled;type:tinyint(1);not null;default:0;index" json:"is_disabled"`
 }
 
 type AlbumInsightLookup struct {
