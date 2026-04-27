@@ -3,6 +3,7 @@ package audirvana
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -66,7 +67,7 @@ func GetState(ctx context.Context) (playerState common.PlayerState, err error) {
 		alog.Warn(ctx, "err:", zap.Error(err))
 		return "", err
 	}
-	return common.PlayerState(result), nil
+	return common.PlayerState(strings.TrimSpace(result)), nil
 }
 
 // GetNowPlayingTrackInfo 使用 AppleScript 从 Audirvana Origin 获取当前正在播放的曲目信息。
@@ -103,12 +104,12 @@ func GetNowPlayingTrackInfo(ctx context.Context) *TrackInfo {
 		case 2:
 			info.Artist = strings.TrimSpace(s)
 		case 3:
-			parseInt, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+			duration, err := parseAudirvanaDuration(strings.TrimSpace(s))
 			if err != nil {
-				alog.Warn(ctx, "err:", zap.Error(err))
+				alog.Warn(ctx, "Audirvana 解析曲目时长失败", zap.String("raw_duration", strings.TrimSpace(s)), zap.Error(err))
 				return nil
 			}
-			info.Duration = parseInt
+			info.Duration = duration
 		case 4:
 			parseInt, err := strconv.ParseFloat(strings.TrimSpace(s), 32)
 			if err != nil {
@@ -129,5 +130,32 @@ func GetNowPlayingTrackInfo(ctx context.Context) *TrackInfo {
 	}
 
 	info.MataDataHandle = cache.FindMataDataHandle(context.Background(), info.Url)
+	if info.MataDataHandle == nil {
+		alog.Warn(
+			ctx,
+			"Audirvana 当前曲目未拿到本地元数据句柄",
+			zap.String("title", info.Title),
+			zap.String("album", info.Album),
+			zap.String("artist", info.Artist),
+			zap.String("url", info.Url),
+		)
+	}
 	return info
+}
+
+func parseAudirvanaDuration(raw string) (int64, error) {
+	if raw == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+
+	if parseInt, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return parseInt, nil
+	}
+
+	parseFloat, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(math.Round(parseFloat)), nil
 }

@@ -64,7 +64,8 @@ struct PlaybackBarView: View {
     }
 
     private func activatePlaybackBar() {
-        guard playbackStore.nowPlaying != nil else { return }
+        guard let nowPlaying = playbackStore.nowPlaying,
+              nowPlaying.playbackActivityState() != .inactive else { return }
         isExpanded = true
     }
 }
@@ -184,7 +185,7 @@ struct PlaybackBarContentView: View {
         nowPlaying: NowPlaying?,
         playbackState: PlaybackActivityState
     ) -> some View {
-        if nowPlaying == nil {
+        if nowPlaying == nil || playbackState.isInactive {
             inactivePlaybackContent
         } else {
             activePlaybackContent(nowPlaying: nowPlaying, playbackState: playbackState)

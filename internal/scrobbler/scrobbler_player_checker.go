@@ -115,6 +115,7 @@ func (b *BasePlayerChecker) CheckPlayingTrack(ctx context.Context, stop <-chan s
 	defer b.endCurrentTrackPlaybackSpan()
 	b.tmpCount = 0
 	b.previousTrack = ""
+	b.previousPosition = 0
 	b.currentTrack = ""
 	b.currentArtURL = ""
 	b.currentArtMime = ""
@@ -181,8 +182,12 @@ func (b *BasePlayerChecker) checkCycle(ctx context.Context) {
 			}
 			b.tmpCount = 0
 			playerInfo = b.controller.GetNowPlayingTrackInfo(ctx)
+			if playerInfo == nil {
+				log.Warn(ctx, string(b.source)+" 当前处于播放态但未获取到曲目信息")
+			}
 		} else {
 			if _, ok := b.currentPlayingCache.Load(b.source); ok {
+				log.Info(ctx, string(b.source)+" 检测到播放停止或暂停", zap.String("state", string(state)))
 				b.currentPlayingCache.Delete(b.source)
 				b.handleStopEvent(ctx)
 			}
@@ -232,6 +237,7 @@ func (b *BasePlayerChecker) handleStopEvent(ctx context.Context) {
 			},
 		)
 		b.atomicPlaying.Store(false)
+		log.Info(ctx, string(b.source)+" 已广播停止播放事件")
 	}
 
 	b.endCurrentTrackPlaybackSpan()
@@ -240,7 +246,8 @@ func (b *BasePlayerChecker) handleStopEvent(ctx context.Context) {
 // processPlayingTrack 处理正在播放的曲目
 func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo common.PlayerInfoHandler) {
 	trackKey := b.buildCurrentTrackKey(playerInfo)
-	trackChanged := trackKey != b.previousTrack || !b.hasActiveTrackPlaybackSpan(trackKey)
+	trackRestarted := b.didTrackRestart(playerInfo, trackKey)
+	trackChanged := trackKey != b.previousTrack || trackRestarted || !b.hasActiveTrackPlaybackSpan(trackKey)
 	trackCtx := b.ensureTrackPlaybackContext(ctx, trackKey, trackChanged)
 
 	var snapshot playingTrackSnapshot
@@ -316,6 +323,7 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 	}
 
 	b.previousTrack = snapshot.trackKey
+	b.previousPosition = snapshot.position
 }
 
 func (b *BasePlayerChecker) resolveArtwork(
@@ -483,6 +491,30 @@ func (b *BasePlayerChecker) buildCurrentTrackKey(playerInfo common.PlayerInfoHan
 	return trackKey
 }
 
+func (b *BasePlayerChecker) didTrackRestart(
+	playerInfo common.PlayerInfoHandler,
+	trackKey string,
+) bool {
+	if trackKey == "" || trackKey != b.previousTrack {
+		return false
+	}
+
+	duration := playerInfo.GetDuration()
+	if duration <= 0 {
+		return false
+	}
+
+	position := playerInfo.GetPosition()
+	if position >= b.previousPosition {
+		return false
+	}
+
+	previousProgress := b.previousPosition / float64(duration)
+	currentProgress := position / float64(duration)
+
+	return previousProgress >= b.percentScrobble && currentProgress <= 0.2
+}
+
 func (b *BasePlayerChecker) hasActiveTrackPlaybackSpan(trackKey string) bool {
 	return b.currentTrackSpan != nil && b.currentTrackCtx != nil && b.currentTrackSpanKey == trackKey
 }
@@ -556,6 +588,7 @@ func (b *BasePlayerChecker) endCurrentTrackPlaybackSpan() {
 	b.currentTrackCtx = nil
 	b.currentTrackSpan = nil
 	b.currentTrackSpanKey = ""
+	b.previousPosition = 0
 	b.currentFavorite = track.TrackFavoriteProjection{}
 	b.currentFavoriteKey = ""
 	b.favoriteKnown = false

@@ -38,3 +38,37 @@ func TestExiftoolInfoIgnoresBinaryPlaceholderValues(t *testing.T) {
 		t.Fatalf("GetTitle() = %q, want %q", got, "署前街少年")
 	}
 }
+
+func TestExiftoolInfoGetAlbumArtistPrefersDedicatedField(t *testing.T) {
+	info := ExiftoolInfo{
+		"Artist":      "Track Artist",
+		"AlbumArtist": "Various Artists",
+		"Band":        "Band Artist",
+	}
+
+	if got := info.GetAlbumArtist(); got != "Various Artists" {
+		t.Fatalf("GetAlbumArtist() = %q, want %q", got, "Various Artists")
+	}
+}
+
+func TestExiftoolInfoGetAlbumArtistFallsBackToBandOrArtist(t *testing.T) {
+	info := ExiftoolInfo{
+		"Artist": "Track Artist",
+		"Band":   "Album Band",
+	}
+
+	if got := info.GetAlbumArtist(); got != "Album Band" {
+		t.Fatalf("GetAlbumArtist() = %q, want %q", got, "Album Band")
+	}
+}
+func TestExiftoolInfoGetAlbumArtistFallsBackToBandOrArtis(t *testing.T) {
+	info := ExiftoolInfo{
+		"Artist":      "Track Artist",
+		"Albumartist": "Various Artists",
+		"Band":        "Album Band",
+	}
+
+	if got := info.GetAlbumArtist(); got != "Various Artists" {
+		t.Fatalf("GetAlbumArtist() = %q, want %q", got, "Various Artists")
+	}
+}

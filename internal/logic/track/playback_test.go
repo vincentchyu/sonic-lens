@@ -137,6 +137,7 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	require.True(t, processCalled)
 	require.Equal(t, "Artist", capturedReq.Artist)
 	require.Equal(t, "Album Artist", capturedReq.AlbumArtist)
+	require.Equal(t, "Album Artist", insertedRecord.AlbumArtist)
 	require.Equal(t, "Track", capturedReq.Track)
 	require.Equal(t, int64(1700000000), capturedReq.Timestamp)
 	require.Equal(t, "0123456789abcdef0123456789abcdef", insertedRecord.TraceID)

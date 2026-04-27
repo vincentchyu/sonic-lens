@@ -254,6 +254,125 @@ func TestUpdateTrackWithTrackMetadataNormalizesChineseText(t *testing.T) {
 	require.Equal(t, "MusicBrainz", track.Source)
 }
 
+func TestGetOrCreateTrackByIdentityTxKeepsTrackArtistAndAlbumArtistSeparate(t *testing.T) {
+	_, mock := newModelTestDB(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `track` WHERE artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track = ? AND track_number = ? AND disc_number = ? ORDER BY `track`.`id` LIMIT ?")).
+		WithArgs("Track Artist", "Compilation Album", "", "Featured Song", int8(1), int8(1), 1).
+		WillReturnRows(sqlmock.NewRows(trackRowsColumns()))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `track` WHERE artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track_number = ? AND disc_number = ? LIMIT ?")).
+		WithArgs("Track Artist", "Compilation Album", "", int8(1), int8(1), 2).
+		WillReturnRows(sqlmock.NewRows(trackRowsColumns()))
+	mock.ExpectExec(regexp.QuoteMeta(
+		"INSERT INTO `track` (`artist`,`album`,`album_subtitle`,`track`,`play_count`,`is_apple_music_fav`,`is_last_fm_fav`,`version`,`album_artist`,`track_number`,`disc_number`,`duration`,`genre`,`composer`,`release_date`,`music_brainz_id`,`source`,`bundle_id`,`unique_id`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+	)).
+		WithArgs(
+			"Track Artist",
+			"Compilation Album",
+			"",
+			"Featured Song",
+			0,
+			false,
+			false,
+			1,
+			"Various Artists",
+			int8(1),
+			int8(1),
+			int64(210),
+			"",
+			"",
+			"2024-01-01",
+			"",
+			"Apple Music",
+			"",
+			"",
+		).
+		WillReturnResult(sqlmock.NewResult(301, 1))
+	mock.ExpectExec(regexp.QuoteMeta(
+		"INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)",
+	)).
+		WithArgs(LibraryEntityTrack, int64(301), LibraryOpUpsert).
+		WillReturnResult(sqlmock.NewResult(23, 1))
+
+	track, err := GetOrCreateTrackByIdentityTx(
+		GetDB(),
+		&Track{
+			Artist:        "Track Artist",
+			Album:         "Compilation Album",
+			Track:         "Featured Song",
+			TrackNumber:   1,
+			DiscNumber:    1,
+			AlbumArtist:   "Various Artists",
+			Duration:      210,
+			ReleaseDate:   "2024-01-01",
+			Source:        "Apple Music",
+			MusicBrainzID: "",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "Track Artist", track.Artist)
+	require.Equal(t, "Various Artists", track.AlbumArtist)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetOrCreatePlaybackAlbumTxPrefersAlbumArtist(t *testing.T) {
+	_, mock := newModelTestDB(t)
+
+	metadata := TrackMetadata{
+		AlbumArtist: "Various Artists",
+		ReleaseDate: "2024-01-01",
+	}
+
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? ORDER BY sync_status DESC, id ASC,`album`.`id` LIMIT ?"),
+	).
+		WithArgs("Various Artists", "Compilation Album", 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "name", "artist", "release_date", "original_release_date",
+		}))
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? AND COALESCE(name_subtitle, '') = ? ORDER BY `album`.`id` LIMIT ?"),
+	).
+		WithArgs("Various Artists", "Compilation Album", "2024-01-01", "", 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "name", "artist", "release_date", "original_release_date",
+		}))
+	mock.ExpectQuery(
+		regexp.QuoteMeta(
+			"SELECT * FROM `album` WHERE (artist = ? AND name = ? AND COALESCE(name_subtitle, '') = ?) AND (release_date = '' OR release_date IS NULL) ORDER BY CASE WHEN release_date = '' OR release_date IS NULL THEN 0 ELSE 1 END ASC, id ASC,`album`.`id` LIMIT ?",
+		),
+	).
+		WithArgs("Various Artists", "Compilation Album", "", 1).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "name", "artist", "release_date", "original_release_date",
+		}))
+	mock.ExpectExec(
+		regexp.QuoteMeta(
+			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		),
+	).
+		WithArgs(
+			"Compilation Album", "", "Various Artists", "2024-01-01", "", "", "", "", "", "", 1, "", 0, "", "", "",
+		).
+		WillReturnResult(sqlmock.NewResult(401, 1))
+	mock.ExpectExec(
+		regexp.QuoteMeta("INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)"),
+	).
+		WithArgs("album", int64(401), "upsert").
+		WillReturnResult(sqlmock.NewResult(24, 1))
+
+	album, err := getOrCreatePlaybackAlbumTx(GetDB(), "Track Artist", "Compilation Album", metadata)
+	require.NoError(t, err)
+	require.Equal(t, int64(401), album.ID)
+	require.Equal(t, "Various Artists", album.Artist)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPreferredPlaybackAlbumArtistFallsBackToTrackArtist(t *testing.T) {
+	require.Equal(t, "Track Artist", preferredPlaybackAlbumArtist("Track Artist", ""))
+	require.Equal(t, "Various Artists", preferredPlaybackAlbumArtist("Track Artist", "Various Artists"))
+}
+
 func TestBuildTrackPlayRecordArtworkPath(t *testing.T) {
 	prev := config.ConfigObj.ObjectStorage
 	config.ConfigObj.ObjectStorage = config.ObjectStorageConfig{

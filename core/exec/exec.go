@@ -98,6 +98,7 @@ type (
 		GetTitle() string
 		GetArtists() string
 		GetArtist() string
+		GetAlbumArtist() string
 		GetAlbum() string
 		GetTrackNumber() int64
 		GetSampleRate() int64
@@ -232,6 +233,13 @@ func (receiver ExiftoolInfo) GetArtists() string {
 func (receiver ExiftoolInfo) GetArtist() string {
 	return receiver.getFirstNonEmptyString("Artists", "Band", "Artist", "artists", "band", "artist")
 }
+
+func (receiver ExiftoolInfo) GetAlbumArtist() string {
+	return receiver.getFirstNonEmptyString(
+		"AlbumArtist", "Albumartist", "Album Artist", "album_artist", "albumArtist", "Band", "Artist",
+	)
+}
+
 func (receiver ExiftoolInfo) GetAlbum() string {
 	key1, key2, key3 := "Album", "album", "album_"
 	var val any
@@ -656,6 +664,11 @@ func (receiver *WavInfo) GetArtist() string {
 // GetAlbumartist returns the album artist
 func (receiver *WavInfo) GetAlbum() string {
 	return receiver.Product
+}
+
+// GetAlbumArtist returns the album artist for WAV metadata when available.
+func (receiver *WavInfo) GetAlbumArtist() string {
+	return receiver.Artist
 }
 
 // GetTrackNumber returns the track number

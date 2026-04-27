@@ -23,12 +23,24 @@ type AudirvanaTrackInfoWrapper struct {
 	baseWrapper BaseWrapper
 }
 
+func (a *AudirvanaTrackInfoWrapper) metadataHandle() exec.MataDataHandle {
+	if a == nil {
+		return nil
+	}
+	return a.MataDataHandle
+}
+
 func (a *AudirvanaTrackInfoWrapper) GetTitle() string {
 	return a.baseWrapper.ConversionSimplified(common.UnityFixAll(common.TrackCustomFit(a.Title)))
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetAlbum() string {
-	return a.baseWrapper.ConversionSimplified(a.MataDataHandle.GetAlbum())
+	if metadata := a.metadataHandle(); metadata != nil {
+		if album := metadata.GetAlbum(); strings.TrimSpace(album) != "" {
+			return a.baseWrapper.ConversionSimplified(album)
+		}
+	}
+	return a.baseWrapper.ConversionSimplified(a.Album)
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetAlbumSubtitle() string {
@@ -40,7 +52,12 @@ func (a *AudirvanaTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMe
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetArtist() string {
-	return a.baseWrapper.ConversionSimplified(a.MataDataHandle.GetArtist())
+	if metadata := a.metadataHandle(); metadata != nil {
+		if artist := metadata.GetArtist(); strings.TrimSpace(artist) != "" {
+			return a.baseWrapper.ConversionSimplified(artist)
+		}
+	}
+	return a.baseWrapper.ConversionSimplified(a.Artist)
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetPosition() float64 {
@@ -67,13 +84,19 @@ func (a *AudirvanaTrackInfoWrapper) GetUrl() string {
 
 // 新增方法实现
 func (a *AudirvanaTrackInfoWrapper) GetAlbumArtist() string {
-	// Audirvana没有直接提供专辑艺术家信息，使用普通艺术家作为默认值
-	return a.baseWrapper.ConversionSimplified(a.MataDataHandle.GetArtist())
+	// Audirvana 文件元数据已可提供专辑艺术家，这里统一按“专辑艺术家优先，缺失时回退曲目艺术家”处理。
+	if metadata := a.metadataHandle(); metadata != nil {
+		albumArtist := preferredAlbumArtist(metadata.GetAlbumArtist(), metadata.GetArtist())
+		if strings.TrimSpace(albumArtist) != "" {
+			return a.baseWrapper.ConversionSimplified(albumArtist)
+		}
+	}
+	return a.GetArtist()
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetTrackNumber() int64 {
-	if a.MataDataHandle != nil {
-		if trackNumber := a.MataDataHandle.GetTrackNumber(); trackNumber > 0 {
+	if metadata := a.metadataHandle(); metadata != nil {
+		if trackNumber := metadata.GetTrackNumber(); trackNumber > 0 {
 			return trackNumber
 		}
 	}
@@ -83,48 +106,73 @@ func (a *AudirvanaTrackInfoWrapper) GetTrackNumber() int64 {
 
 func (a *AudirvanaTrackInfoWrapper) GetGenre() string {
 	// Audirvana没有直接提供流派信息
-	return cache.GetEnglishGenre(common.GenreCustomFit(a.MataDataHandle.GetGenre()))
+	if metadata := a.metadataHandle(); metadata != nil {
+		return cache.GetEnglishGenre(common.GenreCustomFit(metadata.GetGenre()))
+	}
+	return ""
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetComposer() string {
 	// Audirvana没有直接提供作曲家信息
-	return a.baseWrapper.ConversionSimplified(a.MataDataHandle.GetComposer())
+	if metadata := a.metadataHandle(); metadata != nil {
+		return a.baseWrapper.ConversionSimplified(metadata.GetComposer())
+	}
+	return ""
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetReleaseDate() string {
 	// Audirvana没有直接提供发布日期
-	return a.MataDataHandle.GetReleaseDate()
+	if metadata := a.metadataHandle(); metadata != nil {
+		return metadata.GetReleaseDate()
+	}
+	return ""
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetOriginalReleaseDate() string {
 	// 只有文件元数据明确提供原始发布日期时才保留，避免把当前发行日误写为首发日期。
-	if a.MataDataHandle == nil {
+	if a.metadataHandle() == nil {
 		return ""
 	}
-	return a.MataDataHandle.GetOriginalReleaseDate()
+	return a.metadataHandle().GetOriginalReleaseDate()
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetMusicBrainzID() string {
 	// Audirvana没有直接提供MusicBrainz ID
-	return a.MataDataHandle.GetMusicBrainzTrackId()
+	if metadata := a.metadataHandle(); metadata != nil {
+		return metadata.GetMusicBrainzTrackId()
+	}
+	return ""
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetSource() string {
-	return a.MataDataHandle.GetSource()
+	if metadata := a.metadataHandle(); metadata != nil {
+		if source := metadata.GetSource(); strings.TrimSpace(source) != "" {
+			return source
+		}
+	}
+	return string(common.PlayerAudirvana)
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetBundleID() string {
 	// Audirvana没有直接提供应用标识符
-	return a.MataDataHandle.GetBundleID()
+	if metadata := a.metadataHandle(); metadata != nil {
+		return metadata.GetBundleID()
+	}
+	return ""
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetUniqueID() string {
 	// 使用URL作为唯一标识符
-	return a.MataDataHandle.GetUniqueID()
+	if metadata := a.metadataHandle(); metadata != nil {
+		if uniqueID := metadata.GetUniqueID(); strings.TrimSpace(uniqueID) != "" {
+			return uniqueID
+		}
+	}
+	return a.Url
 }
 func (a *AudirvanaTrackInfoWrapper) GetDiscNumber() int8 {
-	if a.MataDataHandle != nil {
-		if discNumber := a.MataDataHandle.GetDiscNumber(); discNumber > 0 {
+	if metadata := a.metadataHandle(); metadata != nil {
+		if discNumber := metadata.GetDiscNumber(); discNumber > 0 {
 			return discNumber
 		}
 	}
@@ -142,9 +190,9 @@ func (a *AudirvanaTrackInfoWrapper) LogResolvedPosition(ctx context.Context) {
 
 	metadataTrackNumber := int64(0)
 	metadataDiscNumber := int8(0)
-	if a.MataDataHandle != nil {
-		metadataTrackNumber = a.MataDataHandle.GetTrackNumber()
-		metadataDiscNumber = a.MataDataHandle.GetDiscNumber()
+	if metadata := a.metadataHandle(); metadata != nil {
+		metadataTrackNumber = metadata.GetTrackNumber()
+		metadataDiscNumber = metadata.GetDiscNumber()
 	}
 
 	resolvedTrackNumber := a.GetTrackNumber()
@@ -223,7 +271,8 @@ func (a *AudirvanaTrackInfoWrapper) GetArtwork(ctx context.Context) (*common.Art
 	cacheKey := a.GetArtworkKey(ctx)
 	// 对于 m4a 文件，即使 HasPicture 返回 false，也尝试提取，因为 exiftool JSON 输出可能不包含该字段
 	isM4A := strings.HasSuffix(strings.ToLower(a.Url), ".m4a")
-	if (a.MataDataHandle == nil || !a.MataDataHandle.HasPicture()) && !isM4A {
+	metadata := a.metadataHandle()
+	if (metadata == nil || !metadata.HasPicture()) && !isM4A {
 		return nil, nil
 	}
 
@@ -238,13 +287,20 @@ func (a *AudirvanaTrackInfoWrapper) GetArtwork(ctx context.Context) (*common.Art
 
 	return &common.ArtworkData{
 		Data:     data,
-		MimeType: a.MataDataHandle.GetPictureMimeType(),
+		MimeType: mimeTypeFromMetadata(metadata),
 		CacheKey: cacheKey,
 	}, nil
 }
 func (a *AudirvanaTrackInfoWrapper) GetArtworkKey(ctx context.Context) string {
 	cacheKey := fmt.Sprintf("%s:%s:%s", a.GetSource(), a.GetUniqueID(), a.Url)
 	return cacheKey
+}
+
+func mimeTypeFromMetadata(metadata exec.MataDataHandle) string {
+	if metadata == nil {
+		return ""
+	}
+	return metadata.GetPictureMimeType()
 }
 
 // AudirvanaPlayerController Audirvana播放器控制器

@@ -17,7 +17,7 @@ func ConvertExiftoolInfoToTrack(exiftoolInfo *exec.ExiftoolInfo, source string) 
 
 	track := &model.Track{
 		Artist:        exiftoolInfo.GetArtist(),
-		AlbumArtist:   exiftoolInfo.GetArtist(),
+		AlbumArtist:   exiftoolInfo.GetAlbumArtist(),
 		Album:         exiftoolInfo.GetAlbum(),
 		Track:         exiftoolInfo.GetTitle(),
 		TrackNumber:   int8(exiftoolInfo.GetTrackNumber()),

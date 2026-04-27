@@ -34,6 +34,7 @@ type BasePlayerChecker struct {
 	isLongCheck                 bool
 	timer                       *time.Ticker
 	previousTrack               string
+	previousPosition            float64
 	currentTrack                string
 	tmpCount                    int
 	now                         time.Time

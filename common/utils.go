@@ -83,6 +83,8 @@ func ArtistCustomFit(artist string) string {
 	switch artist {
 	case "Omnipotent Youth Society":
 		return "万能青年旅店"
+	case "诺拉·琼斯", "諾拉·瓊斯":
+		return "Norah Jones"
 	case "重塑雕像的权利":
 		return "Re-TROS"
 		// todo add

@@ -480,6 +480,13 @@ func metadataAllowsTrackAlbumMutation(metadata TrackMetadata) bool {
 	return metadataAllowsLibraryMutation(metadata) && metadata.TrackNumber > 0
 }
 
+func preferredPlaybackAlbumArtist(artist, albumArtist string) string {
+	if strings.TrimSpace(albumArtist) != "" {
+		return normalizeTrackStorageText(albumArtist)
+	}
+	return normalizeTrackStorageText(artist)
+}
+
 func ensureGenreExistsTx(ctx context.Context, tx *gorm.DB, genreName string) error {
 	if genreName == "" {
 		return nil
@@ -506,8 +513,9 @@ func ensureGenreExistsTx(ctx context.Context, tx *gorm.DB, genreName string) err
 }
 
 func getOrCreatePlaybackAlbumTx(tx *gorm.DB, artist, albumName string, metadata TrackMetadata) (*Album, error) {
+	albumArtist := preferredPlaybackAlbumArtist(artist, metadata.AlbumArtist)
 	var existing Album
-	err := tx.Where("artist = ? AND name = ?", artist, albumName).
+	err := tx.Where("artist = ? AND name = ?", albumArtist, albumName).
 		Order("sync_status DESC, id ASC").
 		First(&existing).Error
 	if err == nil && existing.SyncStatus == 3 {
@@ -521,7 +529,7 @@ func getOrCreatePlaybackAlbumTx(tx *gorm.DB, artist, albumName string, metadata 
 	album := &Album{
 		Name:                albumName,
 		NameSubtitle:        metadata.AlbumSubtitle,
-		Artist:              artist,
+		Artist:              albumArtist,
 		ReleaseDate:         metadata.ReleaseDate,
 		OriginalReleaseDate: metadata.OriginalReleaseDate,
 		Genre:               metadata.Genre,

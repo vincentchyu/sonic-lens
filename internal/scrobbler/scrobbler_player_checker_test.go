@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/vincentchyu/sonic-lens/common"
+	"github.com/vincentchyu/sonic-lens/core/audirvana"
 	corelog "github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 	tracklogic "github.com/vincentchyu/sonic-lens/internal/logic/track"
@@ -328,6 +329,89 @@ func TestProcessPlayingTrackPassesTrackTraceContextToThresholdInput(t *testing.T
 	require.Equal(t, checker.currentTrackSpan.SpanContext().TraceID().String(), service.lastThreshold.TraceID)
 	require.Equal(t, checker.currentTrackSpan.SpanContext().SpanID().String(), service.lastThreshold.RootSpanID)
 	require.Equal(t, checker.currentTrackSpan.SpanContext().IsSampled(), service.lastThreshold.TraceSampled)
+}
+
+func TestProcessPlayingTrackTreatsLoopedTrackAsNewPlaybackSession(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		thresholdResult: tracklogic.PlaybackThresholdResult{Scrobbled: true},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying, favorite: true}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+
+	nearEnd := &stubPlayerInfo{
+		title:       "Loop Track",
+		album:       "Album",
+		artist:      "Artist",
+		position:    70,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+	restarted := &stubPlayerInfo{
+		title:       "Loop Track",
+		album:       "Album",
+		artist:      "Artist",
+		position:    2,
+		duration:    100,
+		trackNumber: 1,
+		discNumber:  1,
+	}
+
+	checker.processPlayingTrack(context.Background(), nearEnd)
+	require.Equal(t, 1, service.nowPlayingCalls)
+	require.Equal(t, 1, service.thresholdCalls)
+	require.Equal(t, uint32(1), pushCount.Load())
+	require.True(t, checker.scrobbledTracks["Loop Track"])
+
+	checker.processPlayingTrack(context.Background(), restarted)
+	require.Equal(t, 2, service.nowPlayingCalls)
+	require.Equal(t, 1, service.thresholdCalls)
+	require.False(t, checker.scrobbledTracks["Loop Track"])
+
+	checker.processPlayingTrack(context.Background(), nearEnd)
+	require.Equal(t, 2, service.thresholdCalls)
+	require.Equal(t, uint32(2), pushCount.Load())
+	require.True(t, checker.scrobbledTracks["Loop Track"])
+}
+
+func TestProcessPlayingTrackAudirvanaWithoutMetadataHandleDoesNotPanic(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		thresholdResult: tracklogic.PlaybackThresholdResult{Scrobbled: true},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerAudirvana, &pushCount, &playing, cache, service)
+
+	info := &AudirvanaTrackInfoWrapper{
+		TrackInfo: &audirvana.TrackInfo{
+			TrackBase: audirvana.TrackBase{
+				Title:    "Audirvana Track",
+				Album:    "Audirvana Album",
+				Artist:   "Audirvana Artist",
+				Duration: 100,
+				Position: 70,
+				Url:      "file:///music/audirvana-track.flac",
+			},
+		},
+		baseWrapper: BaseWrapper{},
+	}
+
+	require.NotPanics(t, func() {
+		checker.processPlayingTrack(context.Background(), info)
+	})
+	require.Equal(t, 1, service.nowPlayingCalls)
+	require.Equal(t, 1, service.thresholdCalls)
+	require.Equal(t, common.PlayerAudirvana, service.lastThreshold.PlayerSource)
+	require.Equal(t, uint32(1), pushCount.Load())
 }
 
 func TestHandleStopEventClearsAtomicPlayingWhenNoOtherPlayer(t *testing.T) {

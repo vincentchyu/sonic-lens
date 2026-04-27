@@ -56,8 +56,8 @@ func (r *RoonTrackInfoWrapper) GetUrl() string {
 
 // 新增方法实现
 func (r *RoonTrackInfoWrapper) GetAlbumArtist() string {
-	// Roon没有直接提供专辑艺术家信息，使用普通艺术家作为默认值
-	return r.baseWrapper.ConversionSimplified(r.Artist)
+	// Roon 当前未提供独立的专辑艺术家字段，这里保留“专辑艺术家优先，缺失时回退曲目艺术家”的统一语义。
+	return r.baseWrapper.ConversionSimplified(preferredAlbumArtist("", r.Artist))
 }
 
 func (r *RoonTrackInfoWrapper) GetTrackNumber() int64 {

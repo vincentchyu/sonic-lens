@@ -59,7 +59,12 @@ func (a *AppleMusicTrackInfoWrapper) GetUrl() string {
 
 // 新增方法实现
 func (a *AppleMusicTrackInfoWrapper) GetAlbumArtist() string {
-	return a.baseWrapper.ConversionSimplified(common.ArtistCustomFit(a.Artist))
+	// Apple Music 底层已提供专辑艺术家字段，这里统一按“专辑艺术家优先，缺失时回退曲目艺术家”处理。
+	artist := preferredAlbumArtist(
+		common.ArtistCustomFit(a.AlbumArtist),
+		common.ArtistCustomFit(a.Artist),
+	)
+	return a.baseWrapper.ConversionSimplified(artist)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetTrackNumber() int64 {
