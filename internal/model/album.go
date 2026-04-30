@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincentchyu/sonic-lens/common"
 	"gorm.io/gorm"
+
+	"github.com/vincentchyu/sonic-lens/common"
 )
 
 // Album represents a music album
@@ -26,7 +27,7 @@ type Album struct {
 	Barcode             string                  `gorm:"column:barcode;type:varchar(255)" json:"barcode"`
 	TotalDiscs          int                     `gorm:"column:total_discs;type:int;default:1" json:"total_discs"`              // 总碟数
 	DiscInfos           string                  `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`                 // 各碟信息(如 track counts)
-	SyncStatus          int                     `gorm:"column:sync_status;type:tinyint;not null;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成
+	SyncStatus          int                     `gorm:"column:sync_status;type:tinyint;not null;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成, 4:精选锁定完成
 	CoverArtURL         string                  `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
 	CoverArtMime        string                  `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
 	CoverArtObjectKey   string                  `gorm:"column:cover_art_object_key;type:varchar(512);index:idx_album_cover_art_object_key" json:"cover_art_object_key"`
@@ -260,7 +261,10 @@ func UpsertAlbumCoverByIDTx(tx *gorm.DB, albumID int64, update AlbumCoverUpdate)
 		updates,
 		func(query *gorm.DB) *gorm.DB {
 			if objectKey, ok := updates["cover_art_object_key"].(string); ok && objectKey != "" {
-				return query.Where("(cover_art_object_key IS NULL OR cover_art_object_key = '' OR cover_art_object_key <> ?)", objectKey)
+				return query.Where(
+					"(cover_art_object_key IS NULL OR cover_art_object_key = '' OR cover_art_object_key <> ?)",
+					objectKey,
+				)
 			}
 			return query
 		},
@@ -284,7 +288,7 @@ func UpdateAlbumTitleMetadataByIDTx(tx *gorm.DB, albumID int64, metadata *common
 	}
 
 	result := tx.Session(&gorm.Session{SkipHooks: true}).Exec(
-		"UPDATE `album` SET `title_metadata`=?,`updated_at`=? WHERE id = ? AND ((title_metadata IS NULL OR title_metadata = '' OR title_metadata <> ?))",
+		"UPDATE `album` SET `title_metadata`=?,`updated_at`=? WHERE id = ? AND sync_status <> 4 AND ((title_metadata IS NULL OR title_metadata = '' OR title_metadata <> ?))",
 		metadataValue,
 		tx.NowFunc(),
 		albumID,
@@ -313,6 +317,19 @@ func updateAlbumByIDTx(
 	updates["updated_at"] = tx.NowFunc()
 
 	query := tx.Session(&gorm.Session{SkipHooks: true}).Model(&Album{}).Where("id = ?", albumID)
+
+	// 检查专辑锁定状态 (sync_status=4)
+	var currentStatus int
+	if err := tx.Model(&Album{}).Where("id = ?", albumID).Select("sync_status").Scan(&currentStatus).Error; err == nil {
+		if currentStatus == 4 {
+			// 只有当本次更新是尝试将状态改为 3 (解锁) 时，才允许继续
+			newStatus, ok := fields["sync_status"].(int)
+			if !ok || newStatus != 3 {
+				return errors.New("专辑已锁定 (sync_status=4)")
+			}
+		}
+	}
+
 	if decorate != nil {
 		query = decorate(query)
 	}

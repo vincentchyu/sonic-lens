@@ -106,6 +106,7 @@ final class NowPlayingService {
             favoriteState: nowPlaying.favoriteState,
             trackNumber: nowPlaying.trackNumber,
             discNumber: nowPlaying.discNumber,
+            genre: nowPlaying.genre,
             receivedAt: Date()
         )
     }

@@ -359,6 +359,7 @@ private struct PadNowPlayingArtworkColumn: View {
                 artworkURL: nowPlaying.artwork,
                 fallbackTitle: nowPlaying.displayAlbumTitle ?? nowPlaying.track,
                 badgeText: nowPlaying.sampleRateDisplayText,
+                genreText: nowPlaying.genre,
                 statusTagText: favoriteStatusTagText,
                 statusTagTone: favoriteStatusTagTone
             )

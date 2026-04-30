@@ -301,6 +301,7 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		Track:         req.Track,
 		Album:         req.Album,
 		AlbumSubtitle: input.AlbumSubtitle,
+		Genre:         input.Metadata.Genre,
 		Duration:      req.Duration,
 		PlayTime:      time.Unix(req.Timestamp, 0),
 		Scrobbled:     true,
@@ -325,6 +326,13 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 	} else if processErr := modelProcessTrackPlayRecord(ctx, record.ID, input.Metadata); processErr != nil {
 		log.Warn(ctx, "HandleTrackPlaybackThreshold process play record err", zap.Error(processErr))
 	} else {
+		// 实时增加流派播放次数，确保未归因数据也能计入统计
+		if strings.TrimSpace(input.Metadata.Genre) != "" {
+			if genreErr := model.IncrementGenrePlayCount(ctx, input.Metadata.Genre); genreErr != nil {
+				log.Warn(ctx, "HandleTrackPlaybackThreshold increment genre play count err", zap.Error(genreErr))
+			}
+		}
+
 		telemetryGoOnlySafe(
 			ctx, func(goCtx context.Context) {
 				websocketBroadcastRecentPlaysUpdated(goCtx)

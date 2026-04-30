@@ -228,6 +228,8 @@
                             <div style="display: flex; gap: 8px;">
                                 <button id="mbSearchBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px;" onclick="syncAlbumMB('search')">查询</button>
                                 <button id="mbDeepBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(var(--primary-rgb), 0.2);" onclick="syncAlbumMB('deep')">精选维护</button>
+                                <button id="albumLockBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(231, 76, 60, 0.1); color: #e74c3c; display: none;" onclick="lockAlbum()">锁定</button>
+                                <button id="albumUnlockBtn" class="time-filter" style="font-size: 0.75em; padding: 6px 14px; border-radius: 8px; background: rgba(46, 204, 113, 0.1); color: #2ecc71; display: none;" onclick="unlockAlbum()">解锁</button>
                             </div>
                         </div>
 

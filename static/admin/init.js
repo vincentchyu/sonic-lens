@@ -1245,9 +1245,24 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
         
         const mbSearchBtn = document.getElementById('mbSearchBtn');
         const mbDeepBtn = document.getElementById('mbDeepBtn');
+        const albumLockBtn = document.getElementById('albumLockBtn');
+        const albumUnlockBtn = document.getElementById('albumUnlockBtn');
         const candidateList = document.getElementById('mbCandidateList');
         const initialMsg = document.getElementById('mbInitialMsg');
         
+        // 重置按钮状态
+        if (mbSearchBtn) {
+            mbSearchBtn.style.display = 'block';
+            mbSearchBtn.disabled = false;
+            mbSearchBtn.style.opacity = '1';
+        }
+        if (mbDeepBtn) {
+            mbDeepBtn.disabled = false;
+            mbDeepBtn.style.opacity = '1';
+        }
+        if (albumLockBtn) albumLockBtn.style.display = 'none';
+        if (albumUnlockBtn) albumUnlockBtn.style.display = 'none';
+
         if (status === 0) {
             mbSearchBtn.textContent = '初选补全';
             mbDeepBtn.style.display = 'none';
@@ -1270,6 +1285,19 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
                 mbDeepBtn.textContent = '再次精选维护';
                 mbDeepBtn.style.background = 'rgba(255,255,255,0.05)';
                 mbDeepBtn.style.color = 'var(--primary-color)';
+                if (albumLockBtn) albumLockBtn.style.display = 'block';
+            } else if (status === 4) {
+                mbDeepBtn.style.display = 'block';
+                mbDeepBtn.textContent = '已锁定';
+                mbDeepBtn.disabled = true;
+                mbDeepBtn.style.opacity = '0.5';
+                mbDeepBtn.style.background = 'rgba(0,0,0,0.1)';
+                mbDeepBtn.style.color = 'var(--text-secondary)';
+                
+                mbSearchBtn.disabled = true;
+                mbSearchBtn.style.opacity = '0.5';
+                
+                if (albumUnlockBtn) albumUnlockBtn.style.display = 'block';
             }
             
             // 加载候选列表
@@ -1597,4 +1625,92 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
                     deepBtn.disabled = false;
                 });
         }
+    }
+
+    /**
+     * 锁定专辑
+     */
+    function lockAlbum() {
+        const id = window.currentAlbumID;
+        if (!id) return;
+
+        if (!confirm('锁定后将无法修改专辑元数据和关联关系，确定要锁定吗？')) return;
+
+        fetch(`/api/albums/${id}/lock`, { method: 'POST' })
+            .then(resp => {
+                if (!resp.ok) return resp.json().then(e => { throw new Error(e.error || '锁定失败'); });
+                return resp.json();
+            })
+            .then(() => {
+                if (typeof showToast === 'function') showToast('专辑已锁定');
+                // 重新获取专辑信息刷新 UI
+                showAlbumDetails(id);
+            })
+            .catch(err => {
+                alert(err.message);
+            });
+    }
+
+    /**
+     * 解锁专辑
+     */
+    function unlockAlbum() {
+        const id = window.currentAlbumID;
+        if (!id) return;
+
+        fetch(`/api/albums/${id}/unlock`, { method: 'POST' })
+            .then(resp => {
+                if (!resp.ok) return resp.json().then(e => { throw new Error(e.error || '解锁失败'); });
+                return resp.json();
+            })
+            .then(() => {
+                if (typeof showToast === 'function') showToast('专辑已解锁');
+                // 重新获取专辑信息刷新 UI
+                showAlbumDetails(id);
+            })
+            .catch(err => {
+                alert(err.message);
+            });
+    }
+
+    /**
+     * 显示简易通知
+     */
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = 'toast-notification';
+        toast.style.position = 'fixed';
+        toast.style.bottom = '30px';
+        toast.style.right = '30px';
+        toast.style.backgroundColor = 'var(--primary-color)';
+        toast.style.color = '#fff';
+        toast.style.padding = '12px 24px';
+        toast.style.borderRadius = '12px';
+        toast.style.boxShadow = '0 8px 16px rgba(0,0,0,0.15)';
+        toast.style.zIndex = '9999';
+        toast.style.display = 'flex';
+        toast.style.alignItems = 'center';
+        toast.style.gap = '10px';
+        toast.style.fontSize = '0.9rem';
+        toast.style.fontWeight = '600';
+        toast.style.transition = 'all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)';
+        toast.style.transform = 'translateY(100px)';
+        toast.style.opacity = '0';
+        
+        toast.innerHTML = `<span>✨</span> ${message}`;
+        
+        document.body.appendChild(toast);
+        
+        // 触发动画
+        setTimeout(() => {
+            toast.style.transform = 'translateY(0)';
+            toast.style.opacity = '1';
+        }, 10);
+        
+        // 自动移除
+        setTimeout(() => {
+            toast.style.transform = 'translateY(20px)';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }

@@ -291,6 +291,7 @@ func (b *BasePlayerChecker) processPlayingTrack(ctx context.Context, playerInfo 
 			SampleRate:        playerInfo.GetSampleRate(),
 			TrackNumber:       int8(playerInfo.GetTrackNumber()),
 			DiscNumber:        int8(playerInfo.GetDiscNumber()),
+			Genre:             playerInfo.GetGenre(),
 			CoverArtURL:       b.currentArtURL,
 			CoverArtMime:      b.currentArtMime,
 			Confidence:        favoriteState.Confidence,

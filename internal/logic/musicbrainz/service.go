@@ -463,7 +463,7 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 	if len(release.Genres) > 0 {
 		var genres []string
 		for _, g := range release.Genres {
-			genres = append(genres, g.Name)
+			genres = append(genres, common.CapitalizeWords(g.Name))
 		}
 		genreStr = strings.Join(genres, ",")
 	}

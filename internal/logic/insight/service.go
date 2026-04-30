@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
+	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/ai"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/lyrics"
@@ -149,7 +150,7 @@ func NewService() (Service, error) {
 	return &serviceImpl{
 		llmCache: make(map[string]ai.LLMProvider),
 		providers: []lyrics.Provider{
-			lyrics.NewLrcAPIProvider(),
+			lyrics.NewLrcAPIProvider(config.ConfigObj.Lyrics.LrcAPI.BaseURL, config.ConfigObj.Lyrics.LrcAPI.Token),
 			lyrics.NewMxmProvider(),
 		},
 	}, nil
@@ -1176,7 +1177,9 @@ func (s *serviceImpl) GetInsightFeedbackSummary(
 		if err != nil {
 			return nil, err
 		}
-		return buildFeedbackSummaryFromAlbum(insightID, targetType, insight.LikeCount, insight.DislikeCount, feedbacks), nil
+		return buildFeedbackSummaryFromAlbum(
+			insightID, targetType, insight.LikeCount, insight.DislikeCount, feedbacks,
+		), nil
 	default:
 		insight, err := getInsightByID(ctx, insightID)
 		if err != nil {
@@ -1186,7 +1189,9 @@ func (s *serviceImpl) GetInsightFeedbackSummary(
 		if err != nil {
 			return nil, err
 		}
-		return buildFeedbackSummaryFromTrack(insightID, targetType, insight.LikeCount, insight.DislikeCount, feedbacks), nil
+		return buildFeedbackSummaryFromTrack(
+			insightID, targetType, insight.LikeCount, insight.DislikeCount, feedbacks,
+		), nil
 	}
 }
 
@@ -1309,6 +1314,13 @@ func (s *serviceImpl) GetLyrics(
 
 	lyricsText, err := s.getOrFetchLyrics(ctx, artist, album, track, trackNumber, discNumber)
 	if err != nil {
+		log.Warn(
+			ctx, "获取歌词失败",
+			zap.String("artist", artist),
+			zap.String("track", track),
+			zap.String("album", album),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -1519,25 +1531,29 @@ func sortAlbumInsightsByTotalScore(ctx context.Context, insights []*model.AlbumI
 }
 
 func sortTrackInsightsWithScoreMap(insights []*model.TrackInsight, scoreMap map[int64]int) {
-	sort.SliceStable(insights, func(i, j int) bool {
-		leftScore := scoreMap[insights[i].ID]
-		rightScore := scoreMap[insights[j].ID]
-		if leftScore != rightScore {
-			return leftScore > rightScore
-		}
-		return insights[i].CreatedAt.After(insights[j].CreatedAt)
-	})
+	sort.SliceStable(
+		insights, func(i, j int) bool {
+			leftScore := scoreMap[insights[i].ID]
+			rightScore := scoreMap[insights[j].ID]
+			if leftScore != rightScore {
+				return leftScore > rightScore
+			}
+			return insights[i].CreatedAt.After(insights[j].CreatedAt)
+		},
+	)
 }
 
 func sortAlbumInsightsWithScoreMap(insights []*model.AlbumInsight, scoreMap map[int64]int) {
-	sort.SliceStable(insights, func(i, j int) bool {
-		leftScore := scoreMap[insights[i].ID]
-		rightScore := scoreMap[insights[j].ID]
-		if leftScore != rightScore {
-			return leftScore > rightScore
-		}
-		return insights[i].CreatedAt.After(insights[j].CreatedAt)
-	})
+	sort.SliceStable(
+		insights, func(i, j int) bool {
+			leftScore := scoreMap[insights[i].ID]
+			rightScore := scoreMap[insights[j].ID]
+			if leftScore != rightScore {
+				return leftScore > rightScore
+			}
+			return insights[i].CreatedAt.After(insights[j].CreatedAt)
+		},
+	)
 }
 
 func truncatePromptText(text string, limit int) string {
@@ -1563,16 +1579,18 @@ func convertTrackFeedbackHistory(feedbacks []*model.TrackInsightFeedback) []*Ins
 		if feedback == nil {
 			continue
 		}
-		items = append(items, &InsightFeedbackHistoryItem{
-			ID:             feedback.ID,
-			InsightID:      feedback.InsightID,
-			Score:          feedback.Score,
-			Comment:        feedback.Comment,
-			ReasonCodes:    normalizeReasonCodes(feedback.ReasonCodes),
-			SectionKey:     feedback.SectionKey,
-			SourcePlatform: feedback.SourcePlatform,
-			CreatedAt:      feedback.CreatedAt,
-		})
+		items = append(
+			items, &InsightFeedbackHistoryItem{
+				ID:             feedback.ID,
+				InsightID:      feedback.InsightID,
+				Score:          feedback.Score,
+				Comment:        feedback.Comment,
+				ReasonCodes:    normalizeReasonCodes(feedback.ReasonCodes),
+				SectionKey:     feedback.SectionKey,
+				SourcePlatform: feedback.SourcePlatform,
+				CreatedAt:      feedback.CreatedAt,
+			},
+		)
 	}
 	return items
 }
@@ -1583,16 +1601,18 @@ func convertAlbumFeedbackHistory(feedbacks []*model.AlbumInsightFeedback) []*Ins
 		if feedback == nil {
 			continue
 		}
-		items = append(items, &InsightFeedbackHistoryItem{
-			ID:             feedback.ID,
-			InsightID:      feedback.InsightID,
-			Score:          feedback.Score,
-			Comment:        feedback.Comment,
-			ReasonCodes:    normalizeReasonCodes(feedback.ReasonCodes),
-			SectionKey:     feedback.SectionKey,
-			SourcePlatform: feedback.SourcePlatform,
-			CreatedAt:      feedback.CreatedAt,
-		})
+		items = append(
+			items, &InsightFeedbackHistoryItem{
+				ID:             feedback.ID,
+				InsightID:      feedback.InsightID,
+				Score:          feedback.Score,
+				Comment:        feedback.Comment,
+				ReasonCodes:    normalizeReasonCodes(feedback.ReasonCodes),
+				SectionKey:     feedback.SectionKey,
+				SourcePlatform: feedback.SourcePlatform,
+				CreatedAt:      feedback.CreatedAt,
+			},
+		)
 	}
 	return items
 }
@@ -1662,12 +1682,14 @@ func buildFeedbackSummary(
 	for reason, count := range reasonCounts {
 		pairs = append(pairs, reasonCount{Reason: reason, Count: count})
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].Count != pairs[j].Count {
-			return pairs[i].Count > pairs[j].Count
-		}
-		return pairs[i].Reason < pairs[j].Reason
-	})
+	sort.Slice(
+		pairs, func(i, j int) bool {
+			if pairs[i].Count != pairs[j].Count {
+				return pairs[i].Count > pairs[j].Count
+			}
+			return pairs[i].Reason < pairs[j].Reason
+		},
+	)
 	limit := 3
 	if len(pairs) < limit {
 		limit = len(pairs)
@@ -1742,12 +1764,14 @@ func topCountKeys(counts map[string]int, limit int) []string {
 	for key, count := range counts {
 		pairs = append(pairs, pair{Key: key, Count: count})
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].Count != pairs[j].Count {
-			return pairs[i].Count > pairs[j].Count
-		}
-		return pairs[i].Key < pairs[j].Key
-	})
+	sort.Slice(
+		pairs, func(i, j int) bool {
+			if pairs[i].Count != pairs[j].Count {
+				return pairs[i].Count > pairs[j].Count
+			}
+			return pairs[i].Key < pairs[j].Key
+		},
+	)
 	if len(pairs) < limit {
 		limit = len(pairs)
 	}
@@ -1767,22 +1791,24 @@ func convertTrackInsightHistoryList(
 		if insight == nil {
 			continue
 		}
-		items = append(items, &model.InsightListItem{
-			ID:                  insight.ID,
-			AnalysisTargetType:  common.AnalysisTargetTypeTrack,
-			TrackID:             insight.TrackID,
-			AlbumID:             0,
-			Artist:              insight.Artist,
-			Album:               insight.Album,
-			Track:               insight.Track,
-			AnalysisSummary:     insight.AnalysisSummary,
-			LLMProvider:         insight.LLMProvider,
-			LikeCount:           insight.LikeCount,
-			DislikeCount:        insight.DislikeCount,
-			LatestFeedbackScore: scoreMap[insight.ID],
-			CreatedAt:           insight.CreatedAt,
-			IsDisabled:          insight.IsDisabled,
-		})
+		items = append(
+			items, &model.InsightListItem{
+				ID:                  insight.ID,
+				AnalysisTargetType:  common.AnalysisTargetTypeTrack,
+				TrackID:             insight.TrackID,
+				AlbumID:             0,
+				Artist:              insight.Artist,
+				Album:               insight.Album,
+				Track:               insight.Track,
+				AnalysisSummary:     insight.AnalysisSummary,
+				LLMProvider:         insight.LLMProvider,
+				LikeCount:           insight.LikeCount,
+				DislikeCount:        insight.DislikeCount,
+				LatestFeedbackScore: scoreMap[insight.ID],
+				CreatedAt:           insight.CreatedAt,
+				IsDisabled:          insight.IsDisabled,
+			},
+		)
 	}
 	return items
 }
@@ -1796,22 +1822,24 @@ func convertAlbumInsightHistoryList(
 		if insight == nil {
 			continue
 		}
-		items = append(items, &model.InsightListItem{
-			ID:                  insight.ID,
-			AnalysisTargetType:  common.AnalysisTargetTypeAlbum,
-			TrackID:             0,
-			AlbumID:             insight.AlbumID,
-			Artist:              insight.Artist,
-			Album:               insight.Album,
-			Track:               "",
-			AnalysisSummary:     insight.AnalysisSummary,
-			LLMProvider:         insight.LLMProvider,
-			LikeCount:           insight.LikeCount,
-			DislikeCount:        insight.DislikeCount,
-			LatestFeedbackScore: scoreMap[insight.ID],
-			CreatedAt:           insight.CreatedAt,
-			IsDisabled:          insight.IsDisabled,
-		})
+		items = append(
+			items, &model.InsightListItem{
+				ID:                  insight.ID,
+				AnalysisTargetType:  common.AnalysisTargetTypeAlbum,
+				TrackID:             0,
+				AlbumID:             insight.AlbumID,
+				Artist:              insight.Artist,
+				Album:               insight.Album,
+				Track:               "",
+				AnalysisSummary:     insight.AnalysisSummary,
+				LLMProvider:         insight.LLMProvider,
+				LikeCount:           insight.LikeCount,
+				DislikeCount:        insight.DislikeCount,
+				LatestFeedbackScore: scoreMap[insight.ID],
+				CreatedAt:           insight.CreatedAt,
+				IsDisabled:          insight.IsDisabled,
+			},
+		)
 	}
 	return items
 }

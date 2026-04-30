@@ -603,6 +603,7 @@ struct NowPlayingLeftPanel: View {
                 artworkURL: nowPlaying.artwork,
                 fallbackTitle: nowPlaying.displayAlbumTitle ?? nowPlaying.track,
                 badgeText: nowPlaying.sampleRateDisplayText,
+                genreText: nowPlaying.genre,
                 statusTagText: favoriteStatusTagText,
                 statusTagTone: favoriteStatusTagTone
             )
@@ -962,6 +963,7 @@ struct NowPlayingArtwork: View {
     let artworkURL: String?
     var fallbackTitle: String? = nil
     var badgeText: String? = nil
+    var genreText: String? = nil
     var statusTagText: String? = nil
     var statusTagTone: NowPlayingArtworkStatusTagTone? = nil
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
@@ -990,6 +992,12 @@ struct NowPlayingArtwork: View {
                 }
             }
             .padding(12)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let genreText, !genreText.isEmpty {
+                NowPlayingCornerTag(text: genreText)
+                    .padding(12)
+            }
         }
         .shadow(
             color: .black.opacity(performanceModeEnabled ? 0.18 : 0.28),

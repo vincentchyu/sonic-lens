@@ -29,6 +29,17 @@ enum ShareMetadataFormatter {
             )
         }
 
+        if let genre = track.genre, !genre.isEmpty {
+            items.append(
+                ShareMetaItem(
+                    id: "genre",
+                    title: "流派",
+                    value: genre,
+                    systemImage: "music.quarternote.3"
+                )
+            )
+        }
+
         return items
     }
 

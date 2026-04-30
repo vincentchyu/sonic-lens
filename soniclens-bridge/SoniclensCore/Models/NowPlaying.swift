@@ -26,6 +26,7 @@ struct NowPlaying: Decodable {
     let favoriteState: TrackFavoriteState?
     let trackNumber: Int?
     let discNumber: Int?
+    let genre: String?
     var receivedAt: Date = Date()
 
     enum CodingKeys: String, CodingKey {
@@ -45,6 +46,7 @@ struct NowPlaying: Decodable {
         case favoriteState = "favorite_state"
         case trackNumber = "track_number"
         case discNumber = "disc_number"
+        case genre
     }
 
     var favoriteProjection: TrackFavoriteProjection {
@@ -103,6 +105,7 @@ struct NowPlaying: Decodable {
         favoriteState: TrackFavoriteState?,
         trackNumber: Int?,
         discNumber: Int?,
+        genre: String? = nil,
         receivedAt: Date = Date()
     ) {
         self.artist = artist
@@ -121,6 +124,7 @@ struct NowPlaying: Decodable {
         self.favoriteState = favoriteState
         self.trackNumber = trackNumber
         self.discNumber = discNumber
+        self.genre = genre
         self.receivedAt = receivedAt
     }
 }

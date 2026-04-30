@@ -88,6 +88,7 @@ type TrackPlayRecord struct {
 	Track                string                         `gorm:"column:track;type:varchar(180);not null;index:idx_track_play_records_identity_subtitle" json:"track"`
 	Album                string                         `gorm:"column:album;type:varchar(180);not null;index:idx_track_play_records_identity_subtitle" json:"album"`
 	AlbumSubtitle        string                         `gorm:"column:album_subtitle;type:varchar(60);index:idx_track_play_records_identity_subtitle" json:"album_subtitle"`
+	Genre                string                         `gorm:"column:genre;type:varchar(255);index:idx_track_play_records_genre" json:"genre"`
 	AlbumID              int64                          `gorm:"column:album_id;type:bigint;default:0;index:idx_track_play_records_album_id" json:"album_id"`
 	Duration             int64                          `gorm:"column:duration;type:bigint" json:"duration"`
 	PlayTime             time.Time                      `gorm:"column:play_time;type:timestamp;not null;default:CURRENT_TIMESTAMP;index:idx_play_time_id,sort:desc,priority:1" json:"play_time"`
@@ -465,7 +466,14 @@ func buildTrackPlayRecordResolvedFields(
 	if albumID > 0 {
 		if albumObj, err := GetAlbumTx(tx, albumID); err == nil && albumObj != nil {
 			fields["album_subtitle"] = albumObj.NameSubtitle
+			if record != nil && strings.TrimSpace(record.Genre) == "" && albumObj.Genre != "" {
+				fields["genre"] = albumObj.Genre
+			}
 		}
+	}
+
+	if record != nil && strings.TrimSpace(record.Genre) == "" && resolvedTrack.Genre != "" {
+		fields["genre"] = resolvedTrack.Genre
 	}
 
 	if _, ok := fields["cover_art_path"]; !ok && albumCoverArtPath != "" {
@@ -611,6 +619,7 @@ func inferReplayTrackMetadata(record *TrackPlayRecord) TrackMetadata {
 		MusicBrainzID: record.MusicBrainzID,
 		Source:        record.Source,
 		PlayerType:    record.Source,
+		Genre:         record.Genre,
 		Confidence:    common.TrackMetadataConfidenceLow,
 	}
 

@@ -80,7 +80,9 @@ type Service interface {
 	ManualMaintainPendingAlbumWorkItem(
 		ctx context.Context, workItemID int64, input ManualPendingAlbumInput,
 	) (*DeepMaintainPendingAlbumReport, error)
-	ListWorkItems(ctx context.Context, limit, offset int, keyword string, statusGroup string) ([]*model.PendingAlbumWorkItem, int64, error)
+	ListWorkItems(
+		ctx context.Context, limit, offset int, keyword string, statusGroup string,
+	) ([]*model.PendingAlbumWorkItem, int64, error)
 }
 
 type serviceImpl struct{}
@@ -222,7 +224,9 @@ func (s *serviceImpl) SearchPendingAlbumMBReleases(ctx context.Context, workItem
 			},
 		)
 	}
-	log.Info(ctx, "搜索待归因专辑的 MB Releases 完成", zap.Int64("work_item_id", workItemID), zap.Int("count", len(results)))
+	log.Info(
+		ctx, "搜索待归因专辑的 MB Releases 完成", zap.Int64("work_item_id", workItemID), zap.Int("count", len(results)),
+	)
 	return results, nil
 }
 
@@ -353,7 +357,9 @@ func extractReleaseGenres(release musicbrainzws2.Release) string {
 		if strings.TrimSpace(genre.Name) == "" {
 			continue
 		}
-		genres = append(genres, genre.Name)
+		// 格式化为单词空格分割首字母大写标准
+		name := common.CapitalizeWords(genre.Name)
+		genres = append(genres, name)
 	}
 	return strings.Join(genres, ",")
 }
@@ -404,7 +410,11 @@ func (s *serviceImpl) resolveMusicBrainzMaterial(
 	release, err := coremusicbrainz.LookupRelease(
 		ctx,
 		mbtypes.MBID(detail.WorkItem.SelectedMBID),
-		musicbrainzws2.IncludesFilter{Includes: []string{"recordings", "media", "artist-credits", "genres", "release-groups"}},
+		musicbrainzws2.IncludesFilter{
+			Includes: []string{
+				"recordings", "media", "artist-credits", "genres", "release-groups",
+			},
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -630,7 +640,9 @@ func (s *serviceImpl) performPendingAlbumMaintenance(
 		return nil, err
 	}
 
-	if coverErr := ensurePendingAlbumCover(ctx, detail, report.ResolvedAlbumID, material.CoverEnsureInput); coverErr != nil {
+	if coverErr := ensurePendingAlbumCover(
+		ctx, detail, report.ResolvedAlbumID, material.CoverEnsureInput,
+	); coverErr != nil {
 		log.Warn(
 			ctx,
 			"待归因专辑维护补齐封面失败",

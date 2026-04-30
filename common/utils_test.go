@@ -68,3 +68,21 @@ func TestUnityPunctuationMarksFix(t *testing.T) {
 	assert.Equal(t, "rock'n'roll", UnityPunctuationMarksFix("rock’n’roll"))
 	assert.Equal(t, "a,b", UnityPunctuationMarksFix("a，b"))
 }
+
+func TestCapitalizeWords(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"indie pop", "Indie Pop"},
+		{"ALTERNATIVE", "Alternative"},
+		{"chinese rock", "Chinese Rock"},
+		{"  extra  spaces  ", "Extra Spaces"},
+		{"", ""},
+		{"pop", "Pop"},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, CapitalizeWords(tt.input))
+	}
+}

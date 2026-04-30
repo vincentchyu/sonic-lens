@@ -99,6 +99,7 @@ struct Track: Codable, Identifiable, Hashable {
     let trackNumber: Int?
     let discNumber: Int?
     let duration: Int64?
+    let genre: String?
     let isAppleMusicFav: Bool?
     let isLastFmFav: Bool?
     let createdAt: String?
@@ -113,6 +114,7 @@ struct Track: Codable, Identifiable, Hashable {
         case trackNumber = "track_number"
         case discNumber = "disc_number"
         case duration
+        case genre
         case isAppleMusicFav = "is_apple_music_fav"
         case isLastFmFav = "is_last_fm_fav"
         case createdAt = "created_at"
@@ -128,6 +130,7 @@ struct Track: Codable, Identifiable, Hashable {
         trackNumber: Int?,
         discNumber: Int?,
         duration: Int64?,
+        genre: String? = nil,
         isAppleMusicFav: Bool? = nil,
         isLastFmFav: Bool? = nil,
         createdAt: String? = nil,
@@ -141,6 +144,7 @@ struct Track: Codable, Identifiable, Hashable {
         self.trackNumber = trackNumber
         self.discNumber = discNumber
         self.duration = duration
+        self.genre = genre
         self.isAppleMusicFav = isAppleMusicFav
         self.isLastFmFav = isLastFmFav
         self.createdAt = createdAt

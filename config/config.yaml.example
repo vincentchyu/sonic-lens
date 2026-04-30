@@ -98,3 +98,9 @@ ai:
 #    # 复制返回的 database_id 到此处
 # 5. **初始化数据库表**:
 #    wrangler d1 execute lastfm-scrobbler-db --file=./cloudflare/d1_schema.sql
+
+# 歌词服务配置
+lyrics:
+  lrcApi:
+    baseUrl: "http://127.0.0.1:28883/api/v1/lyrics/single"
+    token: "todo"

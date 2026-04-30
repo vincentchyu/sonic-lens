@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS track_play_records
     0,
     duration
     INTEGER,
+    genre
+    TEXT,
     play_time
     TEXT
     NOT

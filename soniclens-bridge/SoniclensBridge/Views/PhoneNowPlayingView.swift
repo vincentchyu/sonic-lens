@@ -185,6 +185,7 @@ struct PhoneNowPlayingView: View {
             artworkURL: current.artwork,
             fallbackTitle: current.album ?? current.track,
             badgeText: current.sampleRateDisplayText,
+            genreText: current.genre,
             statusTagText: favoriteStatusTagText,
             statusTagTone: favoriteStatusTagText == nil ? nil : favoriteStatusTagTone
         )

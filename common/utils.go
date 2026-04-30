@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -69,6 +70,10 @@ func GenreCustomFit(genre string) string {
 		return "Singer-Songwriter"
 	case "R&B/Soul":
 		return "R&B-Soul"
+	case "Folk-Rock":
+		return "Folk Rock"
+	case "Rock Music", "Rock Musical":
+		return "Rock"
 	case "R&B/骚灵乐":
 		return "R&B-Soul"
 	case "Prog-Rock/Art Rock":
@@ -81,8 +86,10 @@ func GenreCustomFit(genre string) string {
 // ArtistCustomFit 艺术家自定义适配
 func ArtistCustomFit(artist string) string {
 	switch artist {
-	case "Omnipotent Youth Society":
+	case "Omnipotent Youth Society", "萬能青年旅店":
 		return "万能青年旅店"
+	case "腰乐队", "腰樂隊":
+		return "腰"
 	case "诺拉·琼斯", "諾拉·瓊斯":
 		return "Norah Jones"
 	case "重塑雕像的权利":
@@ -206,4 +213,21 @@ func UnityFeatFix(title string) string {
 	remainder := title[endIdx+1:]
 
 	return baseTitle + " (feat. " + afterFeat + ")" + remainder
+}
+
+// CapitalizeWords 将字符串按空格分割，并将每个单词的首字母转为大写，其余部分转为小写。
+// 例如: "indie pop" -> "Indie Pop", "ALTERNATIVE" -> "Alternative"
+func CapitalizeWords(s string) string {
+	if s == "" {
+		return ""
+	}
+	words := strings.Fields(s)
+	for i, word := range words {
+		if len(word) > 0 {
+			runes := []rune(strings.ToLower(word))
+			runes[0] = unicode.ToUpper(runes[0])
+			words[i] = string(runes)
+		}
+	}
+	return strings.Join(words, " ")
 }

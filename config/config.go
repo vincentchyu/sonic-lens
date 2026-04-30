@@ -27,6 +27,7 @@ type Config struct {
 	AI            AIConfig            `yaml:"ai"`
 	Scrobblers    []string            `yaml:"scrobblers"`
 	IsDev         bool                `yaml:"isDev"`
+	Lyrics        LyricsConfig        `yaml:"lyrics"`
 }
 
 type ScrobblerConfig struct {
@@ -46,6 +47,15 @@ type LogConfig struct {
 
 type MusixmatchConfig struct {
 	ApiKey string `yaml:"apiKey"`
+}
+
+type LyricsConfig struct {
+	LrcAPI LrcAPIConfig `yaml:"lrcApi"`
+}
+
+type LrcAPIConfig struct {
+	BaseURL string `yaml:"baseUrl"`
+	Token   string `yaml:"token"`
 }
 
 type DatabaseConfig struct {

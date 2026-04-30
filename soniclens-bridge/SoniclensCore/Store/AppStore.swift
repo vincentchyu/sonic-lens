@@ -724,6 +724,7 @@ final class AppStore: ObservableObject {
             favoriteState: projection.favoriteState,
             trackNumber: nowPlaying.trackNumber,
             discNumber: nowPlaying.discNumber,
+            genre: nowPlaying.genre,
             receivedAt: nowPlaying.receivedAt
         )
     }
@@ -811,6 +812,7 @@ final class AppStore: ObservableObject {
                     favoriteState: current.favoriteState,
                     trackNumber: current.trackNumber,
                     discNumber: current.discNumber,
+                    genre: current.genre,
                     receivedAt: current.receivedAt
                 )
             }

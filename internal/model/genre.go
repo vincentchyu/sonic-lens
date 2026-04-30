@@ -8,8 +8,6 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/vincentchyu/sonic-lens/common"
-	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
 )
 
@@ -87,11 +85,19 @@ func DeleteGenre(ctx context.Context, id uint) error {
 	return GetDB().WithContext(ctx).Delete(&Genre{}, id).Error
 }
 
-// IncrementGenrePlayCount increments the play count for a genre
+// IncrementGenrePlayCount increments the play count for a genre, creating it if it doesn't exist
 func IncrementGenrePlayCount(ctx context.Context, name string) error {
-	return GetDB().WithContext(ctx).Model(&Genre{}).Where("name = ?", name).Update(
-		"play_count", gorm.Expr("play_count + 1"),
-	).Error
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			var genre Genre
+			// 使用 FirstOrCreate 确保流派记录存在
+			if err := tx.Where("name = ?", name).FirstOrCreate(&genre, Genre{Name: name}).Error; err != nil {
+				return err
+			}
+			// 原子增加播放次数
+			return tx.Model(&genre).Update("play_count", gorm.Expr("play_count + 1")).Error
+		},
+	)
 }
 
 // GetGenreCount returns the total number of genres
@@ -123,33 +129,16 @@ func GetTopGenresWithDetails(ctx context.Context, limit int) ([]*TopGenre, error
 	var result []*TopGenre
 
 	// 根据数据库类型使用不同的SQL语法
-	if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
-		err := GetDB().WithContext(ctx).Raw(
-			`select tg.track_genre_name, tg.track_genre_count, g.name_zh as genre_name_zh, g.play_count as genre_count
-			from (select genre as track_genre_name, sum(play_count) as track_genre_count
-				  from track
-				  -- where genre != ''
-				  group by genre
-				  order by track_genre_count desc limit 20) as tg
-				 inner join genre as g on tg.track_genre_name = g.name where tg.track_genre_name!='' limit ?`, limit,
-		).Scan(&result).Error
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		err := GetDB().WithContext(ctx).Raw(
-			`
-			select tg.track_genre_name, tg.track_genre_count, g.name_zh as genre_name_zh, g.play_count as genre_count
-			from (select genre as track_genre_name, sum(play_count) as track_genre_count
-				  from track
-				  where genre != ''
-				  group by genre
-				  order by track_genre_count desc limit ?) as tg
-				 left join genre as g on tg.track_genre_name = g.name`, limit,
-		).Scan(&result).Error
-		if err != nil {
-			return nil, err
-		}
+	// 现在优先从 genre 表获取播放统计，以包含未归因的数据
+	err := GetDB().WithContext(ctx).Raw(
+		`SELECT name AS track_genre_name, play_count AS genre_count, name_zh AS genre_name_zh, play_count AS track_genre_count
+		 FROM genre 
+		 WHERE name != ''
+		 ORDER BY play_count DESC 
+		 LIMIT ?`, limit,
+	).Scan(&result).Error
+	if err != nil {
+		return nil, err
 	}
 
 	for index := range result {

@@ -527,15 +527,12 @@ func refreshTopGenreStats(tx *gorm.DB, topN int) error {
 		GenreCount      int64
 	}
 	var rows []topGenreRow
-	if err := tx.Table("track as t").
+	if err := tx.Table("genre").
 		Select(
-			"t.genre as genre_name, COALESCE(SUM(t.play_count), 0) as track_genre_count, " +
-				"COALESCE(g.name_zh, '') as genre_name_zh, COALESCE(g.play_count, 0) as genre_count",
+			"name as genre_name, play_count as genre_count, name_zh as genre_name_zh, play_count as track_genre_count",
 		).
-		Joins("LEFT JOIN genre as g ON t.genre = g.name").
-		Where("t.genre != ''").
-		Group("t.genre, g.name_zh, g.play_count").
-		Order("track_genre_count DESC").
+		Where("name != ''").
+		Order("play_count DESC").
 		Limit(topN).
 		Find(&rows).Error; err != nil {
 		return err

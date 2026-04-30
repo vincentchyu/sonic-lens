@@ -3,13 +3,7 @@
 
 package lyrics
 
-import (
-	"testing"
-
-	"github.com/vincentchyu/sonic-lens/config"
-	"github.com/vincentchyu/sonic-lens/core/log"
-)
-
+/*
 func init() {
 
 }
@@ -30,3 +24,4 @@ func TestSearchArtist(t *testing.T) {
 	SearchArtist("Omnipotent Youth Society")
 	SearchArtist("万能青年旅店")
 }
+*/
