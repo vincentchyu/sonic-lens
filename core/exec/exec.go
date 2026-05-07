@@ -26,6 +26,7 @@ import (
 const (
 	MRMediaNowPlayingGet                   = "get"
 	MRMediaNowPlayingAppRoon               = "com.roon.Roon"
+	MRMediaNowPlayingAppFoobar2000         = "com.foobar2000.mac"
 	MRMediaNowPlayingAppMusic              = "com.apple.Music"
 	MRMediaNowPlaying163                   = "com.netease.163music"
 	MRMediaNowPlayingBundleIdentifier      = "bundleIdentifier"

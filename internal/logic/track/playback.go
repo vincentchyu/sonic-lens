@@ -31,6 +31,14 @@ const (
 	lastfmFavoriteNegativeProbeMax      = 2 * time.Minute
 )
 
+func allowsLastfmNowPlaying(playerSource common.PlayerType) bool {
+	return playerSource != common.PlayerFoobar2000
+}
+
+func allowsLastfmScrobble(playerSource common.PlayerType) bool {
+	return playerSource != common.PlayerFoobar2000
+}
+
 // PlaybackEventInput 表示播放事件编排所需的标准化输入。
 type PlaybackEventInput struct {
 	Artist                  string
@@ -249,6 +257,17 @@ func (s *TrackServiceImpl) HandleNowPlayingStarted(ctx context.Context, input Pl
 		zap.String("player_source", string(input.PlayerSource)),
 		zap.Int64("duration", input.Duration),
 	)
+	if !allowsLastfmNowPlaying(input.PlayerSource) {
+		log.Info(
+			ctx,
+			"当前来源跳过 Last.fm now playing 上报",
+			zap.String("artist", input.Artist),
+			zap.String("album", input.Album),
+			zap.String("track", input.Track),
+			zap.String("player_source", string(input.PlayerSource)),
+		)
+		return
+	}
 	req := lastfm.TrackUpdateNowPlayingReq{
 		Artist:      input.Artist,
 		AlbumArtist: fallbackAlbumArtist(input.AlbumArtist, input.Artist),
@@ -304,7 +323,7 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		Genre:         input.Metadata.Genre,
 		Duration:      req.Duration,
 		PlayTime:      time.Unix(req.Timestamp, 0),
-		Scrobbled:     true,
+		Scrobbled:     allowsLastfmScrobble(input.PlayerSource),
 		MusicBrainzID: req.MusicBrainzTrackID,
 		TrackNumber:   input.TrackNumber,
 		DiscNumber:    input.DiscNumber,
@@ -315,10 +334,21 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		TraceSampled:  input.TraceSampled,
 	}
 
-	_, err := lastfmPushTrackScrobble(ctx, req)
-	if err != nil {
-		log.Warn(ctx, "HandleTrackPlaybackThreshold PushTrackScrobble err", zap.Error(err))
-		record.Scrobbled = false
+	if allowsLastfmScrobble(input.PlayerSource) {
+		_, err := lastfmPushTrackScrobble(ctx, req)
+		if err != nil {
+			log.Warn(ctx, "HandleTrackPlaybackThreshold PushTrackScrobble err", zap.Error(err))
+			record.Scrobbled = false
+		}
+	} else {
+		log.Info(
+			ctx,
+			"当前来源跳过 Last.fm scrobble 上报",
+			zap.String("artist", input.Artist),
+			zap.String("album", input.Album),
+			zap.String("track", input.Track),
+			zap.String("player_source", string(input.PlayerSource)),
+		)
 	}
 
 	if insertErr := modelInsertTrackPlayRecord(ctx, record); insertErr != nil {
@@ -326,9 +356,17 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 	} else if processErr := modelProcessTrackPlayRecord(ctx, record.ID, input.Metadata); processErr != nil {
 		log.Warn(ctx, "HandleTrackPlaybackThreshold process play record err", zap.Error(processErr))
 	} else {
+		playRecord, err := modelGetTrackPlayRecordByID(ctx, record.ID)
+		if err != nil {
+			log.Warn(ctx, "HandleTrackPlaybackThreshold GetTrackPlayRecord err", zap.Error(err))
+		}
 		// 实时增加流派播放次数，确保未归因数据也能计入统计
-		if strings.TrimSpace(input.Metadata.Genre) != "" {
-			if genreErr := model.IncrementGenrePlayCount(ctx, input.Metadata.Genre); genreErr != nil {
+		_Genre := input.Metadata.Genre
+		if len(_Genre) == 0 {
+			_Genre = playRecord.Genre
+		}
+		if strings.TrimSpace(_Genre) != "" {
+			if genreErr := model.IncrementGenrePlayCount(ctx, _Genre); genreErr != nil {
 				log.Warn(ctx, "HandleTrackPlaybackThreshold increment genre play count err", zap.Error(genreErr))
 			}
 		}
@@ -360,7 +398,9 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 				}
 			}
 
-			if metadataErr := modelUpdateAlbumTitleMetadataByID(ctx, stored.AlbumID, input.AlbumTitleMetadata); metadataErr != nil {
+			if metadataErr := modelUpdateAlbumTitleMetadataByID(
+				ctx, stored.AlbumID, input.AlbumTitleMetadata,
+			); metadataErr != nil {
 				log.Warn(ctx, "HandleTrackPlaybackThreshold update album title metadata err", zap.Error(metadataErr))
 			}
 		}

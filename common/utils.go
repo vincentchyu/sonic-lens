@@ -78,6 +78,8 @@ func GenreCustomFit(genre string) string {
 		return "R&B-Soul"
 	case "Prog-Rock/Art Rock":
 		return "Progressive Rock-Art Rock"
+	case "迷幻":
+		return "迷幻音乐"
 		// todo add
 	}
 	return genre

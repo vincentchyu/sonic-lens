@@ -107,6 +107,13 @@ func (s *stubPlayerInfo) GetBundleID() string                               { re
 func (s *stubPlayerInfo) GetUniqueID() string                               { return "unique" }
 func (s *stubPlayerInfo) GetDiscNumber() int8                               { return s.discNumber }
 
+type foobarStubPlayerInfo struct {
+	stubPlayerInfo
+}
+
+func (s *foobarStubPlayerInfo) GetSource() string   { return string(common.PlayerFoobar2000) }
+func (s *foobarStubPlayerInfo) GetBundleID() string { return "com.foobar2000.mac" }
+
 func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 	corelog.Logger = zap.NewNop()
 
@@ -161,6 +168,62 @@ func TestProcessPlayingTrackDispatchesEvents(t *testing.T) {
 	require.True(t, wsInfo.Data.LastFM)
 	require.Equal(t, common.TrackFavoriteStateFavorited, wsInfo.Data.FavoriteState)
 	require.Equal(t, int64(44100), wsInfo.Data.SampleRate)
+}
+
+func TestProcessPlayingTrackUsesFoobar2000Source(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{
+		thresholdResult: tracklogic.PlaybackThresholdResult{Scrobbled: false},
+	}
+	controller := &stubPlayerController{running: true, state: common.PlayerStatePlaying}
+	checker := NewBasePlayerChecker(controller, common.PlayerFoobar2000, &pushCount, &playing, cache, service)
+
+	info := &foobarStubPlayerInfo{
+		stubPlayerInfo: stubPlayerInfo{
+			title:       "Track",
+			album:       "Album",
+			artist:      "Artist",
+			position:    70,
+			duration:    100,
+			sampleRate:  44100,
+			trackNumber: 3,
+			discNumber:  1,
+		},
+	}
+
+	checker.processPlayingTrack(context.Background(), info)
+
+	require.Equal(t, common.PlayerFoobar2000, service.lastNowPlaying.PlayerSource)
+	require.Equal(t, common.PlayerFoobar2000, service.lastThreshold.PlayerSource)
+
+	cachedValue, ok := cache.Load(common.PlayerFoobar2000)
+	require.True(t, ok)
+	wsInfo := cachedValue.(*websocket.WsInfo)
+	require.Equal(t, "Foobar2000", wsInfo.Source)
+}
+
+func TestHandleStopEventSkipsBroadcastWhenFoobar2000StillPlaying(t *testing.T) {
+	corelog.Logger = zap.NewNop()
+
+	pushCount := atomic.Uint32{}
+	playing := atomic.Bool{}
+	cache := &sync.Map{}
+	service := &stubTrackService{}
+	controller := &stubPlayerController{}
+	checker := NewBasePlayerChecker(controller, common.PlayerAppleMusic, &pushCount, &playing, cache, service)
+	checker.currentTrackSpanKey = "Track"
+	checker.currentTrack = "Track"
+	cache.Store(common.PlayerAppleMusic, &websocket.WsInfo{Source: string(common.PlayerAppleMusic)})
+	cache.Store(common.PlayerFoobar2000, &websocket.WsInfo{Source: string(common.PlayerFoobar2000)})
+	playing.Store(true)
+
+	checker.handleStopEvent(context.Background())
+
+	require.True(t, playing.Load())
 }
 
 func TestProcessPlayingTrackReusesArtworkForSameTrack(t *testing.T) {

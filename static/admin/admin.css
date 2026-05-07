@@ -14,6 +14,8 @@
             --source-applemusic: #f43f5e;
             --source-audirvana: #a855f7;
             --source-roon: #64748b;
+            --source-foobar2000: #f59e0b;
+            --source-netease: #10b981;
             --queue-surface: rgba(255, 255, 255, 0.7);
             --queue-subtle-surface: rgba(255, 255, 255, 0.5);
             --queue-strong-border: rgba(148, 163, 184, 0.24);
@@ -110,6 +112,8 @@
             --source-applemusic: #ff6b6b;
             --source-audirvana: #c084fc;
             --source-roon: #94a3b8;
+            --source-foobar2000: #fbbf24;
+            --source-netease: #34d399;
             --queue-surface: rgba(15, 19, 28, 0.82);
             --queue-subtle-surface: rgba(15, 19, 28, 0.58);
             --queue-strong-border: rgba(148, 163, 184, 0.18);
@@ -2178,6 +2182,16 @@
         .source-roon {
             color: var(--source-roon);
             background-color: rgba(127, 140, 141, 0.1);
+        }
+
+        .source-foobar2000 {
+            color: var(--source-foobar2000);
+            background-color: rgba(245, 158, 11, 0.12);
+        }
+
+        .source-netease {
+            color: var(--source-netease);
+            background-color: rgba(16, 185, 129, 0.12);
         }
 
         /* 模块及弹窗轨迹背景 */

@@ -14,7 +14,6 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/audirvana"
 	"github.com/vincentchyu/sonic-lens/core/exec"
 	"github.com/vincentchyu/sonic-lens/core/log"
-	"github.com/vincentchyu/sonic-lens/internal/cache"
 )
 
 // AudirvanaTrackInfoWrapper 包装 Audirvana TrackInfo 以实现 common.PlayerInfoHandler 接口
@@ -107,7 +106,7 @@ func (a *AudirvanaTrackInfoWrapper) GetTrackNumber() int64 {
 func (a *AudirvanaTrackInfoWrapper) GetGenre() string {
 	// Audirvana没有直接提供流派信息
 	if metadata := a.metadataHandle(); metadata != nil {
-		return cache.GetEnglishGenre(common.GenreCustomFit(metadata.GetGenre()))
+		return a.baseWrapper.GetGenre(metadata.GetGenre())
 	}
 	return ""
 }

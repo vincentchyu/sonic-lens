@@ -5,8 +5,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.uber.org/zap"
+
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
+	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 	"github.com/vincentchyu/sonic-lens/internal/logic/track"
@@ -24,6 +27,8 @@ var (
 
 	// 播放器检查器实例
 	audirvanaChecker  *BasePlayerChecker
+	foobar2000Checker *BasePlayerChecker
+	netEaseChecker    *BasePlayerChecker
 	roonChecker       *BasePlayerChecker
 	appleMusicChecker *BasePlayerChecker
 
@@ -56,8 +61,26 @@ func Init(
 				newTrackService,
 			)
 
+			foobar2000Checker = NewBasePlayerChecker(
+				NewFoobar2000PlayerController(),
+				common.PlayerFoobar2000,
+				&pushCount,
+				&atomicPlaying,
+				&currentPlayingCache,
+				newTrackService,
+			)
+
+			netEaseChecker = NewBasePlayerChecker(
+				NewNetEasePlayerController(),
+				common.PlayerNetEase,
+				&pushCount,
+				&atomicPlaying,
+				&currentPlayingCache,
+				newTrackService,
+			)
+
 			roonChecker = NewBasePlayerChecker(
-				&RoonPlayerController{},
+				NewRoonPlayerController(),
 				common.PlayerRoon,
 				&pushCount,
 				&atomicPlaying,
@@ -75,12 +98,15 @@ func Init(
 			)
 			playerCheckers = map[common.PlayerType]common.PlayerChecker{
 				common.PlayerAudirvana:  audirvanaChecker,
+				common.PlayerFoobar2000: foobar2000Checker,
+				common.PlayerNetEase:    netEaseChecker,
 				common.PlayerRoon:       roonChecker,
 				common.PlayerAppleMusic: appleMusicChecker,
 			}
 
 			// 初始化检查器
 			var playerTypes []common.PlayerType
+			log.Info(ctx, "init player checker", zap.Any("scrobblers", scrobblers))
 			for _, player := range scrobblers {
 				playerTypes = append(playerTypes, common.PlayerType(player))
 			}

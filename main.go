@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os/signal"
 	"syscall"
 
@@ -31,6 +33,7 @@ var (
 )
 
 func main() {
+	initPprof()
 	rootCmd := NewCommand("sonic-lens", "", "")
 	// command.SetHelpTemplate("使用-c 设置配置文件路径\n使用-m 设置true/false")
 	rootCmd.Version = "1.0.0"
@@ -165,4 +168,23 @@ func scrobblerRun(c <-chan struct{}) error {
 
 	// musixmatch.InitMxmClient(config.ConfigObj.Musixmatch.ApiKey)
 	return nil
+}
+
+func initPprof() {
+	go func() {
+		err := http.ListenAndServe("127.0.0.1:6060", nil)
+		if err != nil {
+			panic(err)
+		}
+	}()
+}
+
+func init() {
+	http.DefaultTransport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+	}
+
+	http.DefaultClient = &http.Client{
+		Transport: http.DefaultTransport,
+	}
 }

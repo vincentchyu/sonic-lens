@@ -466,33 +466,19 @@ function connectWebSocket() {
 
         // 根据来源更新信息
         let sourceClass = "";
-        let sourceText = "";
+        let sourceText = source || "";
         syncNowPlayingArtwork();
 
-        if (source === "Audirvana") {
-            document.getElementById("trackTitle").textContent = " " + data.title;
-            document.getElementById("trackAlbum").textContent =
-                "《 " + data.album + "》";
-            document.getElementById("trackArtist").textContent =
-                " - " + data.artist;
-            sourceClass = "source-audirvana";
-            sourceText = "Audirvana";
-        } else if (source === "Roon") {
-            document.getElementById("trackTitle").textContent = " " + data.title;
-            document.getElementById("trackAlbum").textContent =
-                "《 " + data.album + " 》";
-            document.getElementById("trackArtist").textContent =
-                " - " + data.artist;
-            sourceClass = "source-roon";
-            sourceText = "Roon";
-        } else if (source === "Apple Music") {
-            document.getElementById("trackTitle").textContent = " " + data.title;
-            document.getElementById("trackAlbum").textContent =
-                "《 " + data.album + " 》";
-            document.getElementById("trackArtist").textContent =
-                " - " + data.artist;
-            sourceClass = "source-applemusic";
-            sourceText = "AppleMusic";
+        document.getElementById("trackTitle").textContent = " " + data.title;
+        document.getElementById("trackAlbum").textContent =
+            "《 " + data.album + " 》";
+        document.getElementById("trackArtist").textContent =
+            " - " + data.artist;
+
+        if (typeof getSourceBadgeInfo === "function") {
+            const sourceBadge = getSourceBadgeInfo(source);
+            sourceClass = sourceBadge.sourceClass;
+            sourceText = sourceBadge.sourceText;
         }
 
         // 更新播放渠道显示样式

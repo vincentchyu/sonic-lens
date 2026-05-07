@@ -122,6 +122,8 @@ type PlayerType string
 
 const (
 	PlayerAudirvana  PlayerType = "Audirvana"
+	PlayerFoobar2000 PlayerType = "Foobar2000"
+	PlayerNetEase    PlayerType = "NetEase Music"
 	PlayerRoon       PlayerType = "Roon"
 	PlayerAppleMusic PlayerType = "Apple Music"
 )

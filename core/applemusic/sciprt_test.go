@@ -3,6 +3,8 @@ package applemusic
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -124,4 +126,24 @@ func TestSetFavorited(t *testing.T) {
 		err := SetFavorite(ctx, true)
 		_ = err
 	}
+}
+
+func TestName(t *testing.T) {
+	newRequest, err := http.NewRequest("GET", "https://www.google.com", nil)
+	assert.NoError(t, err)
+	environment, err := http.ProxyFromEnvironment(newRequest)
+	assert.NoError(t, err)
+	fmt.Println(environment)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		},
+	}
+	resp, err := client.Get("google.com")
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
 }

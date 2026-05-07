@@ -9,7 +9,7 @@ import (
 )
 
 func TestLrcAPIProvider_GetLyrics(t *testing.T) {
-	provider := NewLrcAPIProvider("http://127.0.0.1:28883/api/v1/lyrics/single", "todo")
+	provider := NewLrcAPIProvider("http://127.0.0.1:28884/api/v1/lyrics/single", "todo")
 	ctx := context.Background()
 
 	// 使用一首著名的歌曲进行测试

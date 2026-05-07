@@ -10,7 +10,6 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/applemusic"
 	"github.com/vincentchyu/sonic-lens/core/exec"
 	"github.com/vincentchyu/sonic-lens/core/log"
-	"github.com/vincentchyu/sonic-lens/internal/cache"
 )
 
 // AppleMusicTrackInfoWrapper 包装 AppleMusic TrackInfo 以实现 PlayerInfoHandler 接口
@@ -33,8 +32,7 @@ func (a *AppleMusicTrackInfoWrapper) GetAlbumSubtitle() string {
 	return a.baseWrapper.ConversionSimplified(subtitle)
 }
 func (a *AppleMusicTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMetadata {
-	titleMetadata := common.ParseAlbumTitleMetadata(a.Album)
-	return &titleMetadata
+	return new(common.ParseAlbumTitleMetadata(a.Album))
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetArtist() string {
@@ -72,7 +70,7 @@ func (a *AppleMusicTrackInfoWrapper) GetTrackNumber() int64 {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetGenre() string {
-	return cache.GetEnglishGenre(common.GenreCustomFit(a.Genre))
+	return a.baseWrapper.GetGenre(a.Genre)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetComposer() string {

@@ -361,7 +361,8 @@ func extractReleaseGenres(release musicbrainzws2.Release) string {
 		name := common.CapitalizeWords(genre.Name)
 		genres = append(genres, name)
 	}
-	return strings.Join(genres, ",")
+	// 只去取一个
+	return genres[0]
 }
 
 func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(

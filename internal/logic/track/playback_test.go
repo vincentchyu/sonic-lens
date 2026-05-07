@@ -42,6 +42,30 @@ func TestHandleNowPlayingStarted(t *testing.T) {
 	require.Equal(t, int64(321), captured.Duration)
 }
 
+func TestHandleNowPlayingStartedSkipsLastfmForFoobar2000(t *testing.T) {
+	originalTrackUpdate := lastfmTrackUpdateNowPlaying
+	t.Cleanup(func() {
+		lastfmTrackUpdateNowPlaying = originalTrackUpdate
+	})
+
+	called := false
+	lastfmTrackUpdateNowPlaying = func(ctx context.Context, req *lastfm.TrackUpdateNowPlayingReq) error {
+		called = true
+		return nil
+	}
+
+	service := &TrackServiceImpl{}
+	service.HandleNowPlayingStarted(context.Background(), PlaybackEventInput{
+		Artist:       "Artist",
+		Album:        "Album",
+		Track:        "Track",
+		Duration:     321,
+		PlayerSource: common.PlayerFoobar2000,
+	})
+
+	require.False(t, called)
+}
+
 func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	originalPush := lastfmPushTrackScrobble
 	originalInsert := modelInsertTrackPlayRecord
@@ -146,6 +170,76 @@ func TestHandleTrackPlaybackThresholdProcessesRecord(t *testing.T) {
 	require.True(t, recentPlaysUpdated)
 }
 
+func TestHandleTrackPlaybackThresholdSkipsLastfmForFoobar2000ButStillPersistsRecord(t *testing.T) {
+	originalPush := lastfmPushTrackScrobble
+	originalInsert := modelInsertTrackPlayRecord
+	originalProcess := modelProcessTrackPlayRecord
+	originalGoSafe := telemetryGoOnlySafe
+	originalBroadcastRecentPlaysUpdated := websocketBroadcastRecentPlaysUpdated
+	originalGetTrackPlayRecordByID := modelGetTrackPlayRecordByID
+	t.Cleanup(func() {
+		lastfmPushTrackScrobble = originalPush
+		modelInsertTrackPlayRecord = originalInsert
+		modelProcessTrackPlayRecord = originalProcess
+		telemetryGoOnlySafe = originalGoSafe
+		websocketBroadcastRecentPlaysUpdated = originalBroadcastRecentPlaysUpdated
+		modelGetTrackPlayRecordByID = originalGetTrackPlayRecordByID
+	})
+
+	lastfmCalled := false
+	lastfmPushTrackScrobble = func(ctx context.Context, req *lastfm.PushTrackScrobbleReq) (string, error) {
+		lastfmCalled = true
+		return "ok", nil
+	}
+
+	insertCalled := false
+	processCalled := false
+	var insertedRecord model.TrackPlayRecord
+	modelInsertTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord) error {
+		insertCalled = true
+		insertedRecord = *record
+		record.ID = 77
+		return nil
+	}
+	modelProcessTrackPlayRecord = func(ctx context.Context, recordID int64, metadata model.TrackMetadata) error {
+		processCalled = true
+		require.Equal(t, int64(77), recordID)
+		return nil
+	}
+	telemetryGoOnlySafe = func(ctx context.Context, fn func(context.Context)) {
+		fn(ctx)
+	}
+	websocketBroadcastRecentPlaysUpdated = func(ctx context.Context) {}
+	modelGetTrackPlayRecordByID = func(ctx context.Context, id int64) (*model.TrackPlayRecord, error) {
+		return &model.TrackPlayRecord{ID: id}, nil
+	}
+
+	service := &TrackServiceImpl{}
+	result := service.HandleTrackPlaybackThreshold(context.Background(), PlaybackEventInput{
+		Artist:            "Artist",
+		AlbumArtist:       "Album Artist",
+		Album:             "Album",
+		Track:             "Track",
+		TrackNumber:       2,
+		DiscNumber:        1,
+		Duration:          245,
+		MusicBrainzID:     "mbid",
+		PlayerSource:      common.PlayerFoobar2000,
+		PlaybackStartedAt: time.Unix(1700000000, 0),
+		Metadata: model.TrackMetadata{
+			TrackNumber: 2,
+			DiscNumber:  1,
+		},
+	})
+
+	require.False(t, lastfmCalled)
+	require.True(t, insertCalled)
+	require.True(t, processCalled)
+	require.False(t, result.Scrobbled)
+	require.False(t, insertedRecord.Scrobbled)
+	require.Equal(t, "Foobar2000", insertedRecord.Source)
+}
+
 func TestHandleTrackPlaybackThresholdUpdatesAlbumTitleMetadata(t *testing.T) {
 	originalPush := lastfmPushTrackScrobble
 	originalInsert := modelInsertTrackPlayRecord
@@ -230,6 +324,7 @@ func TestHandleTrackPlaybackThresholdUpdatesAlbumTitleMetadata(t *testing.T) {
 
 func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
+	originalGetTrackWithSubtitle := modelGetTrackByIdentityWithSubtitle
 	originalIsFavorite := lastfmIsFavorite
 	originalAppleSet := appleMusicSetFavorite
 	originalModelAppleSet := modelSetAppleMusicFavorite
@@ -240,6 +335,7 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
+		modelGetTrackByIdentityWithSubtitle = originalGetTrackWithSubtitle
 		lastfmIsFavorite = originalIsFavorite
 		appleMusicSetFavorite = originalAppleSet
 		modelSetAppleMusicFavorite = originalModelAppleSet
@@ -256,6 +352,20 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 		return &model.Track{
 			Artist:          artist,
 			Album:           album,
+			Track:           track,
+			TrackNumber:     trackNumber,
+			DiscNumber:      discNumber,
+			IsAppleMusicFav: appleApplied,
+			IsLastFmFav:     lastApplied,
+		}, nil
+	}
+	modelGetTrackByIdentityWithSubtitle = func(
+		ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+	) (*model.Track, error) {
+		return &model.Track{
+			Artist:          artist,
+			Album:           album,
+			AlbumSubtitle:   albumSubtitle,
 			Track:           track,
 			TrackNumber:     trackNumber,
 			DiscNumber:      discNumber,
@@ -324,15 +434,22 @@ func TestProbeAndSyncTrackFavoriteAppliesAppleMusicFavorite(t *testing.T) {
 
 func TestProbeAndSyncTrackFavoriteSkipsUnsafeLookup(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
+	originalGetTrackWithSubtitle := modelGetTrackByIdentityWithSubtitle
 	originalIsFavorite := lastfmIsFavorite
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
+		modelGetTrackByIdentityWithSubtitle = originalGetTrackWithSubtitle
 		lastfmIsFavorite = originalIsFavorite
 		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 	})
 
 	modelGetTrackByIdentity = func(ctx context.Context, artist, album, track string, trackNumber, discNumber int8) (*model.Track, error) {
+		return nil, errors.New("should not be called")
+	}
+	modelGetTrackByIdentityWithSubtitle = func(
+		ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+	) (*model.Track, error) {
 		return nil, errors.New("should not be called")
 	}
 	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
@@ -358,12 +475,14 @@ func TestProbeAndSyncTrackFavoriteSkipsUnsafeLookup(t *testing.T) {
 
 func TestProbeAndSyncTrackFavoriteReusesProjectionCacheWhenProbeUnchanged(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
+	originalGetTrackWithSubtitle := modelGetTrackByIdentityWithSubtitle
 	originalIsFavorite := lastfmIsFavorite
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	originalVersion := favoriteProjectionVersion.Load()
 	favoriteProjectionVersion.Store(0)
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
+		modelGetTrackByIdentityWithSubtitle = originalGetTrackWithSubtitle
 		lastfmIsFavorite = originalIsFavorite
 		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 		favoriteProjectionVersion.Store(originalVersion)
@@ -379,6 +498,19 @@ func TestProbeAndSyncTrackFavoriteReusesProjectionCacheWhenProbeUnchanged(t *tes
 			Track:       track,
 			TrackNumber: trackNumber,
 			DiscNumber:  discNumber,
+		}, nil
+	}
+	modelGetTrackByIdentityWithSubtitle = func(
+		ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+	) (*model.Track, error) {
+		trackLookups++
+		return &model.Track{
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
 		}, nil
 	}
 	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
@@ -418,12 +550,14 @@ func TestProbeAndSyncTrackFavoriteReusesProjectionCacheWhenProbeUnchanged(t *tes
 
 func TestProbeAndSyncTrackFavoriteInvalidatesProjectionCacheOnVersionChange(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
+	originalGetTrackWithSubtitle := modelGetTrackByIdentityWithSubtitle
 	originalIsFavorite := lastfmIsFavorite
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	originalVersion := favoriteProjectionVersion.Load()
 	favoriteProjectionVersion.Store(0)
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
+		modelGetTrackByIdentityWithSubtitle = originalGetTrackWithSubtitle
 		lastfmIsFavorite = originalIsFavorite
 		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 		favoriteProjectionVersion.Store(originalVersion)
@@ -439,6 +573,19 @@ func TestProbeAndSyncTrackFavoriteInvalidatesProjectionCacheOnVersionChange(t *t
 			Track:       track,
 			TrackNumber: trackNumber,
 			DiscNumber:  discNumber,
+		}, nil
+	}
+	modelGetTrackByIdentityWithSubtitle = func(
+		ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+	) (*model.Track, error) {
+		trackLookups++
+		return &model.Track{
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
 		}, nil
 	}
 	lastfmIsFavorite = func(ctx context.Context, artist, track string) (bool, error) {
@@ -478,6 +625,7 @@ func TestProbeAndSyncTrackFavoriteInvalidatesProjectionCacheOnVersionChange(t *t
 
 func TestProbeAndSyncTrackFavoriteUsesLastfmHotCacheAndBackoff(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
+	originalGetTrackWithSubtitle := modelGetTrackByIdentityWithSubtitle
 	originalIsFavorite := lastfmIsFavorite
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	originalNow := timeNow
@@ -487,6 +635,7 @@ func TestProbeAndSyncTrackFavoriteUsesLastfmHotCacheAndBackoff(t *testing.T) {
 	timeNow = func() time.Time { return now }
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
+		modelGetTrackByIdentityWithSubtitle = originalGetTrackWithSubtitle
 		lastfmIsFavorite = originalIsFavorite
 		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 		timeNow = originalNow
@@ -500,6 +649,18 @@ func TestProbeAndSyncTrackFavoriteUsesLastfmHotCacheAndBackoff(t *testing.T) {
 			Track:       track,
 			TrackNumber: trackNumber,
 			DiscNumber:  discNumber,
+		}, nil
+	}
+	modelGetTrackByIdentityWithSubtitle = func(
+		ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+	) (*model.Track, error) {
+		return &model.Track{
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
 		}, nil
 	}
 	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {
@@ -550,6 +711,7 @@ func TestProbeAndSyncTrackFavoriteUsesLastfmHotCacheAndBackoff(t *testing.T) {
 
 func TestProbeAndSyncTrackFavoriteInvalidatesLastfmHotCacheOnVersionChange(t *testing.T) {
 	originalGetTrack := modelGetTrackByIdentity
+	originalGetTrackWithSubtitle := modelGetTrackByIdentityWithSubtitle
 	originalIsFavorite := lastfmIsFavorite
 	originalGetPending := modelGetPendingTrackFavoriteSnapshot
 	originalNow := timeNow
@@ -559,6 +721,7 @@ func TestProbeAndSyncTrackFavoriteInvalidatesLastfmHotCacheOnVersionChange(t *te
 	timeNow = func() time.Time { return now }
 	t.Cleanup(func() {
 		modelGetTrackByIdentity = originalGetTrack
+		modelGetTrackByIdentityWithSubtitle = originalGetTrackWithSubtitle
 		lastfmIsFavorite = originalIsFavorite
 		modelGetPendingTrackFavoriteSnapshot = originalGetPending
 		timeNow = originalNow
@@ -572,6 +735,18 @@ func TestProbeAndSyncTrackFavoriteInvalidatesLastfmHotCacheOnVersionChange(t *te
 			Track:       track,
 			TrackNumber: trackNumber,
 			DiscNumber:  discNumber,
+		}, nil
+	}
+	modelGetTrackByIdentityWithSubtitle = func(
+		ctx context.Context, artist, album, albumSubtitle, track string, trackNumber, discNumber int8,
+	) (*model.Track, error) {
+		return &model.Track{
+			Artist:        artist,
+			Album:         album,
+			AlbumSubtitle: albumSubtitle,
+			Track:         track,
+			TrackNumber:   trackNumber,
+			DiscNumber:    discNumber,
 		}, nil
 	}
 	modelGetPendingTrackFavoriteSnapshot = func(ctx context.Context, identity model.TrackIdentity) (*model.TrackFavoritePendingSnapshot, error) {

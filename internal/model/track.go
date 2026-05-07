@@ -772,7 +772,7 @@ func applyPlayToLibraryTx(tx *gorm.DB, params IncrementTrackPlayCountParams) err
 }
 
 func applyTrackPlayMutationTx(tx *gorm.DB, params IncrementTrackPlayCountParams) (bool, error) {
-	// common.TrackMetadataConfidenceHigh 不会来这里
+	// common.TrackMetadataConfidenceHigh 不会来这里(也就是播放源的数据不足以全部信任)
 	if !metadataAllowsLibraryMutation(params.TrackMetadata) {
 		if historicalTrack, _, err := findLatestResolvedTrackByIdentityAndSourceTx(
 			tx,
@@ -815,7 +815,7 @@ func applyTrackPlayMutationTx(tx *gorm.DB, params IncrementTrackPlayCountParams)
 		}
 		return true, nil
 	}
-	// todo 这里是被认证过的
+	// 这里是被认证过的（audir或者已经在Apple Music 下载过的数据）
 	if err := applyPlayToLibraryTx(tx, params); err != nil {
 		return false, err
 	}
@@ -980,7 +980,8 @@ func SetAppleMusicFavorite(params SetFavoriteParams) error {
 			}
 
 			if trackID, confidence, err := FindLatestResolvedTrackIDByIdentityTx(
-				tx, params.Artist, params.Album, params.TrackMetadata.AlbumSubtitle, params.Track, params.TrackMetadata.TrackNumber,
+				tx, params.Artist, params.Album, params.TrackMetadata.AlbumSubtitle, params.Track,
+				params.TrackMetadata.TrackNumber,
 				params.TrackMetadata.DiscNumber,
 			); err == nil {
 				if err := setAppleMusicFavoriteByTrackIDTx(tx, trackID, params.IsFavorite); err != nil {
@@ -1063,7 +1064,8 @@ func SetLastFmFavorite(params SetFavoriteParams) error {
 			}
 
 			if trackID, confidence, err := FindLatestResolvedTrackIDByIdentityTx(
-				tx, params.Artist, params.Album, params.TrackMetadata.AlbumSubtitle, params.Track, params.TrackMetadata.TrackNumber,
+				tx, params.Artist, params.Album, params.TrackMetadata.AlbumSubtitle, params.Track,
+				params.TrackMetadata.TrackNumber,
 				params.TrackMetadata.DiscNumber,
 			); err == nil {
 				if err := setLastFmFavoriteByTrackIDTx(tx, trackID, params.IsFavorite); err != nil {

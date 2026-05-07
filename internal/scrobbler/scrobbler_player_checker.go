@@ -72,7 +72,7 @@ func (b *BasePlayerChecker) buildTrackMetadata(playerInfo common.PlayerInfoHandl
 	switch b.source {
 	case common.PlayerAudirvana:
 		metadata.Confidence = common.TrackMetadataConfidenceHigh
-	case common.PlayerRoon:
+	case common.PlayerRoon, common.PlayerFoobar2000, common.PlayerNetEase:
 		metadata.Confidence = common.TrackMetadataConfidenceLow
 	case common.PlayerAppleMusic:
 		metadata.Confidence = b.appleMusicMetadataConfidence(playerInfo)
@@ -209,6 +209,8 @@ func (b *BasePlayerChecker) handleStopEvent(ctx context.Context) {
 
 	// 检查是否还有其他播放器在播放
 	_, audirvanaPlaying := b.currentPlayingCache.Load(common.PlayerAudirvana)
+	_, foobarPlaying := b.currentPlayingCache.Load(common.PlayerFoobar2000)
+	_, netEasePlaying := b.currentPlayingCache.Load(common.PlayerNetEase)
 	_, roonPlaying := b.currentPlayingCache.Load(common.PlayerRoon)
 	_, appleMusicPlaying := b.currentPlayingCache.Load(common.PlayerAppleMusic)
 
@@ -216,11 +218,15 @@ func (b *BasePlayerChecker) handleStopEvent(ctx context.Context) {
 	shouldStop := false
 	switch b.source {
 	case common.PlayerAudirvana:
-		shouldStop = !roonPlaying && !appleMusicPlaying
+		shouldStop = !foobarPlaying && !netEasePlaying && !roonPlaying && !appleMusicPlaying
+	case common.PlayerFoobar2000:
+		shouldStop = !audirvanaPlaying && !netEasePlaying && !roonPlaying && !appleMusicPlaying
+	case common.PlayerNetEase:
+		shouldStop = !audirvanaPlaying && !foobarPlaying && !roonPlaying && !appleMusicPlaying
 	case common.PlayerRoon:
-		shouldStop = !audirvanaPlaying && !appleMusicPlaying
+		shouldStop = !audirvanaPlaying && !foobarPlaying && !netEasePlaying && !appleMusicPlaying
 	case common.PlayerAppleMusic:
-		shouldStop = !audirvanaPlaying && !roonPlaying
+		shouldStop = !audirvanaPlaying && !foobarPlaying && !netEasePlaying && !roonPlaying
 	}
 
 	if shouldStop {

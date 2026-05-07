@@ -565,6 +565,7 @@ func ProcessTrackPlayRecord(ctx context.Context, recordID int64, metadata TrackM
 				return err
 			}
 			// 检查流水的情况 有没有条件 对track 更新？
+
 			applied, err := applyTrackPlayMutationTx(
 				tx, buildIncrementTrackPlayCountParamsFromRecord(ctx, record, metadata),
 			)

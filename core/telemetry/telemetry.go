@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -112,11 +111,11 @@ func initTelemetry(cfg config.TelemetryConfig) error {
 			),
 		)
 	}
-	meterProvider = sdkmetric.NewMeterProvider(meterProviderOptions...)
+	// meterProvider = sdkmetric.NewMeterProvider(meterProviderOptions...)
 
 	// Set the global providers.
 	otel.SetTracerProvider(tracerProvider)
-	otel.SetMeterProvider(meterProvider)
+	// otel.SetMeterProvider(meterProvider)
 
 	// Set the global propagator for trace context
 	otel.SetTextMapPropagator(
@@ -126,11 +125,11 @@ func initTelemetry(cfg config.TelemetryConfig) error {
 		),
 	)
 
-	if cfg.RuntimeMetricsEnabled {
+	/*if cfg.RuntimeMetricsEnabled {
 		if err := runtime.Start(runtime.WithMeterProvider(meterProvider)); err != nil {
 			return fmt.Errorf("failed to start runtime metrics: %w", err)
 		}
-	}
+	}*/
 
 	// Use the existing zap logger
 	otelLogger = zap.L()

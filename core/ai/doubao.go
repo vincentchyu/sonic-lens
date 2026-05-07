@@ -30,8 +30,14 @@ import (
 // DoubaoProvider 使用本地 Doubao 服务实现 LLMProvider
 type DoubaoProvider struct {
 	BaseProvider
-	host   string
-	model  string
+	host  string
+	model string
+
+	temperature       float32
+	topP              float32
+	topK              float32
+	repetitionPenalty float32
+
 	client *arkruntime.Client
 }
 
@@ -111,6 +117,53 @@ func (f *doubaoProviderFactory) Create(model string) (LLMProvider, error) {
 		host:   f.runtimeBaseURL,
 		model:  modelName,
 		client: f.runtimeClient,
+		/*
+			用于 JSON 输出：
+			* 0.0 = 最稳定（强推荐）
+			* 0.1 = 工程常用
+			* 0.2 = 还能接受
+			* 0.3 = 已经开始偶尔漂
+		*/
+		temperature: 0.1,
+		/*
+			场景
+			推荐 topP
+			JSON / function calling
+			1.0（或 0.9~1.0）
+			一般文本生成
+			0.7~0.9
+			创意写作
+			0.9~1.0
+		*/
+		topP: 1.0,
+		/*
+			topK 太小：
+			* 限制 token 候选
+			* JSON 符号（{ } : , “）可能被“挤掉”
+			* 结构完整性下降
+			场景
+			topK
+			JSON / API 输出
+			0（关闭）或 50~100
+			普通生成
+			20~50
+			创意
+			50~200
+		*/
+		topK: 0,
+		/*
+			在 JSON 场景：
+			* penalty > 1.0 可能：
+			    * 抑制重复 key pattern
+			    * 导致字段缺失（严重问题）
+			场景
+			值
+			JSON 输出
+			1.0（推荐）
+			普通文本
+			1.0 ~ 1.1
+		*/
+		repetitionPenalty: 1.0,
 	}, nil
 }
 
@@ -355,6 +408,10 @@ func (p *DoubaoProvider) AnalyzeTrack(
 		Thinking: &model.Thinking{
 			Type: model.ThinkingTypeEnabled,
 		},
+		Temperature: &p.temperature,
+		TopP:        &p.topP,
+		// p.topK,
+		RepetitionPenalty: &p.repetitionPenalty,
 		/*ResponseFormat: &model.ResponseFormat{
 			Type: model.ResponseFormatJsonObject,
 			JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{

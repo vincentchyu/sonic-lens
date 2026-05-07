@@ -344,6 +344,12 @@ struct HomeHotModulePresentation: Equatable {
         if lowered.contains("audirvana") {
             return "Audirvana"
         }
+        if lowered.contains("foobar") {
+            return "Foobar2000"
+        }
+        if lowered.contains("netease") || lowered.contains("163music") || lowered == "163" {
+            return "NetEase Music"
+        }
         if lowered.contains("spotify") {
             return "Spotify"
         }
@@ -360,6 +366,10 @@ struct HomeHotModulePresentation: Equatable {
             return "dot.radiowaves.left.and.right"
         case "Audirvana":
             return "hifispeaker.fill"
+        case "Foobar2000":
+            return "waveform"
+        case "NetEase Music":
+            return "music.note.list"
         case "Spotify":
             return "headphones"
         default:

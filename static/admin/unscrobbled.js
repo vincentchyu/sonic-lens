@@ -74,23 +74,13 @@ function loadUnscrobbledRecords() {
             // 根据来源设置样式
             let sourceClass = "";
             let sourceText = "";
-            switch ((record.source || "").toLowerCase()) {
-                case "apple music":
-                    sourceClass = "source-applemusic";
-                    sourceText = "AppleMusic";
-                    break;
-                case "audirvana":
-                case "au":
-                    sourceClass = "source-audirvana";
-                    sourceText = "Audirvana";
-                    break;
-                case "roon":
-                    sourceClass = "source-roon";
-                    sourceText = "Roon";
-                    break;
-                default:
-                    sourceClass = "";
-                    sourceText = record.source || "Unknown";
+            if (typeof getSourceBadgeInfo === "function") {
+                const sourceBadge = getSourceBadgeInfo(record.source);
+                sourceClass = sourceBadge.sourceClass;
+                sourceText = sourceBadge.sourceText;
+            } else {
+                sourceClass = "";
+                sourceText = record.source || "Unknown";
             }
 
             html += `<tr style="border-bottom: 1px solid ${rowBorderColor};">`;

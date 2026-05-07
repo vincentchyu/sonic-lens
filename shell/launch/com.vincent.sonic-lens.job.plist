@@ -18,6 +18,17 @@
 		<string>-c</string>
 		<string>./config/config_local.yaml</string>
 	</array>
+	<key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HTTP_PROXY</key>
+        <string>http://127.0.0.1:7897</string>
+        <key>HTTPS_PROXY</key>
+        <string>http://127.0.0.1:7897</string>
+        <key>NO_PROXY</key>
+        <string>localhost,127.0.0.1</string>
+    </dict>
     <key>WorkingDirectory</key>
     <string>/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/</string>
     <!-- 在登录时自动启动 -->

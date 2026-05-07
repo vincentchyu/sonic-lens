@@ -337,7 +337,7 @@
 		2C8FCD2E9C10D53C4EDAAA98 /* HomeHotModulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHotModulesView.swift; sourceTree = "<group>"; };
 		2DD14F0272E0A0C7B67F5E29 /* TrackDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackDetailViewModel.swift; sourceTree = "<group>"; };
 		339F1CB6F00D6A9422DFCA42 /* FavoriteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteModels.swift; sourceTree = "<group>"; };
-		34CB3297A168BF756E621733 /* SoniclensBridgePad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SoniclensBridgePad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		34CB3297A168BF756E621733 /* SoniclensBridgePad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoniclensBridgePad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		355D2E3B62DEF1C97D5FC2EC /* FavoriteActionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteActionStore.swift; sourceTree = "<group>"; };
 		370E98A0D2B7E7BBC0BAC720 /* PhoneAppLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAppLayoutView.swift; sourceTree = "<group>"; };
 		38AFE3DB1739AAF314F56DAC /* LibrarySyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncService.swift; sourceTree = "<group>"; };
@@ -801,14 +801,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-					6F6CD237FCCBDC9208E246C4 = {
-						DevelopmentTeam = "";
-					};
-					F3B9AB24FBEC93F1A4059079 = {
-						DevelopmentTeam = "";
-					};
-				};
 			};
 			buildConfigurationList = 6BD8AEB5B6C4295A3A170874 /* Build configuration list for PBXProject "SoniclensBridge" */;
 			developmentRegion = en;
@@ -1202,6 +1194,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = SoniclensBridge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1240,6 +1233,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = SoniclensBridge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1278,7 +1272,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = "SoniclensBridge/Info-macOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1286,6 +1284,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.mac";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -1314,7 +1313,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = "SoniclensBridge/Info-macOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1322,6 +1325,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.mac";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 			};
 			name = Debug;

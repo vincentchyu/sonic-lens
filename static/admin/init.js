@@ -726,23 +726,13 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
 
             let sourceClass = "";
             let sourceText = "";
-            switch ((track.source || "").toLowerCase()) {
-                case "apple music":
-                    sourceClass = "source-applemusic";
-                    sourceText = "AppleMusic";
-                    break;
-                case "audirvana":
-                case "au":
-                    sourceClass = "source-audirvana";
-                    sourceText = "Audirvana";
-                    break;
-                case "roon":
-                    sourceClass = "source-roon";
-                    sourceText = "Roon";
-                    break;
-                default:
-                    sourceClass = "";
-                    sourceText = track.source || "Unknown";
+            if (typeof getSourceBadgeInfo === "function") {
+                const sourceBadge = getSourceBadgeInfo(track.source);
+                sourceClass = sourceBadge.sourceClass;
+                sourceText = sourceBadge.sourceText;
+            } else {
+                sourceClass = "";
+                sourceText = track.source || "Unknown";
             }
 
             bodyContent.innerHTML = `

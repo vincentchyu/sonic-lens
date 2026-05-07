@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -16,6 +17,7 @@ import (
 type LrcAPIProvider struct {
 	baseURL string
 	token   string
+	client  *http.Client
 }
 
 func NewLrcAPIProvider(baseURL, token string) *LrcAPIProvider {
@@ -25,15 +27,14 @@ func NewLrcAPIProvider(baseURL, token string) *LrcAPIProvider {
 	return &LrcAPIProvider{
 		baseURL: baseURL,
 		token:   token,
+		client: telemetry.WrapHTTPClient(&http.Client{
+			Timeout: 20 * time.Second,
+		}),
 	}
 }
 
 func (p *LrcAPIProvider) GetName() string {
 	return "LrcAPI"
-}
-
-type lrcResponse struct {
-	Lyrics string `json:"lyrics"`
 }
 
 func (p *LrcAPIProvider) GetLyrics(ctx context.Context, artist, album, track string) (string, error) {
@@ -68,7 +69,7 @@ func (p *LrcAPIProvider) GetLyrics(ctx context.Context, artist, album, track str
 		req.Header.Set("Authorization", p.token)
 	}
 
-	resp, err := telemetry.WrapHTTPClient(http.DefaultClient).Do(req)
+	resp, err := p.client.Do(req)
 	if err != nil {
 		log.Error(ctx, "LrcAPI 发起请求失败", zap.Error(err), zap.String("url", u.String()))
 		return "", err

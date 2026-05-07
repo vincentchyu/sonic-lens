@@ -12,6 +12,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 	artworkcore "github.com/vincentchyu/sonic-lens/core/artwork"
+	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/objectstorage"
 )
 
@@ -195,6 +196,7 @@ func RefreshDashboardStats(ctx context.Context) error {
 
 func RefreshDashboardStatsLight(ctx context.Context) error {
 	cfg := GetDashboardStatRuntimeConfig()
+	log.Info(ctx, "Starting dashboard stats light aggregation")
 	if err := refreshDashboardStatsLightOnly(ctx, cfg.TopN); err != nil {
 		if isLegacyDashboardSchemaError(err) {
 			if rebuildErr := rebuildBrokenDashboardStatTable(ctx, err); rebuildErr != nil {
@@ -204,12 +206,18 @@ func RefreshDashboardStatsLight(ctx context.Context) error {
 		}
 		return err
 	}
+	log.Info(ctx, "Dashboard stats light aggregation completed successfully")
 	return nil
 }
 
 func RefreshDashboardStatsHeavy(ctx context.Context) error {
 	cfg := GetDashboardStatRuntimeConfig()
-	return refreshDashboardStatsHeavyWithOptions(ctx, cfg.TopN, cfg.TrendDays, cfg.HourlyTrendDays)
+	log.Info(ctx, "Starting dashboard stats heavy aggregation")
+	if err := refreshDashboardStatsHeavyWithOptions(ctx, cfg.TopN, cfg.TrendDays, cfg.HourlyTrendDays); err != nil {
+		return err
+	}
+	log.Info(ctx, "Dashboard stats heavy aggregation completed successfully")
+	return nil
 }
 
 func isLegacyDashboardSchemaError(err error) bool {
@@ -284,19 +292,19 @@ func refreshDashboardStatsHeavyWithOptions(ctx context.Context, topN, trendDays,
 	err := db.Transaction(
 		func(tx *gorm.DB) error {
 			if err := refreshTopArtistStats(tx, topN); err != nil {
-				return err
+				return fmt.Errorf("refresh top artist stats failed: %w", err)
 			}
 			if err := refreshTopAlbumStats(tx, topN); err != nil {
-				return err
+				return fmt.Errorf("refresh top album stats failed: %w", err)
 			}
 			if err := refreshTopGenreStats(tx, topN); err != nil {
-				return err
+				return fmt.Errorf("refresh top genre stats failed: %w", err)
 			}
 			if err := refreshTrendStats(tx, trendDays, hourlyTrendDays); err != nil {
-				return err
+				return fmt.Errorf("refresh trend stats failed: %w", err)
 			}
 			if err := refreshTrackRankStats(tx, topN, periods); err != nil {
-				return err
+				return fmt.Errorf("refresh track rank stats failed: %w", err)
 			}
 			return nil
 		},
@@ -894,7 +902,12 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 		if len(items) == 0 {
 			continue
 		}
-		if err := tx.Create(&items).Error; err != nil {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "period_type"}, {Name: "artist"}, {Name: "album"}, {Name: "track"}, {Name: "disc_number"}, {Name: "track_number"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"track_id", "play_count", "rank", "cover_art_url", "cover_art_mime", "cover_art_object_key", "updated_at",
+			}),
+		}).Create(&items).Error; err != nil {
 			return err
 		}
 	}

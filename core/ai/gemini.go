@@ -45,13 +45,19 @@ func newGeminiProviderFactory(cfg config.GeminiConfig) providerFactory {
 	if !factory.hasConfig() {
 		return factory
 	}
-
 	client, err := genai.NewClient(
 		context.Background(), &genai.ClientConfig{
-			APIKey:     resolveGeminiAPIKey(cfg),
-			HTTPClient: telemetry.WrapHTTPClient(&http.Client{}),
+			APIKey: resolveGeminiAPIKey(cfg),
+			HTTPClient: telemetry.WrapHTTPClient(
+				&http.Client{
+					Transport: &http.Transport{
+						Proxy: http.ProxyFromEnvironment,
+					},
+				},
+			),
 			HTTPOptions: genai.HTTPOptions{
 				BaseURL: strings.TrimSpace(cfg.BaseURL),
+				Timeout: new(time.Second * 60 * 5),
 			},
 		},
 	)

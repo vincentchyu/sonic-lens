@@ -112,30 +112,20 @@ function initStats() {
                 }
                 sourceChartSignature = nextSignature;
 
-                // 定义颜色
-                const backgroundColors = [
-                    "rgba(231, 76, 60, 0.7)", // Apple Music - 红色
-                    "rgba(155, 89, 182, 0.7)", // Audirvana - 紫色
-                    "rgba(127, 140, 141, 0.7)", // Roon - 灰色
-                    "rgba(52, 152, 219, 0.7)", // 其他 - 蓝色
-                ];
-
-                const borderColors = [
-                    "rgba(231, 76, 60, 1)",
-                    "rgba(155, 89, 182, 1)",
-                    "rgba(127, 140, 141, 1)",
-                    "rgba(52, 152, 219, 1)",
-                ];
+                const sourceVisuals = sources.map((source) => getSourceBadgeInfo(source));
+                const backgroundColors = sourceVisuals.map((item) => item.backgroundColor);
+                const borderColors = sourceVisuals.map((item) => item.borderColor);
+                const labels = sourceVisuals.map((item) => item.sourceText);
 
                 sourceChartInstance = upsertChart(sourceChartInstance, canvas, {
                     type: "doughnut",
                     data: {
-                        labels: sources,
+                        labels: labels,
                         datasets: [
                             {
                                 data: counts,
-                                backgroundColor: backgroundColors.slice(0, sources.length),
-                                borderColor: borderColors.slice(0, sources.length),
+                                backgroundColor: backgroundColors,
+                                borderColor: borderColors,
                                 borderWidth: 1,
                             },
                         ],
@@ -1161,17 +1151,68 @@ function initStats() {
     let lastRecentPlaysSignature = "";
     let lastRankingSignature = "";
 
+    function normalizeSourceName(source) {
+        const lowered = (source || "").trim().toLowerCase();
+        if (lowered === "apple music" || lowered === "applemusic") return "Apple Music";
+        if (lowered === "audirvana" || lowered === "au") return "Audirvana";
+        if (lowered === "roon") return "Roon";
+        if (lowered === "foobar2000" || lowered === "foobar") return "Foobar2000";
+        if (
+            lowered === "netease music" ||
+            lowered === "netease" ||
+            lowered === "163" ||
+            lowered === "163music" ||
+            lowered === "com.netease.163music"
+        ) {
+            return "NetEase Music";
+        }
+        return source || "Unknown";
+    }
+
     function getSourceBadgeInfo(source) {
-        switch ((source || "").toLowerCase()) {
-            case "apple music":
-                return { sourceClass: "source-applemusic", sourceText: "AppleMusic" };
-            case "audirvana":
-            case "au":
-                return { sourceClass: "source-audirvana", sourceText: "Audirvana" };
-            case "roon":
-                return { sourceClass: "source-roon", sourceText: "Roon" };
+        switch (normalizeSourceName(source)) {
+            case "Apple Music":
+                return {
+                    sourceClass: "source-applemusic",
+                    sourceText: "Apple Music",
+                    backgroundColor: "rgba(231, 76, 60, 0.7)",
+                    borderColor: "rgba(231, 76, 60, 1)"
+                };
+            case "Audirvana":
+                return {
+                    sourceClass: "source-audirvana",
+                    sourceText: "Audirvana",
+                    backgroundColor: "rgba(155, 89, 182, 0.7)",
+                    borderColor: "rgba(155, 89, 182, 1)"
+                };
+            case "Roon":
+                return {
+                    sourceClass: "source-roon",
+                    sourceText: "Roon",
+                    backgroundColor: "rgba(127, 140, 141, 0.7)",
+                    borderColor: "rgba(127, 140, 141, 1)"
+                };
+            case "Foobar2000":
+                return {
+                    sourceClass: "source-foobar2000",
+                    sourceText: "Foobar2000",
+                    backgroundColor: "rgba(245, 158, 11, 0.72)",
+                    borderColor: "rgba(245, 158, 11, 1)"
+                };
+            case "NetEase Music":
+                return {
+                    sourceClass: "source-netease",
+                    sourceText: "NetEase Music",
+                    backgroundColor: "rgba(16, 185, 129, 0.72)",
+                    borderColor: "rgba(16, 185, 129, 1)"
+                };
             default:
-                return { sourceClass: "", sourceText: source || "Unknown" };
+                return {
+                    sourceClass: "",
+                    sourceText: normalizeSourceName(source),
+                    backgroundColor: "rgba(52, 152, 219, 0.7)",
+                    borderColor: "rgba(52, 152, 219, 1)"
+                };
         }
     }
 
