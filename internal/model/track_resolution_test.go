@@ -94,6 +94,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				total_discs INTEGER DEFAULT 1,
 				disc_infos TEXT,
 				sync_status INTEGER DEFAULT 0,
+				release_type TEXT,
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
@@ -124,6 +125,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				track TEXT NOT NULL,
 				album TEXT NOT NULL,
 				album_subtitle TEXT,
+				genre TEXT,
 				album_id INTEGER DEFAULT 0,
 				duration INTEGER,
 				play_time DATETIME NOT NULL,
@@ -132,6 +134,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				track_number INTEGER,
 				disc_number INTEGER DEFAULT 1,
 				source TEXT NOT NULL,
+				release_type TEXT,
 				cover_art_path TEXT,
 				trace_id TEXT,
 				root_span_id TEXT,
@@ -184,6 +187,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				favorite_event_ids_json TEXT,
 				selected_release_mb_id INTEGER DEFAULT 0,
 				selected_mbid TEXT,
+				staging_draft_json TEXT,
 				status TEXT NOT NULL DEFAULT 'open',
 				resolved_album_id INTEGER DEFAULT 0,
 				last_error TEXT,
@@ -195,19 +199,16 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 	)
 
 	prevConfig := *config.ConfigObj
-	prevSQLite := GlobalDBForSqlLite
 	prevMySQL := GlobalDBForMysql
 	prevLogger := corelog.Logger
 
 	config.ConfigObj.Database.Type = string(common.DatabaseTypeSQLite)
-	GlobalDBForSqlLite = db
-	GlobalDBForMysql = nil
+	GlobalDBForMysql = db
 	corelog.Logger = zap.NewNop()
 
 	t.Cleanup(
 		func() {
 			*config.ConfigObj = prevConfig
-			GlobalDBForSqlLite = prevSQLite
 			GlobalDBForMysql = prevMySQL
 			corelog.Logger = prevLogger
 		},

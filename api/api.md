@@ -117,6 +117,9 @@
 | 读取候选缓存 | GET | `/api/musicbrainz/candidates/:album_id` | `:album_id` | candidates | Redis 10m | `musicbrainzService.GetReleasesByAlbumID` |
 | 绑定专辑与 MBID | POST | `/api/musicbrainz/link-album` | `album_id`, `release_mb_id`, `mbid` | `status` | 无 | `musicbrainzService.LinkAlbumToMBID` |
 | 专辑深度维护 | POST | `/api/musicbrainz/deep-maintenance/:album_id` | `:album_id` | `status` | 无 | `musicbrainzService.DeepingMaintenance` |
+| 正式专辑精选预审 | GET | `/api/albums/:id/musicbrainz/preview` | `:id`, `release_mb_id`, `mbid`, `force_refresh` | `preview`（含侧边栏对比） | 无 | `pendingAlbumService.PreviewAlbumMBMaintenance` |
+| 正式专辑应用精选维护 | POST | `/api/albums/:id/musicbrainz/apply-maintenance` | `:id`, `manual_album`, `manual_tracks[]` | `status` | 无 | `pendingAlbumService.ApplyAlbumMBMaintenance` -> 同步更新 track 与 track_album（含 mb_recording_id 写回） |
+| 正式专辑精选微调草稿保存 | POST | `/api/albums/:id/musicbrainz/draft` | `:id`, `draft_payload` | `status` | 无 | `pendingAlbumService.SaveAlbumStagingDraft` -> 持久化至 `pending_album_work_item.staging_draft_json` |
 
 ## 2.8 Last.fm 同步与收藏
 

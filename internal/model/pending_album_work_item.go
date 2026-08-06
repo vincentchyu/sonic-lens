@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 const (
 	PendingAlbumWorkItemStatusOpen           = "open"
 	PendingAlbumWorkItemStatusMBSelected     = "mb_selected"
+	PendingAlbumWorkItemStatusStaged         = "staged"
 	PendingAlbumWorkItemStatusDeepMaintaning = "deep_maintaining"
 	PendingAlbumWorkItemStatusApplying       = "applying"
 	PendingAlbumWorkItemStatusCompleted      = "completed"
@@ -25,6 +27,7 @@ const (
 var pendingAlbumOpenStatuses = []string{
 	PendingAlbumWorkItemStatusOpen,
 	PendingAlbumWorkItemStatusMBSelected,
+	PendingAlbumWorkItemStatusStaged,
 	PendingAlbumWorkItemStatusDeepMaintaning,
 	PendingAlbumWorkItemStatusApplying,
 }
@@ -41,6 +44,7 @@ type PendingAlbumWorkItem struct {
 	FavoriteEventIDsJSON  string     `gorm:"column:favorite_event_ids_json;type:longtext" json:"favorite_event_ids_json"`
 	SelectedReleaseMBID   int64      `gorm:"column:selected_release_mb_id;type:bigint;default:0" json:"selected_release_mb_id"`
 	SelectedMBID          string     `gorm:"column:selected_mbid;type:varchar(255)" json:"selected_mbid"`
+	StagingDraftJSON      string     `gorm:"column:staging_draft_json;type:longtext" json:"staging_draft_json"`
 	Status                string     `gorm:"column:status;type:varchar(64);not null;default:'open';index:idx_pawi_status" json:"status"`
 	ResolvedAlbumID       int64      `gorm:"column:resolved_album_id;type:bigint;default:0" json:"resolved_album_id"`
 	LastError             string     `gorm:"column:last_error;type:text" json:"last_error"`
@@ -176,22 +180,34 @@ func getOpenPendingAlbumWorkItemsByKeys(ctx context.Context, keys []string) (map
 	if len(keys) == 0 {
 		return map[string]*PendingAlbumWorkItem{}, nil
 	}
-	var rows []*PendingAlbumWorkItem
-	if err := GetDB().WithContext(ctx).
-		Where("normalized_identity_key IN ?", keys).
-		Where("status IN ?", pendingAlbumOpenStatuses).
-		Order("id DESC").
-		Find(&rows).Error; err != nil {
-		return nil, err
+
+	results := make(map[string]*PendingAlbumWorkItem, len(keys))
+	const chunkSize = 200 // 每批最多查询 200 个 key，规避 SQLite 等占位符上限并保护数据库性能
+
+	for i := 0; i < len(keys); i += chunkSize {
+		end := i + chunkSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		chunk := keys[i:end]
+
+		var rows []*PendingAlbumWorkItem
+		if err := GetDB().WithContext(ctx).
+			Where("normalized_identity_key IN ?", chunk).
+			Where("status IN ?", pendingAlbumOpenStatuses).
+			Order("id DESC").
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+
+		for _, row := range rows {
+			if _, ok := results[row.NormalizedIdentityKey]; ok {
+				continue
+			}
+			results[row.NormalizedIdentityKey] = row
+		}
 	}
 
-	results := make(map[string]*PendingAlbumWorkItem, len(rows))
-	for _, row := range rows {
-		if _, ok := results[row.NormalizedIdentityKey]; ok {
-			continue
-		}
-		results[row.NormalizedIdentityKey] = row
-	}
 	return results, nil
 }
 
@@ -393,17 +409,27 @@ func CreateOrGetPendingAlbumWorkItem(ctx context.Context, identityKey string) (*
 }
 
 // GetPendingAlbumWorkItemByID 获取单个工作项。
-func GetPendingAlbumWorkItemByID(ctx context.Context, workItemID int64) (*PendingAlbumWorkItem, error) {
+func GetPendingAlbumWorkItemByID(ctx context.Context, id int64) (*PendingAlbumWorkItem, error) {
 	var item PendingAlbumWorkItem
-	err := GetDB().WithContext(ctx).First(&item, workItemID).Error
-	if err != nil {
+	if err := GetDB().WithContext(ctx).First(&item, id).Error; err != nil {
 		return nil, err
+	}
+	if item.ResolvedAlbumID > 0 && item.Status != PendingAlbumWorkItemStatusCompleted {
+		item.Status = PendingAlbumWorkItemStatusCompleted
+		_ = GetDB().WithContext(ctx).Model(&PendingAlbumWorkItem{}).Where("id = ?", item.ID).Update("status", PendingAlbumWorkItemStatusCompleted).Error
 	}
 	return &item, nil
 }
 
 // UpdatePendingAlbumWorkItemSelection 更新工作项绑定的 MB 候选。
 func UpdatePendingAlbumWorkItemSelection(ctx context.Context, workItemID, releaseMBID int64, mbid string) error {
+	var item PendingAlbumWorkItem
+	if err := GetDB().WithContext(ctx).First(&item, workItemID).Error; err != nil {
+		return err
+	}
+	if item.Status == PendingAlbumWorkItemStatusCompleted || item.ResolvedAlbumID > 0 {
+		return errors.New("已完成归因落库的工作项已挂载稳定专辑，不允许重新修改候选版本")
+	}
 	status := PendingAlbumWorkItemStatusOpen
 	if strings.TrimSpace(mbid) != "" {
 		status = PendingAlbumWorkItemStatusMBSelected
@@ -417,6 +443,78 @@ func UpdatePendingAlbumWorkItemSelection(ctx context.Context, workItemID, releas
 				"selected_mbid":          mbid,
 				"status":                 status,
 				"last_error":             "",
+			},
+		).Error
+}
+
+// SavePendingAlbumWorkItemStagingDraft 保存工作项的预审草稿并推入 staged 状态。
+func SavePendingAlbumWorkItemStagingDraft(ctx context.Context, workItemID, releaseMBID int64, mbid, draftJSON string) error {
+	var item PendingAlbumWorkItem
+	if err := GetDB().WithContext(ctx).First(&item, workItemID).Error; err != nil {
+		return err
+	}
+	if item.Status == PendingAlbumWorkItemStatusCompleted || item.ResolvedAlbumID > 0 {
+		return errors.New("已完成归因落库的工作项已挂载稳定专辑，不允许保存预审草稿")
+	}
+	return GetDB().WithContext(ctx).
+		Model(&PendingAlbumWorkItem{}).
+		Where("id = ?", workItemID).
+		Updates(
+			map[string]interface{}{
+				"selected_release_mb_id": releaseMBID,
+				"selected_mbid":          mbid,
+				"staging_draft_json":     draftJSON,
+				"status":                 PendingAlbumWorkItemStatusStaged,
+				"last_error":             "",
+			},
+		).Error
+}
+
+// GetPendingAlbumWorkItemByResolvedAlbumID 根据绑定的正式专辑 ID 获取工作项。
+func GetPendingAlbumWorkItemByResolvedAlbumID(ctx context.Context, albumID int64) (*PendingAlbumWorkItem, error) {
+	if albumID <= 0 {
+		return nil, errors.New("invalid album id")
+	}
+	var item PendingAlbumWorkItem
+	err := GetDB().WithContext(ctx).Where("resolved_album_id = ?", albumID).First(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// SaveAlbumStagingDraftDB 为正式专辑保存草稿。
+func SaveAlbumStagingDraftDB(ctx context.Context, albumID, releaseMBID int64, mbid, draftJSON string) error {
+	if albumID <= 0 {
+		return errors.New("invalid album id")
+	}
+	item, err := GetPendingAlbumWorkItemByResolvedAlbumID(ctx, albumID)
+	if err != nil || item == nil {
+		album, getErr := GetAlbum(ctx, albumID)
+		if getErr != nil || album == nil {
+			return errors.New("album not found")
+		}
+		item = &PendingAlbumWorkItem{
+			Artist:                album.Artist,
+			Album:                 album.Name,
+			AlbumSubtitle:         album.NameSubtitle,
+			AlbumArtist:           album.Artist,
+			NormalizedIdentityKey: fmt.Sprintf("%s||%s||%s", album.Artist, album.Name, album.NameSubtitle),
+			ResolvedAlbumID:       albumID,
+			Status:                PendingAlbumWorkItemStatusCompleted,
+		}
+		if createErr := GetDB().WithContext(ctx).Create(item).Error; createErr != nil {
+			return createErr
+		}
+	}
+	return GetDB().WithContext(ctx).
+		Model(&PendingAlbumWorkItem{}).
+		Where("id = ?", item.ID).
+		Updates(
+			map[string]interface{}{
+				"selected_release_mb_id": releaseMBID,
+				"selected_mbid":          mbid,
+				"staging_draft_json":     draftJSON,
 			},
 		).Error
 }

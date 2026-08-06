@@ -23,16 +23,20 @@ func (a *AppleMusicTrackInfoWrapper) GetTitle() string {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetAlbum() string {
-	name, _ := common.ParseAlbumTitleAndSubtitle(a.Album)
-	return a.baseWrapper.ConversionSimplified(name)
+	// ParseAlbumTitleMetadata 先剥括号版本，再剥 " - EP/Single/LP" 连字符后缀，
+	// OfficialTitle 就是干净主标题，与 album.name 保持一致。
+	meta := common.ParseAlbumTitleMetadata(a.Album)
+	return a.baseWrapper.ConversionSimplified(meta.OfficialTitle)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetAlbumSubtitle() string {
+	// AlbumSubtitle 只关心括号内的版本说明（Remaster/Deluxe 等），与发行类型无关。
 	_, subtitle := common.ParseAlbumTitleAndSubtitle(a.Album)
 	return a.baseWrapper.ConversionSimplified(subtitle)
 }
 func (a *AppleMusicTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMetadata {
-	return new(common.ParseAlbumTitleMetadata(a.Album))
+	meta := common.ParseAlbumTitleMetadata(a.Album)
+	return &meta
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetArtist() string {

@@ -633,10 +633,20 @@ func setupRouter(name string) *gin.Engine {
 			if limit > 200 {
 				limit = 200
 			}
+			filter := c.Query("filter")
 			groups, err := pendingAlbumService.GetPendingAlbumGroups(c.Request.Context(), limit)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
+			}
+			if filter == "uncreated" {
+				var filtered []*model.PendingAlbumGroup
+				for _, g := range groups {
+					if g.OpenWorkItemID == 0 {
+						filtered = append(filtered, g)
+					}
+				}
+				groups = filtered
 			}
 			c.JSON(http.StatusOK, gin.H{"groups": groups})
 		},
@@ -771,6 +781,52 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	r.GET(
+		"/api/pending-albums/work-items/:id/musicbrainz/preview", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			releaseMBID, _ := strconv.ParseInt(c.Query("release_mb_id"), 10, 64)
+			mbid := c.Query("mbid")
+			forceRefresh := c.Query("force_refresh") == "true" || c.Query("force_refresh") == "1"
+
+			preview, err := pendingAlbumService.PreviewPendingAlbumMBMaintenance(
+				c.Request.Context(),
+				workItemID,
+				releaseMBID,
+				mbid,
+				forceRefresh,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, preview)
+		},
+	)
+
+	r.POST(
+		"/api/pending-albums/work-items/:id/musicbrainz/draft", func(c *gin.Context) {
+			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if workItemID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
+				return
+			}
+			var draft pendingalbumlogic.PendingAlbumMaintenancePreview
+			if err := c.ShouldBindJSON(&draft); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if err := pendingAlbumService.SavePendingAlbumStagingDraft(c.Request.Context(), workItemID, &draft); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"message": "草稿成功保存", "status": "staged"})
+		},
+	)
+
 	r.POST(
 		"/api/pending-albums/work-items/:id/deep-maintenance", func(c *gin.Context) {
 			workItemID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -778,12 +834,22 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid work item id"})
 				return
 			}
-			report, err := pendingAlbumService.DeepMaintainPendingAlbumWorkItem(c.Request.Context(), workItemID)
+			preview, err := pendingAlbumService.PreviewPendingAlbumMBMaintenance(
+				c.Request.Context(),
+				workItemID,
+				0,
+				"",
+				false,
+			)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"status": "ok", "report": report})
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "staged",
+				"message": "已生成草稿快照，请在预审与差异对比弹窗中审核确认后提交应用。",
+				"preview": preview,
+			})
 		},
 	)
 
@@ -881,6 +947,71 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 			if err := musicbrainzService.DeepingMaintenance(c.Request.Context(), albumID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	// 4. 正式专辑 MB 精选维护预审与对比
+	r.GET(
+		"/api/albums/:id/musicbrainz/preview", func(c *gin.Context) {
+			albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+				return
+			}
+			releaseMBID, _ := strconv.ParseInt(c.Query("release_mb_id"), 10, 64)
+			mbid := c.Query("mbid")
+			forceRefresh := c.Query("force_refresh") == "1"
+
+			preview, err := pendingAlbumService.PreviewAlbumMBMaintenance(
+				c.Request.Context(), albumID, releaseMBID, mbid, forceRefresh,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, preview)
+		},
+	)
+
+	// 5. 正式专辑 MB 精选维护提交落库
+	r.POST(
+		"/api/albums/:id/musicbrainz/apply-maintenance", func(c *gin.Context) {
+			albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+				return
+			}
+			var input pendingalbumlogic.ManualPendingAlbumInput
+			if err := c.ShouldBindJSON(&input); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid input payload"})
+				return
+			}
+			if err := pendingAlbumService.ApplyAlbumMBMaintenance(c.Request.Context(), albumID, &input); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
+
+	// 6. 正式专辑 MB 精选维护保存草稿
+	r.POST(
+		"/api/albums/:id/musicbrainz/draft", func(c *gin.Context) {
+			albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+				return
+			}
+			var draft pendingalbumlogic.PendingAlbumMaintenancePreview
+			if err := c.ShouldBindJSON(&draft); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid draft payload"})
+				return
+			}
+			if err := pendingAlbumService.SaveAlbumStagingDraft(c.Request.Context(), albumID, &draft); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}

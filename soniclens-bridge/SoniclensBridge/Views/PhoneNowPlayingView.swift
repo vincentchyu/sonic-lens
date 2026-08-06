@@ -65,6 +65,11 @@ struct PhoneNowPlayingView: View {
         .onChange(of: favoriteActionStore.state) { _, state in
             handleFavoriteActionStateChange(state)
         }
+        .onChange(of: playbackStore.hasActiveNowPlaying) { _, hasActive in
+            if !hasActive {
+                onClose()
+            }
+        }
         .onDisappear {
             viewModel.stopProgress()
             favoriteNoticeDismissTask?.cancel()

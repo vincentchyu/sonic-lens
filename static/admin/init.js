@@ -515,15 +515,28 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
 
     // 添加查看详情模态框相关函数
     // 显示模态框
-    // 统一转义函数：修复 Unexpected EOF 并兼容 HTML 属性中的 JS 字符串
+    // 统一转义函数：标准 HTML 实体转义，消除 HTML 属性与 Text 中的反斜杠误转义 bug
     function esc(s) {
         if (!s) return "";
         return String(s)
-            .replace(/\\/g, '\\\\')  // 转义反斜杠
-            .replace(/'/g, "\\'")   // 转义单引号 (针对 JS 字符串)
-            .replace(/"/g, '&quot;') // 转义双引号 (针对 HTML 属性)
-            .replace(/\n/g, '\\n')  // 转义换行
-            .replace(/\r/g, '\\r');
+            .replace(/\\'/g, "'")    // 自动清洗历史残余的 \' 误转义
+            .replace(/&/g, '&amp;')   // 转义 &
+            .replace(/</g, '&lt;')    // 转义 <
+            .replace(/>/g, '&gt;')    // 转义 >
+            .replace(/"/g, '&quot;')  // 转义双引号
+            .replace(/'/g, '&#39;');  // 转义单引号为 HTML 实体
+    }
+
+    // 专门用于内联事件（如 onclick）中的 JS 字符串参数转义，防止单双引号闭合产生 SyntaxError
+    function escJs(s) {
+        if (!s) return "";
+        return String(s)
+            .replace(/\\/g, '\\\\')   // 转义反斜杠
+            .replace(/'/g, "\\'")     // 转义单引号
+            .replace(/&/g, '&amp;')   // 转义 &
+            .replace(/"/g, '&quot;')  // 转义双引号，防止闭合 HTML 属性
+            .replace(/</g, '&lt;')    // 转义 <
+            .replace(/>/g, '&gt;');   // 转义 >
     }
 
     // 显示模态框
@@ -959,6 +972,7 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
         const artistEl = document.getElementById('ad-artist');
         const releaseEl = document.getElementById('ad-release');
         const genreEl = document.getElementById('ad-genre');
+        const releaseTypeEl = document.getElementById('ad-release-type');
         const countryEl = document.getElementById('ad-country');
         const statusEl = document.getElementById('ad-status');
         const packagingEl = document.getElementById('ad-packaging');
@@ -979,6 +993,7 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
         artistEl.textContent = '-';
         releaseEl.textContent = '-';
         genreEl.textContent = '-';
+        if (releaseTypeEl) releaseTypeEl.textContent = '-';
         if (countryEl) countryEl.textContent = '-';
         if (statusEl) statusEl.textContent = '-';
         if (packagingEl) packagingEl.textContent = '-';
@@ -1046,6 +1061,11 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
                 releaseEl.title = data.release_date || '-';
                 genreEl.textContent = data.genre || '-';
                 genreEl.title = data.genre || '-';
+                if (releaseTypeEl) {
+                    const releaseTypeUpper = data.release_type ? data.release_type.toUpperCase() : '-';
+                    releaseTypeEl.textContent = releaseTypeUpper;
+                    releaseTypeEl.title = releaseTypeUpper;
+                }
                 if (countryEl) {
                     countryEl.textContent = data.country || '-';
                     countryEl.title = data.country || '-';
@@ -1125,9 +1145,9 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
                             play_count: 0
                         };
                         
-                        const mbTrackName = ta.track || '';
-                        const mbRecordingID = ta.mb_recording_id || '';
-                        const trackMusicBrainzID = track.music_brainz_id || '';
+                        const mbTrackName = ta.track || track.track || '';
+                        const mbRecordingID = ta.mb_recording_id || track.music_brainz_id || '';
+                        const trackMusicBrainzID = track.music_brainz_id || ta.mb_recording_id || '';
                         const hasMBIDMismatch = Boolean(mbRecordingID && trackMusicBrainzID && mbRecordingID !== trackMusicBrainzID);
                         const hasNameDiff = Boolean(
                             mbTrackName &&
@@ -1152,7 +1172,7 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
 
                         html += `
                             <li class="ranking-item" style="display: flex; gap: 15px; padding: 12px 0; border-bottom: 1px solid ${itemBorder}; ${isPlaceholder ? 'opacity: 0.5; filter: grayscale(0.5);' : ''}" 
-                                ${hasLink ? `onclick="showTrackDetails('${esc(track.artist)}', '${esc(track.album)}', '${esc(track.track)}', ${Number(track.track_number || ta.track_number || 0)}, ${Number(track.disc_number || ta.disc_number || 0)})"` : ''}
+                                ${hasLink ? `onclick="showTrackDetails('${escJs(track.artist)}', '${escJs(track.album)}', '${escJs(track.track)}', ${Number(track.track_number || ta.track_number || 0)}, ${Number(track.disc_number || ta.disc_number || 0)})"` : ''}
                                 onmouseover="${hasLink ? `this.style.background='${itemHover}'` : ''}" 
                                 onmouseout="this.style.background='transparent'">
                                 
@@ -1178,7 +1198,7 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
 
                                 ${hasLink && window.currentAlbumSyncStatus !== 3 ? `
                                 <div style="flex-shrink: 0; padding-left: 10px; display: flex; align-items: center;">
-                                    <button onclick="event.stopPropagation(); unlinkTrackAlbum(${ta.id}, ${window.currentAlbumID}, '${esc(track.track)}')" 
+                                    <button onclick="event.stopPropagation(); unlinkTrackAlbum(${ta.id}, ${window.currentAlbumID}, '${escJs(track.track)}')" 
                                         style="padding: 4px 8px; font-size: 0.7em; border: 1px solid var(--accent-color); background: transparent; color: var(--accent-color); border-radius: 4px; cursor: pointer; opacity: 0.6;"
                                         onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.6">解除</button>
                                 </div>
@@ -1596,24 +1616,11 @@ function createAutoUpdater(fetchFunction, interval = 60000) {
                     searchBtn.textContent = '重新搜索';
                 });
         } else if (mode === 'deep') {
-            deepBtn.disabled = true;
-            deepBtn.textContent = '维护中...';
-            fetch(`/api/musicbrainz/deep-maintenance/${id}`, { method: 'POST' })
-                .then(resp => resp.json())
-                .then(res => {
-                    deepBtn.disabled = false;
-                    deepBtn.textContent = '精选维护';
-                    if (res.status === 'ok') {
-                        alert("深度维护完成，曲目序号已根据 MusicBrainz 自动校正。");
-                        showAlbumDetails(id); 
-                    } else {
-                        throw new Error(res.error || '维护失败');
-                    }
-                })
-                .catch(err => {
-                    alert("操作失败: " + err.message);
-                    deepBtn.disabled = false;
-                });
+            if (typeof openAlbumMBDiffPreviewModal === 'function') {
+                openAlbumMBDiffPreviewModal(id);
+            } else {
+                alert("未找到专辑预审组件");
+            }
         }
     }
 

@@ -13,8 +13,6 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/db"
 )
 
-// Deprecated: SQLite 运行路径已退场，仅为旧测试编译兼容暂时保留。
-var GlobalDBForSqlLite *gorm.DB
 var GlobalDBForMysql *gorm.DB
 
 var mysqlAutoMigrateModels = []interface{}{

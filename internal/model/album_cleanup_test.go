@@ -37,6 +37,7 @@ func newAlbumCleanupTestDB(t *testing.T, name string) *gorm.DB {
 				total_discs INTEGER DEFAULT 1,
 				disc_infos TEXT,
 				sync_status INTEGER DEFAULT 0,
+				release_type TEXT,
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
@@ -85,17 +86,14 @@ func newAlbumCleanupTestDB(t *testing.T, name string) *gorm.DB {
 	)
 
 	prevConfig := *config.ConfigObj
-	prevSQLite := GlobalDBForSqlLite
 	prevMySQL := GlobalDBForMysql
 
 	config.ConfigObj.Database.Type = string(common.DatabaseTypeSQLite)
-	GlobalDBForSqlLite = db
-	GlobalDBForMysql = nil
+	GlobalDBForMysql = db
 
 	t.Cleanup(
 		func() {
 			*config.ConfigObj = prevConfig
-			GlobalDBForSqlLite = prevSQLite
 			GlobalDBForMysql = prevMySQL
 		},
 	)

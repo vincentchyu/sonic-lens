@@ -315,6 +315,65 @@ func escapeLucene(in string) string {
 	return out
 }
 
+// SearchMBReleases 统一的 MusicBrainz Release 搜索函数，支持两阶段检索（有发行格式限制时先精准匹配，无结果则宽松回退）。
+// 该函数由 pendingalbum 和本包的 searchAndCacheReleases 共享，避免代码重复。
+func SearchMBReleases(ctx context.Context, albumName, artistName, releaseType string) (*musicbrainzws2.SearchReleasesResult, error) {
+	// 剥离/规整专辑名
+	cleanedAlbum, rt := common.ParseAlbumTitleAndReleaseType(albumName)
+	if releaseType == "" {
+		releaseType = rt
+	}
+
+	escapedAlbum := escapeLucene(cleanedAlbum)
+	escapedArtist := escapeLucene(artistName)
+
+	var searchRes *musicbrainzws2.SearchReleasesResult
+
+	// 两阶段检索策略：
+	// 阶段一：若专辑有明确 release_type（ep/single/lp），先附加 primarytype 约束做精确检索。
+	//         这样可以避免 EP "In The Sun" 匹配到同名全长专辑。
+	// 阶段二：若阶段一无结果（或无 release_type），回退到不带类型约束的宽松检索。
+	if releaseType != "" {
+		mbPrimaryType := mbPrimaryTypeFromReleaseType(releaseType)
+		queryWithType := fmt.Sprintf(
+			"release:\"%s\" AND artist:\"%s\" AND primarytype:%s",
+			escapedAlbum, escapedArtist, mbPrimaryType,
+		)
+		log.Info(ctx, "阶段一：带 primarytype 约束检索", zap.String("query", queryWithType))
+		res, err := musicbrainz.SearchReleases(
+			ctx, musicbrainzws2.SearchFilter{Query: queryWithType},
+			musicbrainzws2.Paginator{Limit: 10},
+		)
+		if err == nil && len(res.Releases) > 0 {
+			searchRes = &res
+			log.Info(ctx, "阶段一检索命中", zap.Int("count", len(res.Releases)))
+		} else {
+			if err != nil {
+				log.Warn(ctx, "阶段一 SearchReleases 失败，降级到宽松检索", zap.String("query", queryWithType), zap.Error(err))
+			} else {
+				log.Info(ctx, "阶段一无结果，降级到宽松检索", zap.String("release_type", releaseType))
+			}
+		}
+	}
+
+	// 阶段二：宽松回退（无 release_type 或阶段一无结果时执行）
+	if searchRes == nil {
+		query := fmt.Sprintf("release:\"%s\" AND artist:\"%s\"", escapedAlbum, escapedArtist)
+		log.Info(ctx, "阶段二：宽松检索", zap.String("query", query))
+		res, err := musicbrainz.SearchReleases(
+			ctx, musicbrainzws2.SearchFilter{Query: query},
+			musicbrainzws2.Paginator{Limit: 10},
+		)
+		if err != nil {
+			log.Error(ctx, "阶段二 SearchReleases 失败", zap.String("query", query), zap.Error(err))
+			return nil, err
+		}
+		searchRes = &res
+	}
+
+	return searchRes, nil
+}
+
 // searchAndCacheReleases searches for releases and saves them to release_mb
 func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 	log.Info(ctx, "开始搜索并缓存 MusicBrainz 候选发行版", zap.Int64("album_id", albumID))
@@ -343,22 +402,13 @@ func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 	}
 
 	log.Info(
-		ctx, "Searching candidates for album", zap.Int64("album_id", albumID), zap.String("name", album.Name),
-		zap.String("artist", album.Artist),
+		ctx, "开始检索 MusicBrainz 候选发行版", zap.Int64("album_id", albumID), zap.String("name", album.Name),
+		zap.String("artist", album.Artist), zap.String("release_type", album.ReleaseType),
 	)
 
-	// Search - Escape names to avoid Lucene query errors (e.g. quotes in album names)
-	escapedAlbum := escapeLucene(album.Name)
-	escapedArtist := escapeLucene(album.Artist)
-	query := fmt.Sprintf("release:\"%s\" AND artist:\"%s\"", escapedAlbum, escapedArtist)
-
-	searchRes, err := musicbrainz.SearchReleases(
-		ctx, musicbrainzws2.SearchFilter{
-			Query: query,
-		}, musicbrainzws2.Paginator{Limit: 10},
-	)
+	// 调用统一的 SearchMBReleases
+	searchRes, err := SearchMBReleases(ctx, album.Name, album.Artist, album.ReleaseType)
 	if err != nil {
-		log.Error(ctx, "SearchReleases failed", zap.String("query", query), zap.Error(err))
 		return err
 	}
 
@@ -387,6 +437,26 @@ func searchAndCacheReleases(ctx context.Context, albumID int64) error {
 		zap.Int("count", len(searchRes.Releases)),
 	)
 	return nil
+}
+
+// mbPrimaryTypeFromReleaseType 将系统内部发行类型枚举（小写）映射为 MusicBrainz Lucene 查询语法
+// 中的 primarytype 值（首字母大写）。
+// MusicBrainz 支持的 primarytype 有：Album、Single、EP、Other、Broadcast 等。
+func mbPrimaryTypeFromReleaseType(releaseType string) string {
+	switch releaseType {
+	case "ep":
+		return "EP"
+	case "single":
+		return "Single"
+	case "lp", "album":
+		return "Album"
+	default:
+		// 未知类型直接原样首字母大写，让 MusicBrainz 自行过滤
+		if len(releaseType) > 0 {
+			return strings.ToUpper(releaseType[:1]) + releaseType[1:]
+		}
+		return releaseType
+	}
 }
 
 // todo list

@@ -130,11 +130,14 @@ func isAlbumTrackLayoutLockedTx(tx *gorm.DB, albumID int64) (bool, error) {
 	return row.SyncStatus == 3, nil
 }
 
-func upsertTrackAlbumTx(tx *gorm.DB, ta *TrackAlbum, isCreate bool) error {
+func upsertTrackAlbumTx(tx *gorm.DB, ta *TrackAlbum, isCreate bool, force bool) error {
 	ta.TrackNumber, ta.DiscNumber = normalizeTrackAlbumPosition(ta.TrackNumber, ta.DiscNumber)
 	layoutLocked, err := isAlbumTrackLayoutLockedTx(tx, ta.AlbumID)
 	if err != nil {
 		return err
+	}
+	if force {
+		layoutLocked = false
 	}
 
 	if ta.TrackID > 0 {
@@ -202,11 +205,11 @@ func upsertTrackAlbumTx(tx *gorm.DB, ta *TrackAlbum, isCreate bool) error {
 
 // UpsertTrackAlbumTx 在事务内按专辑物理位置与 TrackID 统一维护关联关系。
 func UpsertTrackAlbumTx(tx *gorm.DB, ta *TrackAlbum, isCreate bool) error {
-	return upsertTrackAlbumTx(tx, ta, isCreate)
+	return upsertTrackAlbumTx(tx, ta, isCreate, false)
 }
 
 func GetOrCreateTrackAlbum(ctx context.Context, ta *TrackAlbum) error {
-	return upsertTrackAlbumTx(GetDB().WithContext(ctx), ta, false)
+	return upsertTrackAlbumTx(GetDB().WithContext(ctx), ta, false, false)
 }
 
 // GetTrackAlbumByTrackID 获取曲目对应的首条专辑映射，供上层查询 album_id 使用。

@@ -82,6 +82,7 @@
 - **上下文绑定**: 所有数据库操作必须使用 `.WithContext(ctx)` 确保链路可追踪。
 - **并发控制**: 重要更新（如 `PlayCount` 增加）应实现基于 `version` 字段的**乐观锁**机制。
 - **索引原则**: 复合索引遵循最左前缀原则。新系统必须包含 `created_at` 和 `updated_at`。
+- **测试与 SQLite 限制规约**: `GlobalDBForSqlLite` 已被废弃。禁止在任何新生产代码中引入或使用对 `GlobalDBForSqlLite` 的依赖；仅为旧测试编译与运行兼容，允许 `GetDB()` 在全局 MySQL 实例为 `nil` 且全局 SQLite 实例不为 `nil` 时透明回退。未来编写测试或修改 DAO 时应逐步使用 Mock 数据库，避免污染全局状态。
 
 ### 2.3 客户端规约
 - **日志打印要求**: **所有日志必须使用中文**。打印不同级别的日志（具体使用什么级别看紧急程度，不要滥用）, 关键的函数要出入口要打印。
@@ -114,29 +115,29 @@
 - **[track.go](./internal/model/track.go)**:
     - **核心索引**: `uidx_t_aaastdntn` `(Artist, Album, AlbumSubtitle, Track, DiscNumber, TrackNumber)`。
     - **功能**: 曲目元数据、播放次数统计、乐观锁版本控制。
-    - **规则**: `Source` / `BundleID` / `UniqueID` / `ReleaseDate` 只能作为弱线索；低置信来源只允许命中既有曲目并增加播放次数，不允许新建 `album` / `track_album`。`GetOrCreateTrackByIdentityTx`、`UpdateTrackCuratedMetadataTx` 与播放写入路径落库前必须统一做 `UnityFixAll + ConversionSimplifiedFx`。`track.album_subtitle` 已成为正式字段，曲目稳定身份主键升级为 `(artist, album, album_subtitle, track, disc_number, track_number)`，不得回退到只按主名匹配。
+    - **规则**: `Source` / `BundleID` / `UniqueID` / `ReleaseDate` 只能作为弱线索；低置信来源只允许命中既有曲目并增加播放次数，不允许新建 `album` / `track_album`。`GetOrCreateTrackByIdentityTx`、`UpdateTrackCuratedMetadataTx` 与播放写入路径落库前必须统一做 `UnityFixAll + ConversionSimplifiedFx`。`track.album_subtitle` 已成为正式字段，曲目稳定身份主键升级为 `(artist, album, album_subtitle, track, disc_number, track_number)`，不得回退到只按主名匹配；落库前及查询定位前需自动剥离 ` - EP/Single/LP` 后缀，确保与 album 表防增量策略一致。
 - **[album.go](./internal/model/album.go)**:
     - **核心索引**: `uidx_album_artist_name_subtitle_release_date`。
     - **功能**: 专辑元数据、同步状态 `SyncStatus` 管理。
-    - **规则**: `Album` 的 GORM Hook 会写入 `library_change_log`。`GetOrCreateAlbum` 必须以 `artist + name + name_subtitle + release_date` 共同约束专辑身份；缺失日期时可优先复用 `sync_status=3` 的已深度维护专辑，但不得把不同 subtitle 的版本硬合并。`original_release_date` 是独立事实字段，不参与身份匹配。`album` 维护 `cover_art_url` / `cover_art_mime` / `cover_art_object_key` 的对象存储闭环；`album.name_subtitle` 是 Deluxe / Remaster / Anniversary 等结构化版本说明的唯一正式承载字段。
+    - **规则**: `Album` 的 GORM Hook 会写入 `library_change_log`。`GetOrCreateAlbum` 必须以 `artist + name + name_subtitle + release_date` 共同约束专辑身份；缺失日期时可优先复用 `sync_status=3` 的已深度维护专辑，但不得把不同 subtitle 的版本硬合并。`original_release_date` 是独立事实字段，不参与身份匹配。`album` 维护 `cover_art_url` / `cover_art_mime` / `cover_art_object_key` 的对象存储闭环；`album.name_subtitle` 是 Deluxe / Remaster / Anniversary 等结构化版本说明的唯一正式承载字段；`album.release_type` 用于承载从后缀中剥离出来的 `ep`/`single`/`lp` 类型枚举，落库前必须统一经由 `normalizeAlbumReleaseTypeSuffix` 自动规整并剥除后缀以保存干净专辑名。
 - **[track_album.go](./internal/model/track_album.go)**:
     - **功能**: 维护曲目与专辑的多对多关联以及碟号/轨道号物理映射。
-    - **规则**: 占位符匹配、专辑内曲目绑定、MusicBrainz 对齐都必须优先按 `(album_id, disc_number, track_number)`，`track` 名称只能做兜底。`DeepingMaintenance` 处理已听曲目时，`track_album` 物理位置优先级高于 `track` 主表坐标，名称匹配必须先做繁简、括号和大小写归一。对 `sync_status=3` 专辑补全未听曲目时，应优先创建真实 `track`（`play_count=0`）并建立 `track_album.track_id>0` 关联，不再新增 `track_id=0` 占位符。
+    - **规则**: 占位符匹配、专辑内曲目绑定、MusicBrainz 对齐都必须优先按 `(album_id, disc_number, track_number)`，`track` 名称只能做兜底。`DeepingMaintenance` 处理已听曲目时，`track_album` 物理位置优先级高于 `track` 主表坐标，名称匹配必须先做繁简、括号和大小写归一。对 `sync_status=3` 专辑补全未听曲目时，应优先创建真实 `track`（`play_count=0`）并建立 `track_album.track_id>0` 关联，不再新增 `track_id=0` 占位符；在 `upsertTrackAlbumTx` 关系写入时设计有 `force` 强制覆盖标志，在重复专辑合并清洗时需指定 `force = true` 强行绕过 `sync_status=3` 的精选锁定拦截，避免关系静默丢失。
 - **[album_cleanup.go](./internal/model/album_cleanup.go)**:
     - **功能**: 清洗 `(artist, name)` 维度的重复专辑，统一迁移 `track_album` 与 `album_release_mb` 关联并删除冗余专辑。
-    - **规则**: 主专辑优先保留 `sync_status` 更高、已确认 MusicBrainz 关联更多、挂载曲目更多的记录；同名同作者下由曲目日期裂变出的多行默认视为脏数据。
+    - **规则**: 主专辑优先保留 `sync_status` 更高、已确认 MusicBrainz 关联更多、挂载曲目更多的记录；同名同作者下由曲目日期裂变出的多行默认视为脏数据。`CleanupReleaseTypeSuffixes` 支持一键扫出历史带有连字符发行格式的专辑，剥离后缀，自动对齐目标干净专辑并安全合并其曲目与 MB 关联。
 - **[tx.go](./internal/model/tx.go)**:
     - **功能**: 提供 model 层统一事务入口。
     - **规则**: 所有跨表事务都应优先走 `model.InTx(...)`，不要再让 Logic 直接持有裸 GORM 事务细节。
 - **[track_play_record.go](./internal/model/track_play_record.go)**:
     - **功能**: 听歌流水历史，用于统计、同步 Last.fm、资料库归因与排障。
-    - **规则**: 回填 `album_id` 时不可再使用低置信三元组兜底。实时 scrobble 与后台 replay 都应优先复用 `ProcessTrackPlayRecord` / `ReplayTrackPlayRecords`，不要在命令层手工串联“查记录 -> 增播放 -> 回填状态”。`track_play_record` 现已显式记录 `resolved_track_id`、`resolution_status`、`resolution_confidence`、`library_applied`、`trace_id`、`root_span_id`、`trace_sampled`、`cover_art_path` 与 `album_subtitle`；最近播放、D1 镜像、待归因上下文与排障都应优先消费这些结构化字段，不能再退回时间/标题模糊匹配或 `artist + album` 兜底。
+    - **规则**: 回填 `album_id` 时不可再使用低置信三元组兜底。实时 scrobble 与后台 replay 都应优先复用 `ProcessTrackPlayRecord` / `ReplayTrackPlayRecords`，不要在命令层手工串联“查记录 -> 增播放 -> 回填状态”。`track_play_record` 现已显式记录 `resolved_track_id`、`resolution_status`、`resolution_confidence`、`library_applied`、`trace_id`、`root_span_id`、`trace_sampled`、`cover_art_path`、`album_subtitle` 与 `release_type`；最近播放、D1 镜像、待归因上下文与排障都应优先消费这些结构化字段，不能再退回时间/标题模糊匹配或 `artist + album` 兜底。其中 `release_type` 用于在播放落库时完整归档裁剪出的发行类型后缀，保证 unresolved 未归因状态前的流水原始线索完整不丢失。
 - **[track_favorite_event.go](./internal/model/track_favorite_event.go)**:
     - **功能**: 收藏事件表，用于“先记意图，再归因回填”。
     - **规则**: `track_favorite_event` 只表示待归因收藏意图，不得替代 `track` 表中的稳定收藏事实；事件表会显式记录 `provider_favorite`、`resolved_track_id`、`resolution_status`、`resolution_confidence` 与 `applied`，对外读取必须统一走 logic 层 favorite projection 合成稳定态与 pending 态。`POST /api/favorite` 与 `WS now_playing` 必须同时输出 `apple_music_state`、`lastfm_state`、`favorite_state`；兼容布尔位 `apple_music` / `lastfm` 表示有效收藏态，`favorite_pending` 也应表现为 `true`。收藏身份查找已纳入 `album_subtitle`，实时探测必须优先复用 projection 缓存与版本失效机制。
 - **[pending_album_work_item.go](./internal/model/pending_album_work_item.go)**:
-    - **功能**: 待归因专辑工作项的冻结上下文、实时对比、显式刷新与手动维护。
-    - **规则**: `GetPendingAlbumWorkItemDetail` 必须同时返回冻结记录、实时 `live_group` 与 `context_stale`；冻结上下文刷新必须走显式 `POST /api/pending-albums/work-items/:id/refresh-context`，查询接口只允许读。手动维护路径 `POST /api/pending-albums/work-items/:id/manual-maintenance` 与 MusicBrainz 路径复用同一套“专辑结构维护 -> Replay 播放 -> 应用收藏 -> 工单完成”骨架；成功后同样视为稳定专辑，但不得伪造 `release_mb` / `album_release_mb`。`manual_tracks[].title` 优先于冻结证据标题，`evidence_titles` 仅用于 replay 归因；若冻结标题与手填曲名不一致，必须在落库阶段显式把对应 `track_play_records` / `track_favorite_event` 绑定到目标 `track.id`。`pending_album_work_item.album_subtitle` 也必须跟随冻结上下文一起持久化。
+    - **功能**: 待归因专辑工作项的冻结上下文、实时对比、显式刷新与手动维护，同时作为待归因工单与正式专辑（Album）精选维护草稿 `staging_draft_json` 的统一持久化载体。
+    - **规则**: `GetPendingAlbumWorkItemDetail` 必须同时返回冻结记录、实时 `live_group` 与 `context_stale`；冻结上下文刷新必须走显式 `POST /api/pending-albums/work-items/:id/refresh-context`，查询接口只允许读。待归因工单与正式专辑（Album）在“重新搜索 => 选定 MB => 精选维护”流程中**100% 复用同一个预审与差异比对弹窗 (`pendingAlbumDiffPreviewModal`)、同一套微调草稿保存 (`staging_draft_json`) 与草稿自动加载/拉取刷新机制**。已完成的工单也可随时点开预审弹窗进行只读审查；正式专辑的草稿通过 `SaveAlbumStagingDraftDB` 绑定至对应的 `resolved_album_id` 工单。手动维护路径 `POST /api/pending-albums/work-items/:id/manual-maintenance` 与正式专辑 `POST /api/albums/:id/musicbrainz/apply-maintenance` 均通过事务级校验落库。
 - **[library_change_log.go](./internal/model/library_change_log.go)**:
     - **功能**: 记录专辑与曲目的增删改事件，为 Bridge `/api/library/sync` 提供版本游标、upsert 集合与删除 tombstone。
 - **[track_insight.go](./internal/model/track_insight.go)**:
@@ -195,5 +196,5 @@
 - **[core/objectstorage/](./core/objectstorage/)**:
     - **规则**: S3 / MinIO / R2 这类基于 AWS SDK v2 的对象存储链路，统一走 smithy 原生 OTel adapter 接到全局 tracer/meter provider，避免在对象存储调用外层再叠手写 span。
 
-*最后更新日期：2026-04-24 | 文档版本: v3.3*
+*最后更新日期：2026-08-07 | 文档版本: v3.4*
 AI MUST READ THIS FILE BEFORE MODIFYING CODE.

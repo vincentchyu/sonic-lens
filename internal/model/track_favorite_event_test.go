@@ -9,12 +9,9 @@ import (
 
 func TestGetPendingTrackFavoriteSnapshotReturnsLatestBySource(t *testing.T) {
 	db := newTrackResolutionTestDB(t, "track_favorite_pending_snapshot")
-	prevSQLite := GlobalDBForSqlLite
 	prevMySQL := GlobalDBForMysql
-	GlobalDBForSqlLite = db
-	GlobalDBForMysql = nil
+	GlobalDBForMysql = db
 	t.Cleanup(func() {
-		GlobalDBForSqlLite = prevSQLite
 		GlobalDBForMysql = prevMySQL
 	})
 

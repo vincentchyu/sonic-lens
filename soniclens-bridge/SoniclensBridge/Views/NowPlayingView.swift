@@ -51,6 +51,11 @@ struct NowPlayingView: View {
         .onChange(of: favoriteActionStore.state) { _, state in
             handleFavoriteActionStateChange(state)
         }
+        .onChange(of: playbackStore.hasActiveNowPlaying) { _, hasActive in
+            if !hasActive {
+                onClose()
+            }
+        }
         .onDisappear {
             animate = false
             viewModel.stopProgress()

@@ -158,7 +158,10 @@ func normalizeTrackForStorage(track *Track) {
 	}
 
 	track.Artist = normalizeTrackStorageText(track.Artist)
-	track.Album = normalizeTrackStorageText(track.Album)
+	// 剥离 Album 字段中可能存在的 Apple Music 发行类型连字符后缀（" - EP" 等），
+	// 保证 track.Album 与 album 表的 name 字段均为干净主标题。
+	cleanAlbum, _ := common.ParseAlbumTitleAndReleaseType(track.Album)
+	track.Album = normalizeTrackStorageText(cleanAlbum)
 	track.AlbumSubtitle = normalizeTrackStorageText(track.AlbumSubtitle)
 	track.Track = normalizeTrackStorageText(track.Track)
 	track.AlbumArtist = normalizeTrackStorageText(track.AlbumArtist)
@@ -173,7 +176,9 @@ func normalizeTrackForStorage(track *Track) {
 
 func normalizeTrackIdentity(identity TrackIdentity) TrackIdentity {
 	identity.Artist = normalizeTrackStorageText(identity.Artist)
-	identity.Album = normalizeTrackStorageText(identity.Album)
+	// 对 identity.Album 同样剥离发行类型后缀，确保查找条件与写入逻辑一致。
+	cleanAlbum, _ := common.ParseAlbumTitleAndReleaseType(identity.Album)
+	identity.Album = normalizeTrackStorageText(cleanAlbum)
 	identity.AlbumSubtitle = normalizeTrackStorageText(identity.AlbumSubtitle)
 	identity.Track = normalizeTrackStorageText(identity.Track)
 	if identity.DiscNumber == 0 && identity.TrackNumber > 0 {
@@ -678,7 +683,7 @@ func upsertTrackAlbumLinkTx(tx *gorm.DB, albumID int64, track *Track) error {
 		if ta.MusicBrainzRecordingID == "" {
 			ta.MusicBrainzRecordingID = track.MusicBrainzID
 		}
-		if err := upsertTrackAlbumTx(tx, &ta, false); err != nil {
+		if err := upsertTrackAlbumTx(tx, &ta, false, false); err != nil {
 			return err
 		}
 		foundPlaceholder = true
@@ -698,7 +703,7 @@ func upsertTrackAlbumLinkTx(tx *gorm.DB, albumID int64, track *Track) error {
 		DiscNumber:             track.DiscNumber,
 		MusicBrainzRecordingID: track.MusicBrainzID,
 	}
-	return upsertTrackAlbumTx(tx, &ta, true)
+	return upsertTrackAlbumTx(tx, &ta, true, false)
 }
 
 func incrementExistingTrackPlayCountTx(tx *gorm.DB, trackID int64) error {

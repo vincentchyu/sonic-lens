@@ -35,6 +35,11 @@ type AlbumTitleMetadata struct {
 	OfficialTitle          string              `json:"official_title"`
 	TitleVersions          []AlbumTitleVersion `json:"title_versions"`
 	NormalizedDisplayTitle string              `json:"normalized_display_title"`
+	// ReleaseType 承载从 Apple Music 连字符尾缀提取的发行类型枚举，
+	// 例如 "ep"、"single"、"lp"；如果原标题不含连字符类型后缀则为空字符串。
+	// 注意：该字段与 TitleVersions 所描述的"版本说明"（Remaster / Deluxe 等）语义完全独立，
+	// 二者不会混用同一字段，以避免概念混淆。
+	ReleaseType string `json:"release_type,omitempty"`
 }
 
 // PlayerInfoHandler 定义播放器信息接口

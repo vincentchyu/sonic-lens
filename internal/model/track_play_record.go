@@ -97,6 +97,7 @@ type TrackPlayRecord struct {
 	TrackNumber          int8                           `gorm:"column:track_number;type:tinyint;index:idx_track_play_records_identity_subtitle" json:"track_number"`
 	DiscNumber           int8                           `gorm:"column:disc_number;type:tinyint;default:1;index:idx_track_play_records_identity_subtitle" json:"disc_number"`
 	Source               string                         `gorm:"column:source;type:varchar(100);not null;index:idx_track_play_records_source" json:"source"`
+	ReleaseType          string                         `gorm:"column:release_type;type:varchar(20)" json:"release_type"`
 	CoverArtPath         string                         `gorm:"column:cover_art_path;type:varchar(1024)" json:"cover_art_path"`                                                                               // 客户端可直接拼接或复用的封面路径
 	TraceID              string                         `gorm:"column:trace_id;type:varchar(32);index:idx_track_play_records_trace_id" json:"trace_id"`                                                       // 关联当前播放链路的 TraceID，便于从播放流水反查观测链路
 	RootSpanID           string                         `gorm:"column:root_span_id;type:varchar(16)" json:"root_span_id"`                                                                                     // 当前播放根 span 的 SpanID，便于从播放流水定位单首歌根节点

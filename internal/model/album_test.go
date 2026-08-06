@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"testing"
 
-	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -24,9 +24,13 @@ func TestGetOrCreateAlbumTxPrefersCuratedAlbumWhenReleaseDateMissing(t *testing.
 		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? AND COALESCE(name_subtitle, '') = ? ORDER BY `album`.`id` LIMIT ?"),
 	).
 		WithArgs("Miles Davis", "Kind of Blue", "", "", 1).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "artist", "release_date", "original_release_date", "sync_status",
-		}))
+		WillReturnRows(
+			sqlmock.NewRows(
+				[]string{
+					"id", "name", "artist", "release_date", "original_release_date", "sync_status",
+				},
+			),
+		)
 
 	mock.ExpectQuery(
 		regexp.QuoteMeta(
@@ -35,16 +39,21 @@ func TestGetOrCreateAlbumTxPrefersCuratedAlbumWhenReleaseDateMissing(t *testing.
 	).
 		WithArgs("Miles Davis", "Kind of Blue", 3, "", 1).
 		WillReturnRows(
-			sqlmock.NewRows([]string{
-				"id", "name", "artist", "release_date", "original_release_date", "sync_status", "created_at", "updated_at",
-			}).AddRow(21, "Kind of Blue", "Miles Davis", "1959-08-17", "1959-08-17", 3, modelTestNow, modelTestNow),
+			sqlmock.NewRows(
+				[]string{
+					"id", "name", "artist", "release_date", "original_release_date", "sync_status", "created_at",
+					"updated_at",
+				},
+			).AddRow(21, "Kind of Blue", "Miles Davis", "1959-08-17", "1959-08-17", 3, modelTestNow, modelTestNow),
 		)
 
-	mock.ExpectExec(regexp.QuoteMeta(
-		"UPDATE `album` SET `name`=?,`name_subtitle`=?,`artist`=?,`release_date`=?,`original_release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
-	)).
+	mock.ExpectExec(
+		regexp.QuoteMeta(
+			"UPDATE `album` SET `name`=?,`name_subtitle`=?,`artist`=?,`release_date`=?,`original_release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`release_type`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
+		),
+	).
 		WithArgs(
-			"Kind of Blue", "", "Miles Davis", "1959-08-17", "1959-08-17", "", "", "", "", "", 0, "", 3, "", "", "",
+			"Kind of Blue", "", "Miles Davis", "1959-08-17", "1959-08-17", "", "", "", "", "", 0, "", 3, "", "", "", "",
 			modelTestNow, modelTestNow, int64(21),
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -76,9 +85,13 @@ func TestGetOrCreateAlbumTxCreatesNewAlbumWhenIncomingReleaseDateDiffers(t *test
 		regexp.QuoteMeta("SELECT * FROM `album` WHERE artist = ? AND name = ? AND release_date = ? AND COALESCE(name_subtitle, '') = ? ORDER BY `album`.`id` LIMIT ?"),
 	).
 		WithArgs("Pink Floyd", "The Dark Side of the Moon", "1973-03-24", "", 1).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "artist", "release_date", "original_release_date",
-		}))
+		WillReturnRows(
+			sqlmock.NewRows(
+				[]string{
+					"id", "name", "artist", "release_date", "original_release_date",
+				},
+			),
+		)
 
 	mock.ExpectQuery(
 		regexp.QuoteMeta(
@@ -86,17 +99,22 @@ func TestGetOrCreateAlbumTxCreatesNewAlbumWhenIncomingReleaseDateDiffers(t *test
 		),
 	).
 		WithArgs("Pink Floyd", "The Dark Side of the Moon", "", 1).
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "artist", "release_date", "original_release_date",
-		}))
+		WillReturnRows(
+			sqlmock.NewRows(
+				[]string{
+					"id", "name", "artist", "release_date", "original_release_date",
+				},
+			),
+		)
 
 	mock.ExpectExec(
 		regexp.QuoteMeta(
-			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`release_type`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		),
 	).
 		WithArgs(
-			"The Dark Side of the Moon", "", "Pink Floyd", "1973-03-24", "1973-03-01", "", "", "", "", "", 1, "", 0, "", "", "",
+			"The Dark Side of the Moon", "", "Pink Floyd", "1973-03-24", "1973-03-01", "", "", "", "", "", 1, "", 0, "",
+			"", "", "",
 		).
 		WillReturnResult(sqlmock.NewResult(178, 1))
 	mock.ExpectExec(
@@ -194,7 +212,7 @@ func TestUpdateAlbumTitleMetadataByIDTx(t *testing.T) {
 
 	mock.ExpectExec(
 		regexp.QuoteMeta(
-			"UPDATE `album` SET `title_metadata`=?,`updated_at`=? WHERE id = ? AND ((title_metadata IS NULL OR title_metadata = '' OR title_metadata <> ?))",
+			"UPDATE `album` SET `title_metadata`=?,`updated_at`=? WHERE id = ? AND sync_status <> 4 AND ((title_metadata IS NULL OR title_metadata = '' OR title_metadata <> ?))",
 		),
 	).
 		WithArgs(
@@ -247,12 +265,19 @@ func TestUpdateAlbumSyncStatusTxPropagatesExecError(t *testing.T) {
 func TestUpsertAlbumCoverByIDTx(t *testing.T) {
 	_, mock := newModelTestDB(t)
 
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT `sync_status` FROM `album` WHERE id = ?")).
+		WithArgs(int64(18)).
+		WillReturnRows(sqlmock.NewRows([]string{"sync_status"}).AddRow(0))
+
 	mock.ExpectExec(
 		regexp.QuoteMeta(
 			"UPDATE `album` SET `cover_art_mime`=?,`cover_art_object_key`=?,`cover_art_url`=?,`updated_at`=? WHERE id = ? AND ((cover_art_object_key IS NULL OR cover_art_object_key = '' OR cover_art_object_key <> ?))",
 		),
 	).
-		WithArgs("image/jpeg", "v1/originals/abc", "http://127.0.0.1:9000/album/v1/originals/abc", modelTestNow, int64(18), "v1/originals/abc").
+		WithArgs(
+			"image/jpeg", "v1/originals/abc", "http://127.0.0.1:9000/album/v1/originals/abc", modelTestNow, int64(18),
+			"v1/originals/abc",
+		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(
 		regexp.QuoteMeta("INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)"),
@@ -278,12 +303,19 @@ func TestUpsertAlbumCoverByIDTx(t *testing.T) {
 func TestUpsertAlbumCoverByIDTxSkipsChangeLogWhenNoRowsAffected(t *testing.T) {
 	_, mock := newModelTestDB(t)
 
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT `sync_status` FROM `album` WHERE id = ?")).
+		WithArgs(int64(19)).
+		WillReturnRows(sqlmock.NewRows([]string{"sync_status"}).AddRow(0))
+
 	mock.ExpectExec(
 		regexp.QuoteMeta(
 			"UPDATE `album` SET `cover_art_mime`=?,`cover_art_object_key`=?,`cover_art_url`=?,`updated_at`=? WHERE id = ? AND ((cover_art_object_key IS NULL OR cover_art_object_key = '' OR cover_art_object_key <> ?))",
 		),
 	).
-		WithArgs("image/jpeg", "v1/originals/existing", "http://127.0.0.1:9000/album/v1/originals/existing", modelTestNow, int64(19), "v1/originals/existing").
+		WithArgs(
+			"image/jpeg", "v1/originals/existing", "http://127.0.0.1:9000/album/v1/originals/existing", modelTestNow,
+			int64(19), "v1/originals/existing",
+		).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	require.NoError(

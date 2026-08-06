@@ -28,11 +28,15 @@ type Album struct {
 	TotalDiscs          int                     `gorm:"column:total_discs;type:int;default:1" json:"total_discs"`              // 总碟数
 	DiscInfos           string                  `gorm:"column:disc_infos;type:varchar(255)" json:"disc_infos"`                 // 各碟信息(如 track counts)
 	SyncStatus          int                     `gorm:"column:sync_status;type:tinyint;not null;default:0" json:"sync_status"` // 0:默认, 1:初选搜索完成, 2:初选关联完成, 3:精选维护完成, 4:精选锁定完成
-	CoverArtURL         string                  `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
-	CoverArtMime        string                  `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
-	CoverArtObjectKey   string                  `gorm:"column:cover_art_object_key;type:varchar(512);index:idx_album_cover_art_object_key" json:"cover_art_object_key"`
-	CreatedAt           time.Time               `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt           time.Time               `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+	// ReleaseType 承载专辑发行类型枚举（ep / single / lp / album 等），
+	// 从 Apple Music " - EP" 等连字符后缀自动提取，也可由 MusicBrainz 同步写入。
+	// 与 NameSubtitle（Deluxe/Remaster 等版本说明）语义完全独立，存储在独立列。
+	ReleaseType       string    `gorm:"column:release_type;type:varchar(20)" json:"release_type"`
+	CoverArtURL       string    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
+	CoverArtMime      string    `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
+	CoverArtObjectKey string    `gorm:"column:cover_art_object_key;type:varchar(512);index:idx_album_cover_art_object_key" json:"cover_art_object_key"`
+	CreatedAt         time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt         time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // AlbumCoverUpdate 用于更新专辑封面存储信息。
@@ -68,7 +72,29 @@ func normalizedAlbumSubtitle(subtitle string) string {
 	return strings.TrimSpace(subtitle)
 }
 
+// normalizeAlbumReleaseTypeSuffix 在专辑落库前检查并剥离 Apple Music 连字符发行类型后缀。
+// 例如 "In The Sun - EP" -> Name="In The Sun", ReleaseType="ep"。
+// 如果已有 ReleaseType 则不覆盖，保留显式设置的值。
+func normalizeAlbumReleaseTypeSuffix(album *Album) {
+	if album.Name == "" {
+		return
+	}
+	title, rt := common.ParseAlbumTitleAndReleaseType(album.Name)
+	if rt == "" {
+		// 原标题不含连字符后缀，无需处理
+		return
+	}
+	// 剥离后缀，写入干净主标题
+	album.Name = title
+	// ReleaseType 以已有值优先（精选维护可能已写入），未设置时才自动填充
+	if album.ReleaseType == "" {
+		album.ReleaseType = rt
+	}
+}
+
 func getOrCreateAlbumTx(db *gorm.DB, album *Album) error {
+	// 落库前统一剥离 Apple Music 发行类型连字符后缀，防止 "In The Sun - EP" 写入专辑名。
+	normalizeAlbumReleaseTypeSuffix(album)
 	subtitle := normalizedAlbumSubtitle(album.NameSubtitle)
 	var exact Album
 	err := db.Where(
@@ -153,6 +179,9 @@ func mergeAlbumFields(target, source *Album) {
 	if target.TitleMetadata == nil && source.TitleMetadata != nil {
 		clone := *source.TitleMetadata
 		target.TitleMetadata = &clone
+	}
+	if target.ReleaseType == "" && source.ReleaseType != "" {
+		target.ReleaseType = source.ReleaseType
 	}
 	if target.Genre == "" && source.Genre != "" {
 		target.Genre = source.Genre

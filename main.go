@@ -60,6 +60,9 @@ func main() {
 	// Add replay-track-play-records subcommand
 	rootCmd.AddCommand(newReplayTrackPlayRecordsCommand())
 
+	// Add cleanup-release-type-suffixes subcommand
+	rootCmd.AddCommand(newCleanupReleaseTypeSuffixesCommand())
+
 	cobra.CheckErr(rootCmd.Execute())
 }
 
@@ -77,6 +80,10 @@ func newCleanupDuplicateAlbumsCommand() *cobra.Command {
 
 func newReplayTrackPlayRecordsCommand() *cobra.Command {
 	return cmd.NewReplayTrackPlayRecordsCommand()
+}
+
+func newCleanupReleaseTypeSuffixesCommand() *cobra.Command {
+	return cmd.NewCleanupReleaseTypeSuffixesCommand()
 }
 
 func initServer() error {
@@ -171,12 +178,12 @@ func scrobblerRun(c <-chan struct{}) error {
 }
 
 func initPprof() {
-	go func() {
+	/*go func() {
 		err := http.ListenAndServe("127.0.0.1:6060", nil)
 		if err != nil {
 			panic(err)
 		}
-	}()
+	}()*/
 }
 
 func init() {

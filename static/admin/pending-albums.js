@@ -1,9 +1,21 @@
+function escJs(s) {
+    if (!s) return "";
+    return String(s)
+        .replace(/\\/g, '\\\\')   // 转义反斜杠
+        .replace(/'/g, "\\'")     // 转义单引号
+        .replace(/&/g, '&amp;')   // 转义 &
+        .replace(/"/g, '&quot;')  // 转义双引号，防止闭合 HTML 属性
+        .replace(/</g, '&lt;')    // 转义 <
+        .replace(/>/g, '&gt;');   // 转义 >
+}
+
 async function loadPendingAlbumList() {
-        if (currentPendingWorkTab === 'pending_groups') {
+        if (currentPendingWorkTab === 'pending_groups' || currentPendingWorkTab === 'uncreated_groups') {
             const content = document.getElementById('pendingAlbumListContent');
             renderAdminLoading(content);
             try {
-                const resp = await fetch('/api/pending-albums?limit=100');
+                const filter = currentPendingWorkTab === 'uncreated_groups' ? 'uncreated' : '';
+                const resp = await fetch(`/api/pending-albums?limit=100&filter=${filter}`);
                 const data = await resp.json();
                 pendingAlbumGroups = data.groups || [];
                 renderPendingAlbumList(pendingAlbumGroups);
@@ -27,6 +39,7 @@ async function loadPendingAlbumList() {
         
         const tabIdMap = {
             'pending_groups': 'tabPendingGroups',
+            'uncreated_groups': 'tabUncreatedGroups',
             'working_items': 'tabWorkingItems',
             'completed_items': 'tabCompletedItems'
         };
@@ -36,7 +49,7 @@ async function loadPendingAlbumList() {
         const searchContainer = document.getElementById('pendingWorkSearchContainer');
         const paginationContainer = document.getElementById('pendingWorkPagination');
         
-        if (tab === 'pending_groups') {
+        if (tab === 'pending_groups' || tab === 'uncreated_groups') {
             searchContainer.style.display = 'none';
             paginationContainer.style.display = 'none';
             loadPendingAlbumList();
@@ -138,10 +151,13 @@ async function loadPendingAlbumList() {
             case 'not_created':
                 return '尚未建单';
             case 'open':
+                return '待处理';
             case 'mb_selected':
-            case 'deep_maintaining':
+                return '已选版本';
+            case 'staged':
+                return '草稿就绪';
             case 'applying':
-                return '维护中';
+                return '应用中';
             case 'completed':
                 return '已完成';
             case 'failed':
@@ -156,7 +172,10 @@ async function loadPendingAlbumList() {
         if (statusName === '尚未建单') {
             return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(127, 140, 141, 0.14); color: #7f8c8d; font-weight: 600; letter-spacing: 0.02em;">${statusName}</span>`;
         }
-        if (statusName === '维护中') {
+        if (statusName === '草稿就绪') {
+            return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(243, 156, 18, 0.16); color: #e67e22; font-weight: 700; letter-spacing: 0.02em;">${statusName}</span>`;
+        }
+        if (statusName === '待处理' || statusName === '已选版本' || statusName === '应用中') {
             return `<span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(var(--primary-rgb), 0.16); color: var(--primary-color); font-weight: 700; letter-spacing: 0.02em;">${statusName}</span>`;
         }
         if (statusName === '已完成') {
@@ -204,7 +223,7 @@ async function loadPendingAlbumList() {
                             <div style="margin-top: 6px; font-size: 0.8em; opacity: 0.6; color: var(--text-secondary);">${workItemText}</div>
                             <div style="margin-top: 8px; font-size: 0.85em; color: var(--text-primary);">${trackPreview || '暂无曲目摘要'}</div>
                         </div>
-                        <button class="time-filter" onclick="openPendingAlbumWorkItem('${esc(group.identity_key)}')" style="flex-shrink: 0;">进入维护</button>
+                        <button class="time-filter" onclick="openPendingAlbumWorkItem('${escJs(group.identity_key)}')" style="flex-shrink: 0;">进入维护</button>
                     </div>
                 </div>
             `;
@@ -645,19 +664,26 @@ async function loadPendingAlbumList() {
         resetPendingManualFormFromContext();
 
         let resultText = '尚未执行';
-        if (workItem.status === 'completed') {
-            resultText = '<span style="color: #27ae60;">执行完成</span>';
+        if (workItem.status === 'staged') {
+            resultText = `
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                    <span style="color: #e67e22; font-weight: 700;">预审草稿就绪（待管理员审核确认）</span>
+                    <button class="time-filter" onclick="openPendingAlbumDiffPreviewModal()" style="background: #e67e22; color: #fff; border: none; font-weight: 700; padding: 8px 14px; border-radius: 8px; cursor: pointer; text-align: center;">👉 查看 / 修改预审草稿</button>
+                </div>
+            `;
+        } else if (workItem.status === 'completed') {
+            resultText = '<span style="color: #27ae60; font-weight: 700;">维护完成落库</span>';
         } else if (workItem.last_error) {
             resultText = `<span style="color: #e74c3c;">最近错误: ${esc(workItem.last_error)}</span>`;
         }
         document.getElementById('pendingAlbumExecutionReport').innerHTML = resultText;
 
         const isCompleted = workItem.status === 'completed';
-        document.getElementById('pendingAlbumDeepBtn').disabled = (isCompleted || !workItem.selected_mbid);
+        document.getElementById('pendingAlbumDeepBtn').disabled = false;
         document.getElementById('pendingManualSubmitBtn').disabled = isCompleted;
-        if (currentPendingCandidates.length > 0) {
-            renderPendingAlbumCandidates(currentPendingCandidates);
-        }
+
+        // 自动装载候选版本列表
+        await loadPendingAlbumCandidates();
     }
 
     function dismissPendingAlbumContextStale() {
@@ -699,20 +725,29 @@ async function loadPendingAlbumList() {
 
     function renderPendingAlbumCandidates(candidates) {
         const container = document.getElementById('pendingAlbumCandidates');
+        const accordion = document.getElementById('pendingManualAccordion');
         if (!candidates || candidates.length === 0) {
-            renderAdminEmpty(container, "没有搜索到候选版本");
+            renderAdminEmpty(container, "未搜到 MB 候选版本（可展开下方手动创建表单）");
+            if (accordion) accordion.open = true;
             return;
         }
+        if (accordion) accordion.open = false;
+        const isCompleted = currentPendingAlbumWorkItemDetail?.work_item?.status === 'completed';
         container.innerHTML = candidates.map((item, index) => `
             <div style="padding: 12px; border: 1px solid var(--border-color); border-radius: 12px;">
                 <div style="display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;">
                     <div style="min-width: 0; flex: 1;">
-                        <div style="font-weight: 700; color: var(--text-primary);">${item.name}</div>
-                        <div style="font-size: 0.8em; opacity: 0.65; color: var(--text-secondary);">${item.mbid}</div>
+                        <div style="font-weight: 700; color: var(--text-primary);">${esc(item.name)}</div>
+                        <div style="font-size: 0.8em; opacity: 0.65; color: var(--text-secondary);">${esc(item.mbid)}</div>
                     </div>
-                    ${item.mbid === currentPendingSelectedMBID
-                        ? '<span style="padding: 7px 12px; border-radius: 10px; background: rgba(var(--primary-rgb), 0.18); color: var(--primary-color); font-weight: 700;">已选定</span>'
-                        : `<button class="time-filter" onclick="selectPendingCandidate(${item.id || 0}, '${esc(item.mbid)}')">选定</button>`}
+                    <div style="display: flex; gap: 6px;">
+                        ${isCompleted 
+                            ? (item.mbid === currentPendingSelectedMBID ? '<button class="time-filter" style="background: rgba(var(--primary-rgb), 0.18); color: var(--primary-color); font-weight: 700;" onclick="openPendingAlbumDiffPreviewModal(' + (item.id || 0) + ', \'' + esc(item.mbid) + '\')">查看预审草稿</button>' : '<span style="font-size: 0.82em; opacity: 0.5; color: var(--text-secondary); align-self: center;">归因已完成</span>')
+                            : (item.mbid === currentPendingSelectedMBID
+                                ? '<button class="time-filter" style="background: rgba(var(--primary-rgb), 0.18); color: var(--primary-color); font-weight: 700;" onclick="openPendingAlbumDiffPreviewModal(' + (item.id || 0) + ', \'' + esc(item.mbid) + '\')">预览与维护</button>'
+                                : `<button class="time-filter" onclick="selectPendingCandidateAndPreview(${item.id || 0}, '${esc(item.mbid)}')">选定并预览</button>`)
+                        }
+                    </div>
                 </div>
                 <div style="margin-top: 8px;">
                     <a href="javascript:void(0)" onclick="window.currentCandidates = currentPendingCandidates; showCandidateDetail(${index})" style="font-size: 0.78em; color: var(--primary-color); text-decoration: none;">查看详情</a>
@@ -736,27 +771,422 @@ async function loadPendingAlbumList() {
         await loadPendingAlbumWorkItemDetail();
     }
 
-    async function runPendingAlbumDeepMaintenance() {
+    async function selectPendingCandidateAndPreview(releaseMBID, mbid) {
+        await selectPendingCandidate(releaseMBID, mbid);
+        await openPendingAlbumDiffPreviewModal(releaseMBID, mbid);
+    }
+
+    let currentPendingDiffPreview = null;
+    let currentContextAlbumID = 0;
+
+    async function openAlbumMBDiffPreviewModal(albumID, releaseMBID = 0, mbid = '', forceRefresh = false) {
+        if (!albumID) return;
+        currentContextAlbumID = albumID;
+
+        showModal('pendingAlbumDiffPreviewModal');
+
+        const footerStatus = document.getElementById('pendingDiffFooterStatus');
+        const saveBtn = document.getElementById('pendingDiffSaveDraftBtn');
+        const applyBtn = document.getElementById('pendingDiffApplyBtn');
+        if (footerStatus) footerStatus.textContent = forceRefresh ? '正在重新从 MusicBrainz 拉取最新元数据...' : '正在获取 MB 精选维护差异预审...';
+        if (applyBtn) applyBtn.disabled = true;
+        if (saveBtn) {
+            saveBtn.style.display = 'inline-block';
+            saveBtn.disabled = false;
+        }
+
+        try {
+            const url = `/api/albums/${albumID}/musicbrainz/preview?release_mb_id=${releaseMBID || 0}&mbid=${encodeURIComponent(mbid)}&force_refresh=${forceRefresh ? 1 : 0}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(data.error || '获取 MB 精选维护快照失败');
+            }
+            currentPendingDiffPreview = data;
+            renderPendingDiffPreview(data);
+            if (footerStatus) footerStatus.textContent = forceRefresh ? '✅ 已成功从 MB 重新拉取最新数据！' : '精选维护对比已就绪，审查无误后可点击“仅保存草稿”或“确认审核并落库数据”。';
+        } catch (err) {
+            if (footerStatus) footerStatus.textContent = '预审失败: ' + (err.message || '网络或数据错误');
+            alert('获取预审快照失败: ' + (err.message || err));
+        } finally {
+            if (applyBtn) applyBtn.disabled = false;
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    async function refreshPendingDiffPreviewFromMB() {
+        if (!confirm('重新从 MusicBrainz 拉取将刷新当前对比内容，是否继续？')) {
+            return;
+        }
+        if (currentContextAlbumID > 0) {
+            await openAlbumMBDiffPreviewModal(currentContextAlbumID, 0, '', true);
+        } else {
+            await openPendingAlbumDiffPreviewModal(0, '', true);
+        }
+    }
+
+    async function openPendingAlbumDiffPreviewModal(releaseMBID = 0, mbid = '', forceRefresh = false) {
         if (!currentPendingAlbumWorkItemID) return;
-        const button = document.getElementById('pendingAlbumDeepBtn');
-        button.disabled = true;
-        button.textContent = '处理中...';
-        const resp = await fetch(`/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}/deep-maintenance`, {
-            method: 'POST'
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-            document.getElementById('pendingAlbumExecutionReport').innerHTML = `<span style="color: #e74c3c;">${esc(data.error || '执行失败')}</span>`;
-            button.disabled = false;
-            button.textContent = '深度维护并应用上下文';
+        currentContextAlbumID = 0;
+        const targetMBID = mbid || currentPendingSelectedMBID || '';
+
+        showModal('pendingAlbumDiffPreviewModal');
+
+        const footerStatus = document.getElementById('pendingDiffFooterStatus');
+        const saveBtn = document.getElementById('pendingDiffSaveDraftBtn');
+        const applyBtn = document.getElementById('pendingDiffApplyBtn');
+        if (saveBtn) saveBtn.style.display = 'inline-block';
+        if (footerStatus) footerStatus.textContent = forceRefresh ? '正在重新从 MusicBrainz 拉取最新元数据...' : '正在获取 MB 差异预审草稿...';
+        if (applyBtn) applyBtn.disabled = true;
+        if (saveBtn) saveBtn.disabled = true;
+
+        const isCompleted = currentPendingAlbumWorkItemDetail?.work_item?.status === 'completed';
+
+        try {
+            const url = `/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}/musicbrainz/preview?release_mb_id=${releaseMBID || 0}&mbid=${encodeURIComponent(targetMBID)}&force_refresh=${forceRefresh ? 1 : 0}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(data.error || '获取 MB 预审快照失败');
+            }
+            currentPendingDiffPreview = data;
+            renderPendingDiffPreview(data);
+            if (isCompleted) {
+                if (footerStatus) footerStatus.textContent = '✅ 维护已完成并已落库（当前为只读审查模式）。';
+            } else {
+                if (footerStatus) footerStatus.textContent = forceRefresh ? '✅ 已成功从 MB 重新拉取最新草稿！' : '草稿对比已就绪，审查无误后可保存草稿或点击应用落库。';
+            }
+        } catch (err) {
+            if (footerStatus) footerStatus.textContent = '预审失败: ' + (err.message || '网络或数据错误');
+            alert('获取预审快照失败: ' + (err.message || err));
+        } finally {
+            if (saveBtn) saveBtn.disabled = isCompleted;
+            if (applyBtn) applyBtn.disabled = isCompleted;
+        }
+    }
+
+    function setPendingDiffGenre(val) {
+        const input = document.getElementById('pendingDiffGenre');
+        if (input) input.value = val;
+    }
+
+    function renderPendingDiffPreview(preview) {
+        if (!preview) return;
+        const album = preview.album_preview || {};
+        document.getElementById('pendingDiffAlbumName').value = album.name || '';
+        document.getElementById('pendingDiffAlbumArtist').value = album.album_artist || '';
+        
+        const mbGenre = album.genre || '';
+        const evGenre = album.evidence_genre || '';
+        const chosenGenre = album.genre || album.evidence_genre || '';
+        document.getElementById('pendingDiffGenre').value = chosenGenre;
+
+        const genreHint = document.getElementById('pendingDiffGenreHint');
+        if (genreHint) {
+            let hintHtml = '';
+            if (mbGenre || evGenre) {
+                hintHtml = `MB 流派: <b>${esc(mbGenre || '-')}</b> | 监听源流派: <b>${esc(evGenre || '-')}</b>`;
+                if (evGenre && evGenre !== mbGenre) {
+                    hintHtml += ` <a href="javascript:void(0)" onclick="setPendingDiffGenre('${esc(evGenre)}')" style="color: var(--primary-color); text-decoration: underline; margin-left: 6px; font-weight: bold;">[用监听源流派]</a>`;
+                }
+                if (mbGenre && evGenre && evGenre !== mbGenre) {
+                    hintHtml += ` <a href="javascript:void(0)" onclick="setPendingDiffGenre('${esc(mbGenre)}')" style="color: #e67e22; text-decoration: underline; margin-left: 6px; font-weight: bold;">[用 MB 流派]</a>`;
+                }
+            }
+            genreHint.innerHTML = hintHtml;
+        }
+
+        document.getElementById('pendingDiffReleaseDate').value = album.release_date || '';
+        document.getElementById('pendingDiffOriginalReleaseDate').value = album.original_release_date || '';
+        document.getElementById('pendingDiffCountry').value = album.country || '';
+
+        const badge = document.getElementById('pendingDiffBadge');
+        if (badge) {
+            const count = preview.diff_track_count || 0;
+            badge.textContent = count > 0 ? `有 ${count} 首曲名差异` : '曲名完全匹配';
+            badge.style.background = count > 0 ? 'rgba(243, 156, 18, 0.2)' : 'rgba(46, 204, 113, 0.2)';
+            badge.style.color = count > 0 ? '#e67e22' : '#27ae60';
+            badge.style.borderColor = count > 0 ? 'rgba(243, 156, 18, 0.4)' : 'rgba(46, 204, 113, 0.4)';
+        }
+
+        const tbody = document.getElementById('pendingDiffTrackBody');
+        const tracks = preview.track_previews || [];
+        if (!tracks.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-secondary);">无曲目数据</td></tr>';
             return;
         }
 
-        const report = data.report || {};
-        document.getElementById('pendingAlbumExecutionReport').innerHTML = renderPendingMaintenanceReport(report);
-        button.textContent = '已完成';
-        await loadPendingAlbumWorkItemDetail();
-        await loadPendingAlbumList();
+        tbody.innerHTML = tracks.map((track, idx) => {
+            const hasDiff = !!track.has_diff;
+            const rowBg = hasDiff ? 'rgba(243, 156, 18, 0.06)' : 'transparent';
+            const mbTitle = track.mb_title || '';
+            const evTitle = track.evidence_title || (track.evidence_titles && track.evidence_titles[0]) || '';
+            const chosenTitle = track.title || mbTitle || evTitle || '';
+            const chosenGenre = track.genre || track.evidence_genre || '';
+
+            return `
+                <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border-color);" data-track-idx="${idx}">
+                    <td style="padding: 10px 12px; font-weight: 600; color: var(--text-secondary);">
+                        CD ${track.disc_number || 1} / #${track.track_number}
+                    </td>
+                    <td style="padding: 10px 12px; color: var(--text-primary);">
+                        <div>${esc(mbTitle || '-')}</div>
+                        <div style="font-size: 0.78em; opacity: 0.6; color: var(--text-secondary);">时长: ${Math.floor(track.duration / 60)}:${String(track.duration % 60).padStart(2, '0')}</div>
+                    </td>
+                    <td style="padding: 10px 12px;">
+                        ${evTitle ? `
+                            <div style="color: var(--text-primary);">${esc(evTitle)}</div>
+                            ${hasDiff ? '<span style="font-size: 0.72em; background: #e67e22; color: #fff; padding: 1px 6px; border-radius: 4px; font-weight: bold; display: inline-block; margin-top: 4px;">不一致</span>' : ''}
+                        ` : '<span style="opacity: 0.5; color: var(--text-secondary);">-</span>'}
+                    </td>
+                    <td style="padding: 10px 12px;">
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <input type="text" class="search-input diff-chosen-title" data-idx="${idx}" value="${esc(chosenTitle)}" placeholder="曲名" style="width: 100%; font-size: 0.9em; padding: 6px 10px;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.76em; opacity: 0.75; color: var(--text-secondary); white-space: nowrap;">曲目流派:</span>
+                                <input type="text" class="search-input diff-chosen-genre" data-idx="${idx}" value="${esc(chosenGenre)}" placeholder="曲目流派 (选填)" style="width: 100%; font-size: 0.8em; padding: 4px 8px;">
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function setAllDiffTitleChoice(choice) {
+        if (!currentPendingDiffPreview) return;
+        const tracks = currentPendingDiffPreview.track_previews || [];
+        const inputs = document.querySelectorAll('.diff-chosen-title');
+        inputs.forEach(input => {
+            const idx = Number(input.getAttribute('data-idx'));
+            const track = tracks[idx];
+            if (!track) return;
+            if (choice === 'mb') {
+                input.value = track.mb_title || track.title || '';
+            } else if (choice === 'evidence') {
+                input.value = track.evidence_title || (track.evidence_titles && track.evidence_titles[0]) || track.mb_title || '';
+            }
+        });
+    }
+
+    async function savePendingDiffDraft() {
+        if ((!currentPendingAlbumWorkItemID && !currentContextAlbumID) || !currentPendingDiffPreview) return;
+        const footerStatus = document.getElementById('pendingDiffFooterStatus');
+        const saveBtn = document.getElementById('pendingDiffSaveDraftBtn');
+
+        const albumName = document.getElementById('pendingDiffAlbumName').value.trim();
+        const albumArtist = document.getElementById('pendingDiffAlbumArtist').value.trim();
+        if (!albumName || !albumArtist) {
+            alert('专辑名和专辑艺术家不能为空');
+            return;
+        }
+
+        const tracks = currentPendingDiffPreview.track_previews || [];
+        const chosenInputs = document.querySelectorAll('.diff-chosen-title');
+        const chosenGenreInputs = document.querySelectorAll('.diff-chosen-genre');
+        const manualTracks = [];
+
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            const chosenTitle = (chosenInputs[i] ? chosenInputs[i].value : '').trim() || track.mb_title;
+            const chosenGenre = (chosenGenreInputs[i] ? chosenGenreInputs[i].value : '').trim();
+            if (!chosenTitle) {
+                alert(`第 ${i + 1} 首曲目的标题不能为空`);
+                return;
+            }
+            manualTracks.push({
+                disc_number: Number(track.disc_number || 1),
+                track_number: Number(track.track_number || (i + 1)),
+                title: chosenTitle,
+                artist: track.artist || albumArtist,
+                genre: chosenGenre,
+                duration: Number(track.duration || 0),
+                composer: track.composer || '',
+                music_brainz_id: track.music_brainz_id || '',
+                evidence_titles: track.evidence_titles || []
+            });
+        }
+
+        const draftPayload = {
+            work_item_id: Number(currentPendingAlbumWorkItemID),
+            release_mb_id: Number(currentPendingDiffPreview.release_mb_id || 0),
+            mbid: currentPendingDiffPreview.mbid || '',
+            album_preview: {
+                name: albumName,
+                album_artist: albumArtist,
+                display_artist: albumArtist,
+                genre: document.getElementById('pendingDiffGenre').value.trim(),
+                release_date: document.getElementById('pendingDiffReleaseDate').value.trim(),
+                original_release_date: document.getElementById('pendingDiffOriginalReleaseDate').value.trim(),
+                country: document.getElementById('pendingDiffCountry').value.trim(),
+                status: currentPendingDiffPreview.album_preview?.status || '',
+                packaging: currentPendingDiffPreview.album_preview?.packaging || '',
+                barcode: currentPendingDiffPreview.album_preview?.barcode || '',
+                cover_art_url: currentPendingDiffPreview.album_preview?.cover_art_url || ''
+            },
+            track_previews: tracks.map((track, i) => ({
+                ...track,
+                title: (chosenInputs[i] ? chosenInputs[i].value : '').trim() || track.mb_title,
+                genre: (chosenGenreInputs[i] ? chosenGenreInputs[i].value : '').trim()
+            })),
+            diff_track_count: currentPendingDiffPreview.diff_track_count || 0,
+            suggested_input: {
+                manual_album: {
+                    name: albumName,
+                    album_artist: albumArtist,
+                    display_artist: albumArtist,
+                    genre: document.getElementById('pendingDiffGenre').value.trim(),
+                    release_date: document.getElementById('pendingDiffReleaseDate').value.trim(),
+                    original_release_date: document.getElementById('pendingDiffOriginalReleaseDate').value.trim(),
+                    country: document.getElementById('pendingDiffCountry').value.trim(),
+                    status: currentPendingDiffPreview.album_preview?.status || '',
+                    packaging: currentPendingDiffPreview.album_preview?.packaging || '',
+                    barcode: currentPendingDiffPreview.album_preview?.barcode || '',
+                    cover_art_url: currentPendingDiffPreview.album_preview?.cover_art_url || ''
+                },
+                manual_tracks: manualTracks
+            }
+        };
+
+        if (footerStatus) footerStatus.textContent = '正在保存改动为草稿...';
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            let draftUrl = `/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}/musicbrainz/draft`;
+            if (currentContextAlbumID > 0) {
+                draftUrl = `/api/albums/${currentContextAlbumID}/musicbrainz/draft`;
+            }
+            const resp = await fetch(draftUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(draftPayload)
+            });
+            const data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(data.error || '保存草稿失败');
+            }
+            currentPendingDiffPreview = draftPayload;
+            if (footerStatus) footerStatus.textContent = '✅ 草稿已微调并成功保存！';
+            if (typeof showToast === 'function') showToast('✅ 预审草稿已成功保存！');
+            if (currentPendingAlbumWorkItemID > 0) {
+                await loadPendingAlbumWorkItemDetail();
+                await loadPendingAlbumList();
+            }
+        } catch (err) {
+            if (footerStatus) footerStatus.textContent = '保存草稿失败: ' + (err.message || err);
+            alert('保存草稿失败: ' + (err.message || err));
+        } finally {
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    async function submitPendingDiffMaintenance() {
+        if ((!currentPendingAlbumWorkItemID && !currentContextAlbumID) || !currentPendingDiffPreview) return;
+
+        const albumName = document.getElementById('pendingDiffAlbumName').value.trim();
+        const albumArtist = document.getElementById('pendingDiffAlbumArtist').value.trim();
+        if (!albumName || !albumArtist) {
+            alert('专辑名和专辑艺术家不能为空');
+            return;
+        }
+
+        const tracks = currentPendingDiffPreview.track_previews || [];
+        const chosenInputs = document.querySelectorAll('.diff-chosen-title');
+        const chosenGenreInputs = document.querySelectorAll('.diff-chosen-genre');
+        const manualTracks = [];
+
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            const chosenTitle = (chosenInputs[i] ? chosenInputs[i].value : '').trim() || track.mb_title;
+            const chosenGenre = (chosenGenreInputs[i] ? chosenGenreInputs[i].value : '').trim();
+            if (!chosenTitle) {
+                alert(`第 ${i + 1} 首曲目的标题不能为空`);
+                return;
+            }
+            manualTracks.push({
+                disc_number: Number(track.disc_number || 1),
+                track_number: Number(track.track_number || (i + 1)),
+                title: chosenTitle,
+                artist: track.artist || albumArtist,
+                genre: chosenGenre,
+                duration: Number(track.duration || 0),
+                composer: track.composer || '',
+                music_brainz_id: track.music_brainz_id || '',
+                evidence_titles: track.evidence_titles || []
+            });
+        }
+
+        const payload = {
+            release_mb_id: currentPendingDiffPreview?.release_mb_id || 0,
+            mbid: currentPendingDiffPreview?.mbid || '',
+            manual_album: {
+                name: albumName,
+                album_artist: albumArtist,
+                display_artist: albumArtist,
+                release_date: document.getElementById('pendingDiffReleaseDate').value.trim(),
+                original_release_date: document.getElementById('pendingDiffOriginalReleaseDate').value.trim(),
+                genre: document.getElementById('pendingDiffGenre').value.trim(),
+                country: document.getElementById('pendingDiffCountry').value.trim(),
+                status: (currentPendingDiffPreview.album_preview || {}).status || 'official',
+                packaging: (currentPendingDiffPreview.album_preview || {}).packaging || '',
+                barcode: (currentPendingDiffPreview.album_preview || {}).barcode || '',
+                cover_art_url: (currentPendingDiffPreview.album_preview || {}).cover_art_url || '',
+            },
+            manual_tracks: manualTracks
+        };
+
+        const applyBtn = document.getElementById('pendingDiffApplyBtn');
+        const footerStatus = document.getElementById('pendingDiffFooterStatus');
+        applyBtn.disabled = true;
+        applyBtn.textContent = '提交审核落库中...';
+        if (footerStatus) footerStatus.textContent = '提交事务中...';
+
+        try {
+            if (currentContextAlbumID > 0) {
+                const resp = await fetch(`/api/albums/${currentContextAlbumID}/musicbrainz/apply-maintenance`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || '精选维护落库失败');
+                }
+                hideModal('pendingAlbumDiffPreviewModal');
+                if (typeof showToast === 'function') showToast('✨ 专辑精选维护成功并已同步落库！');
+                if (typeof showAlbumDetails === 'function') showAlbumDetails(currentContextAlbumID);
+            } else {
+                if (!currentPendingAlbumWorkItemID) return;
+                const resp = await fetch(`/api/pending-albums/work-items/${currentPendingAlbumWorkItemID}/manual-maintenance`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || '执行失败');
+                }
+                hideModal('pendingAlbumDiffPreviewModal');
+                document.getElementById('pendingAlbumExecutionReport').innerHTML = renderPendingMaintenanceReport(data.report || {});
+                await loadPendingAlbumWorkItemDetail();
+                await loadPendingAlbumList();
+                alert('审核落库成功！');
+            }
+        } catch (err) {
+            alert('应用失败: ' + err.message);
+        } finally {
+            applyBtn.disabled = false;
+            applyBtn.textContent = '确认审核并落库数据';
+        }
+    }
+
+    async function runPendingAlbumDeepMaintenance() {
+        if (!currentPendingAlbumWorkItemID) return;
+        if (!currentPendingSelectedMBID) {
+            alert('请先在上方搜寻并选定一个 MusicBrainz 候选版本，或使用下方手动维护。');
+            return;
+        }
+        await openPendingAlbumDiffPreviewModal(0, currentPendingSelectedMBID);
     }
 
     // --- 新编：曲目列表加载逻辑 ---

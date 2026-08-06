@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
@@ -24,10 +24,12 @@ func newModelTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 
 	db, err := gorm.Open(
-		mysql.New(mysql.Config{
-			Conn:                      rawDB,
-			SkipInitializeWithVersion: true,
-		}),
+		mysql.New(
+			mysql.Config{
+				Conn:                      rawDB,
+				SkipInitializeWithVersion: true,
+			},
+		),
 		&gorm.Config{
 			SkipDefaultTransaction: true,
 			NowFunc: func() time.Time {
@@ -38,18 +40,15 @@ func newModelTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	require.NoError(t, err)
 
 	prevConfig := *config.ConfigObj
-	prevSQLite := GlobalDBForSqlLite
 	prevMySQL := GlobalDBForMysql
 
 	config.ConfigObj.Database.Type = string(common.DatabaseTypeMySQL)
-	GlobalDBForSqlLite = nil
 	GlobalDBForMysql = db
 
 	t.Cleanup(
 		func() {
 			_ = rawDB.Close()
 			*config.ConfigObj = prevConfig
-			GlobalDBForSqlLite = prevSQLite
 			GlobalDBForMysql = prevMySQL
 		},
 	)

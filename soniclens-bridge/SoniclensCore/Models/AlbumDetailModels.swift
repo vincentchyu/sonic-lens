@@ -58,6 +58,7 @@ struct AlbumDetail: Codable, Identifiable {
     let totalDiscs: Int?
     let tracks: [Track]
     let releaseMB: AlbumReleaseMBLink?
+    let releaseType: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -73,6 +74,7 @@ struct AlbumDetail: Codable, Identifiable {
         case totalDiscs = "total_discs"
         case tracks
         case releaseMB = "release_mb"
+        case releaseType = "release_type"
     }
 
     var displayName: String {
@@ -94,7 +96,8 @@ struct AlbumDetail: Codable, Identifiable {
         genre: String?,
         totalDiscs: Int?,
         tracks: [Track],
-        releaseMB: AlbumReleaseMBLink?
+        releaseMB: AlbumReleaseMBLink?,
+        releaseType: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -109,6 +112,7 @@ struct AlbumDetail: Codable, Identifiable {
         self.totalDiscs = totalDiscs
         self.tracks = tracks
         self.releaseMB = releaseMB
+        self.releaseType = releaseType
     }
 }
 

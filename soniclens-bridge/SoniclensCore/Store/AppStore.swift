@@ -34,7 +34,8 @@ final class PlaybackStore {
     var nowPlayingSource: String?
 
     var hasActiveNowPlaying: Bool {
-        nowPlaying != nil
+        guard let nowPlaying else { return false }
+        return nowPlaying.playbackActivityState() != .inactive
     }
 
     func update(nowPlaying: NowPlaying?, source: String?) {
@@ -94,6 +95,7 @@ final class AppStore: ObservableObject {
     private var connectionTask: Task<Bool, Never>?
     private var silentHealthCheckTask: Task<Void, Never>?
     private var realtimeRecoveryTask: Task<Void, Never>?
+    private var recoveryProbeTask: Task<Void, Never>?
     private var currentConnectionAttemptID: UUID?
     private var lastPrefetchedNowPlayingKey: String?
     private var isRealtimeConnected = false
@@ -224,6 +226,7 @@ final class AppStore: ObservableObject {
         cancelActiveConnection(announceCancellation: false)
         stopSilentHealthMonitoring()
         stopRealtimeRecovery()
+        stopRecoveryProbeMonitoring()
         setAutoRestoreEnabled(false)
         libraryUpdateWorkItem?.cancel()
         libraryUpdateWorkItem = nil
@@ -343,6 +346,51 @@ final class AppStore: ObservableObject {
         realtimeRecoveryTask = nil
     }
 
+    private func stopRecoveryProbeMonitoring() {
+        recoveryProbeTask?.cancel()
+        recoveryProbeTask = nil
+    }
+
+    private func startRecoveryProbeMonitoring(for server: ServerConfig) {
+        stopRecoveryProbeMonitoring()
+        logger.info("启动决策态自愈探针任务 \(server.displayName, privacy: .public)")
+
+        recoveryProbeTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !Task.isCancelled else { break }
+                let isRequired = await MainActor.run { self.connectionRecoveryStore.isRecoveryRequired }
+                guard isRequired else {
+                    self.logger.debug("连接已不在待决策状态，结束自愈探针 \(server.displayName, privacy: .public)")
+                    break
+                }
+                do {
+                    let (effectiveServer, health) = try await self.resolveReachableServer(from: server)
+                    guard health.status == "ok" else { continue }
+
+                    let shouldRestore = await MainActor.run { self.connectionRecoveryStore.isRecoveryRequired }
+                    guard !Task.isCancelled, shouldRestore else { break }
+
+                    self.logger.info("自愈探针检测到服务端已恢复上线 \(effectiveServer.baseURL.absoluteString, privacy: .public)")
+                    await MainActor.run {
+                        self.stopRecoveryProbeMonitoring()
+                        self.connectionRecoveryStore.clear()
+                        self.connectionStatus = .connected(message: "已恢复连接", detail: effectiveServer.displayName)
+                        self.currentServer = effectiveServer
+                        self.recentStore.add(effectiveServer)
+                        self.recentServers = self.recentStore.load()
+                        self.startNowPlaying(effectiveServer)
+                        self.startSilentHealthMonitoring(for: effectiveServer)
+                    }
+                    break
+                } catch {
+                    self.logger.debug("自愈探针静默探活中 \(server.displayName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
+
     private func performSilentHealthCheck(
         using server: ServerConfig,
         origin: ConnectionHealthProbeOrigin,
@@ -361,6 +409,7 @@ final class AppStore: ObservableObject {
             }
 
             stopRealtimeRecovery()
+            stopRecoveryProbeMonitoring()
             let shouldRestartRealtime = restartRealtimeIfNeeded
                 || currentServer?.webSocketURL.absoluteString != effectiveServer.webSocketURL.absoluteString
             if shouldRestartRealtime {
@@ -373,6 +422,19 @@ final class AppStore: ObservableObject {
             }
             return true
         } catch {
+            if origin == .background || origin == .realtimeDisconnect {
+                // 遇到偶发网络超时或错误，先短暂停顿后进行第二次确认，防止瞬断误报
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if let (retryServer, retryHealth) = try? await resolveReachableServer(from: server), retryHealth.status == "ok" {
+                    logger.info("健康检查二次探针重试成功，跳过弹窗 \(retryServer.displayName, privacy: .public)")
+                    stopRealtimeRecovery()
+                    stopRecoveryProbeMonitoring()
+                    if restartRealtimeIfNeeded || !isRealtimeConnected {
+                        startNowPlaying(retryServer)
+                    }
+                    return true
+                }
+            }
             markConnectionRecoveryNeeded(
                 server: server,
                 origin: origin,
@@ -395,6 +457,7 @@ final class AppStore: ObservableObject {
         nowPlayingService?.stop()
         nowPlayingService = nil
         isRealtimeConnected = false
+        let targetServer = currentServer ?? server
         switch origin {
         case .bootstrap:
             connectionRecoveryStore.setNeedsDecision(

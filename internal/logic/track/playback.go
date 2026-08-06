@@ -314,6 +314,11 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		Duration:           input.Duration,
 	}
 
+	var releaseType string
+	if input.AlbumTitleMetadata != nil {
+		releaseType = input.AlbumTitleMetadata.ReleaseType
+	}
+
 	record := &model.TrackPlayRecord{
 		Artist:        req.Artist,
 		AlbumArtist:   req.AlbumArtist,
@@ -328,6 +333,7 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		TrackNumber:   input.TrackNumber,
 		DiscNumber:    input.DiscNumber,
 		Source:        string(input.PlayerSource),
+		ReleaseType:   releaseType,
 		CoverArtPath:  model.BuildTrackPlayRecordArtworkPath(input.CoverArtURL, input.CoverArtObjectKey),
 		TraceID:       input.TraceID,
 		RootSpanID:    input.RootSpanID,

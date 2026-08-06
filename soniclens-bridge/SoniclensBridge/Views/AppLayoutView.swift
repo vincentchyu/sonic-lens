@@ -138,8 +138,8 @@ struct AppLayoutView: View {
                 }
             )
         )
-        .onChange(of: playbackStore.nowPlaying != nil) { _, hasNowPlaying in
-            guard !hasNowPlaying else { return }
+        .onChange(of: playbackStore.hasActiveNowPlaying) { _, hasActiveNowPlaying in
+            guard !hasActiveNowPlaying else { return }
             showNowPlaying = false
         }
         .task {

@@ -1316,6 +1316,9 @@ private struct AlbumHeroSection: View {
             if let genre = detail.genre, !genre.isEmpty {
                 AlbumMetaChip(title: "流派", value: genre)
             }
+            if let releaseType = detail.releaseType, !releaseType.isEmpty {
+                AlbumMetaChip(title: "类型", value: releaseType.uppercased())
+            }
             if let discs = detail.totalDiscs {
                 AlbumMetaChip(title: "碟数", value: "\(discs)")
             }

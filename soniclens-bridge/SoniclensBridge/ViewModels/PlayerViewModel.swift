@@ -19,6 +19,17 @@ final class PlayerViewModel: ObservableObject {
     private var loadSequence: UInt64 = 0
     private var timedLyricMoments: [TimedLyricMoment] = []
 
+    func resetPayload() {
+        self.lyrics = nil
+        self.lyricLines = []
+        self.timedLyricMoments = []
+        self.insights = []
+        self.selectedInsightIndex = 0
+        self.currentLineID = nil
+        self.currentLineIndex = nil
+        self.insightViewMode = .current
+    }
+
     func load(
         using server: ServerConfig,
         artist: String,
@@ -29,6 +40,8 @@ final class PlayerViewModel: ObservableObject {
     ) async {
         loadSequence &+= 1
         let requestToken = loadSequence
+        resetPayload()
+
         let request = NowPlayingPayloadRequest(
             serverBaseURL: server.baseURL.absoluteString,
             artist: artist,

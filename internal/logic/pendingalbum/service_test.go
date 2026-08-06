@@ -96,6 +96,7 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 				total_discs INTEGER DEFAULT 1,
 				disc_infos TEXT,
 				sync_status INTEGER DEFAULT 0,
+				release_type TEXT,
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
@@ -126,6 +127,7 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 				track TEXT NOT NULL,
 				album TEXT NOT NULL,
 				album_subtitle TEXT,
+				genre TEXT,
 				album_id INTEGER DEFAULT 0,
 				duration INTEGER,
 				play_time DATETIME NOT NULL,
@@ -134,6 +136,7 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 				track_number INTEGER,
 				disc_number INTEGER DEFAULT 1,
 				source TEXT NOT NULL,
+				release_type TEXT,
 				cover_art_path TEXT,
 				trace_id TEXT,
 				root_span_id TEXT,
@@ -186,6 +189,7 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 				favorite_event_ids_json TEXT,
 				selected_release_mb_id INTEGER DEFAULT 0,
 				selected_mbid TEXT,
+				staging_draft_json TEXT,
 				status TEXT NOT NULL DEFAULT 'open',
 				resolved_album_id INTEGER DEFAULT 0,
 				last_error TEXT,
@@ -222,18 +226,15 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 	)
 
 	prevConfig := *config.ConfigObj
-	prevSQLite := model.GlobalDBForSqlLite
 	prevMySQL := model.GlobalDBForMysql
 	prevLogger := corelog.Logger
 
 	config.ConfigObj.Database.Type = string(common.DatabaseTypeSQLite)
-	model.GlobalDBForSqlLite = db
-	model.GlobalDBForMysql = nil
+	model.GlobalDBForMysql = db
 	corelog.Logger = zap.NewNop()
 
 	t.Cleanup(func() {
 		*config.ConfigObj = prevConfig
-		model.GlobalDBForSqlLite = prevSQLite
 		model.GlobalDBForMysql = prevMySQL
 		corelog.Logger = prevLogger
 	})
@@ -708,4 +709,98 @@ func TestApplyPendingAlbumStructureTxKeepsMusicBrainzLinkingBehavior(t *testing.
 			First(&track).Error,
 	)
 	require.Equal(t, "不经意间", track.Track)
+}
+
+func TestSavePendingAlbumWorkItemStagingDraftAndPreview(t *testing.T) {
+	db := newPendingAlbumServiceTestDB(t, t.Name())
+	ctx := context.Background()
+
+	require.NoError(
+		t, db.Create(
+			&model.PendingAlbumWorkItem{
+				ID:                    101,
+				Artist:                "周杰伦",
+				Album:                 "范特西",
+				NormalizedIdentityKey: "周杰伦||范特西||",
+				Status:                model.PendingAlbumWorkItemStatusOpen,
+			},
+		).Error,
+	)
+
+	draftJSON := `{"work_item_id":101,"diff_track_count":1}`
+	err := model.SavePendingAlbumWorkItemStagingDraft(ctx, 101, 202, "mb-fantasty-1", draftJSON)
+	require.NoError(t, err)
+
+	item, err := model.GetPendingAlbumWorkItemByID(ctx, 101)
+	require.NoError(t, err)
+	require.Equal(t, model.PendingAlbumWorkItemStatusStaged, item.Status)
+	require.Equal(t, int64(202), item.SelectedReleaseMBID)
+	require.Equal(t, "mb-fantasty-1", item.SelectedMBID)
+	require.Equal(t, draftJSON, item.StagingDraftJSON)
+}
+
+func TestApplyAlbumMBMaintenanceUpdatesTrackAlbumMBRecordingID(t *testing.T) {
+	db := newPendingAlbumServiceTestDB(t, t.Name())
+	ctx := context.Background()
+
+	album := &model.Album{
+		ID:          4743,
+		Name:        "My Life Will",
+		Artist:      "张悬",
+		Genre:       "C-Pop",
+		ReleaseDate: "2006-06-09",
+		SyncStatus:  2,
+	}
+	require.NoError(t, db.Create(album).Error)
+
+	track := &model.Track{
+		ID:          6006,
+		Artist:      "张悬",
+		AlbumArtist: "张悬",
+		Track:       "Scream",
+		Album:       "My Life Will",
+		Genre:       "C-Pop",
+	}
+	require.NoError(t, db.Create(track).Error)
+
+	ta := &model.TrackAlbum{
+		ID:          6563,
+		TrackID:     6006,
+		AlbumID:     4743,
+		DiscNumber:  1,
+		TrackNumber: 1,
+		Track:       "Scream",
+	}
+	require.NoError(t, db.Create(ta).Error)
+
+	svc := NewService()
+	input := &ManualPendingAlbumInput{
+		ManualAlbum: ManualPendingAlbumAlbumInput{
+			Name:        "My Life Will",
+			AlbumArtist: "张悬",
+			Genre:       "C-Pop",
+			ReleaseDate: "2006-06-09",
+		},
+		ManualTracks: []ManualPendingAlbumTrackInput{
+			{
+				DiscNumber:    1,
+				TrackNumber:   1,
+				Title:         "Scream",
+				Artist:        "张悬",
+				Genre:         "C-Pop",
+				MusicBrainzID: "b72e4585-c536-4a4f-969e-8067c4b5bb99",
+			},
+		},
+	}
+
+	err := svc.ApplyAlbumMBMaintenance(ctx, 4743, input)
+	require.NoError(t, err)
+
+	var updatedTA model.TrackAlbum
+	require.NoError(t, db.Where("id = ?", 6563).First(&updatedTA).Error)
+	require.Equal(t, "b72e4585-c536-4a4f-969e-8067c4b5bb99", updatedTA.MusicBrainzRecordingID)
+
+	var updatedTrack model.Track
+	require.NoError(t, db.Where("id = ?", 6006).First(&updatedTrack).Error)
+	require.Equal(t, "b72e4585-c536-4a4f-969e-8067c4b5bb99", updatedTrack.MusicBrainzID)
 }

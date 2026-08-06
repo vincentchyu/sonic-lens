@@ -143,6 +143,9 @@ func UnityFixAll(str string) string {
 // ）=> )
 // 替换为英文引号
 func UnityPunctuationMarksFix(target string) string {
+	if strings.Contains(target, "\\'") {
+		target = strings.ReplaceAll(target, "\\'", "'")
+	}
 	if strings.ContainsAny(target, "’‘") {
 		target = strings.NewReplacer("’", "'", "‘", "'").Replace(target)
 	}
