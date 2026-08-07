@@ -181,7 +181,7 @@ struct HomeContentView: View {
                     }
                     .padding(.horizontal, 32)
                     .padding(.top, 28)
-                    .padding(.bottom, 48)
+                    .padding(.bottom, 108)
                 }
             }
         }

@@ -14,6 +14,7 @@ import (
 // LLMCallLog 大模型调用流水表，记录每次请求/响应的完整 JSON 数据，用于排查和恢复现场
 type LLMCallLog struct {
 	ID                 int64                     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	JobID              string                    `gorm:"column:job_id;type:varchar(64);index" json:"job_id"`                                                                               // 关联的异步任务 ID (用于串联多轮对话)
 	Provider           string                    `gorm:"column:provider;type:varchar(64);index" json:"provider"`                                                                           // 提供方：doubao/ollama/openai
 	Model              string                    `gorm:"column:model;type:varchar(128)" json:"model"`                                                                                      // 模型名称
 	RequestJSON        string                    `gorm:"column:request_json;type:longtext" json:"request_json"`                                                                            // 请求体全文 JSON
@@ -85,6 +86,19 @@ func GetLLMCallLogsByTrack(ctx context.Context, artist, album, track string, lim
 // GetLLMCallLogsByAlbumID 按专辑 ID 查询流水日志。
 func GetLLMCallLogsByAlbumID(ctx context.Context, albumID int64, limit int) ([]*LLMCallLog, error) {
 	return GetLLMCallLogsByTarget(ctx, common.AnalysisTargetTypeAlbum, BuildLLMCallLogAlbumKey(albumID), limit)
+}
+
+// GetLLMCallLogsByJobIDs 根据 JobID 列表批量获取调用流水。
+func GetLLMCallLogsByJobIDs(ctx context.Context, jobIDs []string) ([]*LLMCallLog, error) {
+	var logs []*LLMCallLog
+	if len(jobIDs) == 0 {
+		return logs, nil
+	}
+	err := GetDB().WithContext(ctx).
+		Where("job_id IN ?", jobIDs).
+		Order("created_at DESC").
+		Find(&logs).Error
+	return logs, err
 }
 
 // DeleteLLMCallLogsByTarget 删除某个解析对象关联的所有调用流水。

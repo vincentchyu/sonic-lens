@@ -630,7 +630,7 @@ func (s *serviceImpl) GetOrCreateTrackInsight(
 	return insights, false, nil
 }
 
-// GetOrCreateInsightStream 获取流式解析结果
+// Deprecated: 流式接口已废弃，后续不再维护与优化 GetOrCreateInsightStream 获取流式解析结果
 func (s *serviceImpl) GetOrCreateInsightStream(
 	ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 	provider, modelName, legacyModelType string,
@@ -1056,7 +1056,26 @@ func (s *serviceImpl) GetTrackCallLogs(ctx context.Context, artist, album, track
 		return nil, err
 	}
 
-	return mergeCallLogs(50, primaryLogs, legacyLogs), nil
+	merged := mergeCallLogs(50, primaryLogs, legacyLogs)
+
+	// 如果返回的数据存在 job_id，则通过 job_id 关联出同一次异步任务的全部流水（包含步骤 123）
+	jobIDs := make([]string, 0)
+	seenJobs := make(map[string]bool)
+	for _, logItem := range merged {
+		if logItem.JobID != "" && !seenJobs[logItem.JobID] {
+			seenJobs[logItem.JobID] = true
+			jobIDs = append(jobIDs, logItem.JobID)
+		}
+	}
+
+	if len(jobIDs) > 0 {
+		jobLogs, err := model.GetLLMCallLogsByJobIDs(ctx, jobIDs)
+		if err == nil && len(jobLogs) > 0 {
+			merged = mergeCallLogs(100, merged, jobLogs)
+		}
+	}
+
+	return merged, nil
 }
 
 // GetAlbumCallLogs 获取某专辑的 LLM 调用流水。
@@ -1081,7 +1100,26 @@ func (s *serviceImpl) GetAlbumCallLogs(ctx context.Context, albumID int64) ([]*m
 		return nil, err
 	}
 
-	return mergeCallLogs(50, primaryLogs, legacyLogs), nil
+	merged := mergeCallLogs(50, primaryLogs, legacyLogs)
+
+	// 如果返回的数据存在 job_id，则通过 job_id 关联出同一次异步任务的全部流水（包含步骤 123）
+	jobIDs := make([]string, 0)
+	seenJobs := make(map[string]bool)
+	for _, logItem := range merged {
+		if logItem.JobID != "" && !seenJobs[logItem.JobID] {
+			seenJobs[logItem.JobID] = true
+			jobIDs = append(jobIDs, logItem.JobID)
+		}
+	}
+
+	if len(jobIDs) > 0 {
+		jobLogs, err := model.GetLLMCallLogsByJobIDs(ctx, jobIDs)
+		if err == nil && len(jobLogs) > 0 {
+			merged = mergeCallLogs(100, merged, jobLogs)
+		}
+	}
+
+	return merged, nil
 }
 
 // GetInsightCallLogs 按对象类型获取某次解析关联的调用流水。

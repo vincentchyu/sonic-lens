@@ -4,6 +4,12 @@ import (
 	"context"
 )
 
+type ContextKey string
+
+const (
+	ContextKeyJobID ContextKey = "insight_job_id"
+)
+
 // ArtworkData 定义播放器专辑封面载荷。
 type ArtworkData struct {
 	Data     []byte

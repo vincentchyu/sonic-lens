@@ -32,11 +32,10 @@ const (
 type AIModelPlatform string
 
 const (
-	AIModelPlatformOpenAI AIModelPlatform = "openai"
 	AIModelPlatformGemini AIModelPlatform = "gemini"
 	AIModelPlatformOllama AIModelPlatform = "ollama"
 	AIModelPlatformDoubao AIModelPlatform = "doubao"
-	AIModelPlatformCustom AIModelPlatform = "custom"
+	AIModelPlatformOMLX   AIModelPlatform = "omlx"
 )
 
 // ParseAnalysisTargetType 将外部输入归一到已知分析对象类型。
@@ -59,28 +58,24 @@ func (t AnalysisTargetType) IsAlbum() bool {
 	return t == AnalysisTargetTypeAlbum
 }
 
-// ParseAIModelPlatform 将外部输入归一到已知 AI 模型平台。
 func ParseAIModelPlatform(value string) AIModelPlatform {
 	switch AIModelPlatform(strings.ToLower(strings.TrimSpace(value))) {
-	case AIModelPlatformOpenAI:
-		return AIModelPlatformOpenAI
 	case AIModelPlatformGemini:
 		return AIModelPlatformGemini
 	case AIModelPlatformOllama:
 		return AIModelPlatformOllama
 	case AIModelPlatformDoubao:
 		return AIModelPlatformDoubao
-	case AIModelPlatformCustom:
-		return AIModelPlatformCustom
+	case AIModelPlatformOMLX:
+		return AIModelPlatformOMLX
 	default:
 		return ""
 	}
 }
 
-// IsValid 判断是否为已知 AI 模型平台。
 func (p AIModelPlatform) IsValid() bool {
 	switch p {
-	case AIModelPlatformOpenAI, AIModelPlatformGemini, AIModelPlatformOllama, AIModelPlatformDoubao, AIModelPlatformCustom:
+	case AIModelPlatformGemini, AIModelPlatformOllama, AIModelPlatformDoubao, AIModelPlatformOMLX:
 		return true
 	default:
 		return false

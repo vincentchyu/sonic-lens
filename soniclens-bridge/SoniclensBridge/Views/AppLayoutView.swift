@@ -110,6 +110,13 @@ struct AppLayoutView: View {
                         }
                     }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !showNowPlaying {
+                    Color.clear
+                        .frame(height: PlaybackBarView.regularHeight + 14)
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)

@@ -5,9 +5,6 @@ import (
 	"fmt"
 )
 
-/*
-trackInsight
-*/
 var (
 	albumInsightSystemPromptFeedbackSectionFmt1 = `
 ═══════════════════════════════════════════
@@ -50,22 +47,6 @@ var (
 5. 不要输出思考过程，只输出最终 JSON。`
 )
 
-/*
-	AlbumInsight
-	TODOD：
-		专辑表、专辑歌曲关联表（可以在track中得到，使用trackId进行关联）、专辑分析表（专辑id关联）
-		根据专辑中歌曲的顺序，
-		搜索当前专辑下全部的音眸分析，每首歌只保留最高分或者最新的分析数据，
-
-		聚焦（时代意义、文学解读、作者动机、哲学反思，还有什么关于专辑可以分析的要点？结合曲目汇总结果的要点？）
-		前端专辑详情增加 音眸专辑分析按钮 增加album_insight表？
-		原音眸分析为 音眸曲目分析 库表track_insight
-
-		GetAlbumInsightSchema、AlbumInsight prompt、定义
-		专辑分析的深度比较深可以提前做prompt角色抽象，代码规划
-		汇总大模型上下文数据，进行专辑分析
-*/
-
 // GetAlbumInsightSchema 返回用于专辑分析的结构化 JSON Schema 对象。
 func GetAlbumInsightSchema() map[string]any {
 	return map[string]any{
@@ -73,7 +54,7 @@ func GetAlbumInsightSchema() map[string]any {
 		"properties": map[string]any{
 			"analysis_summary": map[string]any{
 				"type":        "string",
-				"description": "对整张专辑的整体评价、主题提炼和艺术判断",
+				"description": "对整张专辑的整体评价、主题提炼和艺术判断（不少于220字）",
 			},
 			"analysis_by_section": map[string]any{
 				"type": "object",
@@ -84,7 +65,7 @@ func GetAlbumInsightSchema() map[string]any {
 					},
 					"theme_and_narrative": map[string]any{
 						"type":        "string",
-						"description": "整张专辑的主题母题、叙事线与情绪推进",
+						"description": "整张专辑的主题母题、叙事线与情绪推进（不少于220字）",
 					},
 					"literary_analysis": map[string]any{
 						"type":        "string",
@@ -100,11 +81,11 @@ func GetAlbumInsightSchema() map[string]any {
 					},
 					"philosophical_reflection": map[string]any{
 						"type":        "string",
-						"description": "专辑折射出的价值观、存在主题与哲学反思",
+						"description": "专辑折射出的价值观、存在主题与哲学反思（不少于500字）",
 					},
 					"key_tracks": map[string]any{
 						"type":        "string",
-						"description": "关键曲目及其在整张专辑中的作用",
+						"description": "关键曲目及其在整张专辑中的作用（不少于200字）",
 					},
 					"listening_guide": map[string]any{
 						"type":        "string",
@@ -131,13 +112,21 @@ func GetAlbumInsightSchema() map[string]any {
 	}
 }
 
-func buildAlbumInsightSystemPrompt() string {
-	return "系统提示：\n" + albumInsightSystemPromptFmt1 + albumInsightSystemPromptFmt2 + "\n"
+func buildAlbumInsightSystemPromptWithoutSchema(req AlbumAnalysisRequest) string {
+	prompt := "系统提示：\n" + albumInsightSystemPromptFmt1 + albumInsightSystemPromptFmt2
+	if req.FeedbackContext != "" {
+		prompt += albumInsightSystemPromptFeedbackSectionFmt1 + req.FeedbackContext + albumInsightSystemPromptFeedbackSectionFmt2
+	}
+	return prompt + "\n"
 }
 
-func buildAlbumInsightSystemPromptAll() string {
+func buildAlbumInsightSystemPromptWithSchema(req AlbumAnalysisRequest) string {
+	prompt := "系统提示：\n" + albumInsightSystemPromptFmt1 + albumInsightSystemPromptFmt2
+	if req.FeedbackContext != "" {
+		prompt += albumInsightSystemPromptFeedbackSectionFmt1 + req.FeedbackContext + albumInsightSystemPromptFeedbackSectionFmt2
+	}
 	schemaBytes, _ := json.Marshal(GetAlbumInsightSchema())
-	return "系统提示：\n" + albumInsightSystemPromptFmt1 + albumInsightSystemPromptFmt2 + "\n【JSON Schema】\n" + string(schemaBytes) + "\n"
+	return prompt + "\n【JSON Schema】\n" + string(schemaBytes) + "\n"
 }
 
 func buildAlbumInsightUserPrompt(req AlbumAnalysisRequest) string {
@@ -152,21 +141,9 @@ func buildAlbumInsightUserPrompt(req AlbumAnalysisRequest) string {
 		"track_contexts":  req.TrackContexts,
 	}
 	userPromptBytes, _ := json.Marshal(userPromptData)
-	str := fmt.Sprintf("输入数据（JSON）：\n%s\n请严格按照【输出要求】输出解析结果\n", userPromptBytes)
-
-	if req.FeedbackContext != "" {
-		feedbackSection := albumInsightSystemPromptFeedbackSectionFmt1 + req.FeedbackContext + albumInsightSystemPromptFeedbackSectionFmt2
-		str += feedbackSection
-	}
-
-	return str
+	return fmt.Sprintf("输入数据（JSON）：\n%s\n请严格按照【输出要求】输出解析结果\n", userPromptBytes)
 }
 
 func buildAlbumInsightMergedPrompt(req AlbumAnalysisRequest) string {
-	return buildAlbumInsightSystemPromptAll() + buildAlbumInsightUserPrompt(req)
+	return buildAlbumInsightSystemPromptWithSchema(req) + buildAlbumInsightUserPrompt(req)
 }
-
-/*
-	xxInsight
-	规划：
-*/

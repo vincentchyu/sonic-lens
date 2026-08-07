@@ -1,5 +1,17 @@
 # 记忆索引
 
+## 2026-08-09
+
+- **日期**: 2026-08-09
+    - **特性摘要**: macOS 正在播放沉浸界面重构为主副卡槽栈式平滑平移动效 (`Secondary & Primary Stack Layout`)，音眸模式下左侧副屏保留 LRC 实时歌词同步，完美辅助外语歌曲对标赏析与翻译；同时移除外层硬 `clipped()`，解决封面 32px 弥散阴影在 380px 边界被裁切产生黑色折线的问题。
+    - **链接**: [macOS 正在播放主副卡槽栈式交互重构与阴影裁剪修复特性清单](memory/2026-08-09/mac_now_playing_stack_layout_manifest.md)
+
+## 2026-08-08
+
+- **日期**: 2026-08-08
+    - **特性摘要**: AI 模型多步切分流式分析（Multi-Step Analysis）与 JobID 全链路追踪，实现了 Translation (Step 1)、Appreciate (Step 2)、Deep Summary (Step 3) 的无状态多步编排与精简 Prompt 控制；引入单步退避重试 (`executeStepWithRetry`) 与保留早期已成功结果的优雅降级策略；落地纯音乐/无歌词曲目的 Step 1 & Step 2 双步骤智能跳过；引入 `llm_call_logs.job_id` 自动打标、跨协程 Context 传导、控制台按 JobID 聚合重排及步骤徽章与文本对比度修复。
+    - **链接**: [AI 模型多步切分流式分析与 JobID 全链路追踪特性清单](memory/2026-08-08/ai_multi_step_analysis_manifest.md)
+
 ## 2026-08-07
 
 - **日期**: 2026-08-07

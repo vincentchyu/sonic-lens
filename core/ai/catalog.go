@@ -242,11 +242,10 @@ func getOrBuildProviderFactories() map[common.AIModelPlatform]providerFactory {
 
 func buildProviderFactories() map[common.AIModelPlatform]providerFactory {
 	all := []providerFactory{
-		newOpenAIProviderFactory(config.ConfigObj.AI.OpenAI),
 		newGeminiProviderFactory(config.ConfigObj.AI.Gemini),
 		newOllamaProviderFactory(config.ConfigObj.AI.Ollama),
 		newDoubaoProviderFactory(config.ConfigObj.AI.Doubao),
-		newCustomProviderFactory(config.ConfigObj.AI.Custom),
+		newOmlxProviderFactory(config.ConfigObj.AI.OMLX),
 	}
 	factories := make(map[common.AIModelPlatform]providerFactory, len(all))
 	for _, factory := range all {
@@ -276,7 +275,7 @@ func defaultConfiguredPlatform() common.AIModelPlatform {
 	if platform.IsValid() {
 		return platform
 	}
-	return common.AIModelPlatformOpenAI
+	return common.AIModelPlatformDoubao
 }
 
 func getCachedModels(ctx context.Context, factory providerFactory) ([]ModelOption, error) {

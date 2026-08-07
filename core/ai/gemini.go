@@ -2,8 +2,8 @@ package ai
 
 import (
 	"context"
-	"encoding/json/v2"
-	"io"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -188,22 +188,18 @@ func resolveGeminiModel(cfg config.GeminiConfig) string {
 	return model
 }
 
-// AnalyzeTrack 调Gemini API，对歌词进行翻译和深度解析
-func (p *GeminiProvider) AnalyzeTrack(
-	ctx context.Context, req TrackAnalysisRequest,
-) (*TrackAnalysisResult, error) {
-	// 记录开始时间
+// SendChatRequest 实现 RawChatClient 接口
+func (p *GeminiProvider) SendChatRequest(
+	ctx context.Context, req TrackAnalysisRequest, systemPrompt, userPrompt string, schema map[string]any, step string,
+) (string, error) {
 	startTime := time.Now()
 
-	// 构建请求消息
-	userPrompt := buildTrackInsightUserPrompt(req)
-	insightSystemPrompt := buildTrackInsightSystemPrompt()
 	requestPayload := map[string]any{
 		"model":                p.model,
 		"contents":             []string{userPrompt},
-		"system_instruction":   insightSystemPrompt,
+		"system_instruction":   systemPrompt,
 		"response_mime_type":   "application/json",
-		"response_json_schema": GetTrackInsightSchema(),
+		"response_json_schema": schema,
 		"thinking_config": map[string]any{
 			"include_thoughts": true,
 			"thinking_level":   "medium",
@@ -211,68 +207,64 @@ func (p *GeminiProvider) AnalyzeTrack(
 	}
 	requestBytes, _ := json.Marshal(requestPayload)
 	requestJSON := string(requestBytes)
-	// 打印请求体
-	log.Info(
-		ctx, "Gemini请求体", zap.String("model", p.model), zap.String("user userPrompt", userPrompt),
-		zap.String("insightSystemPrompt", insightSystemPrompt),
-	)
 
 	gResult, err := p.client.Models.GenerateContent(
 		ctx,
 		p.model,
 		genai.Text(userPrompt),
 		&genai.GenerateContentConfig{
+			Temperature: genai.Ptr(float32(DefaultInsightTemperature)),
 			ThinkingConfig: &genai.ThinkingConfig{
 				IncludeThoughts: true,
-				ThinkingBudget:  nil,
 				ThinkingLevel:   genai.ThinkingLevelMedium,
 			},
-			SystemInstruction:  genai.NewContentFromText(insightSystemPrompt, genai.RoleUser),
+			SystemInstruction:  genai.NewContentFromText(systemPrompt, genai.RoleUser),
 			ResponseMIMEType:   "application/json",
-			ResponseJsonSchema: GetTrackInsightSchema(),
+			ResponseJsonSchema: schema,
 		},
 	)
 	if err != nil {
-		log.Error(ctx, "调用Gemini API 失败", zap.Error(err))
-		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, "sync")
-		return nil, err
+		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, step)
+		return "", err
 	}
 
-	// 获取响应文本
 	respText := gResult.Text()
-	log.Debug(ctx, "Gemini响应内容", zap.String("content", respText))
-
-	// 记录调用流水
 	respBytes, _ := json.Marshal(gResult)
 	respJSON := string(respBytes)
 
-	// 提取 JSON 内容
-	raw := TrimCodeFence(respText)
+	p.SaveCallLog(ctx, req, requestJSON, respJSON, nil, startTime, step)
+	return respText, nil
+}
 
-	// 解析 JSON 响应
-	var result TrackAnalysisResult
-	if err = json.Unmarshal([]byte(raw), &result); err != nil {
-		// 如果解析失败，尝试从文本中提取 JSON 块
-		if extracted := extractJSON(raw); extracted != "" {
-			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
-				goto SUCCESS
-			}
-		}
-		log.Error(ctx, "解析Gemini响应失败", zap.Error(err), zap.String("raw", raw))
-		p.SaveCallLog(ctx, req, requestJSON, respJSON, err, startTime, "sync")
+// AnalyzeTrack 调Gemini API，对歌词进行翻译和深度解析
+func (p *GeminiProvider) AnalyzeTrack(
+	ctx context.Context, req TrackAnalysisRequest,
+) (*TrackAnalysisResult, error) {
+	if config.ConfigObj.AI.MultiStep {
+		return multiStepAnalyzeTrack(ctx, p, req)
+	}
+	return p.analyzeTrackSingleStep(ctx, req)
+}
+
+func (p *GeminiProvider) analyzeTrackSingleStep(
+	ctx context.Context, req TrackAnalysisRequest,
+) (*TrackAnalysisResult, error) {
+	respStr, err := p.SendChatRequest(
+		ctx, req, buildTrackInsightSystemPromptWithoutSchema(req), buildTrackInsightUserPrompt(req),
+		GetTrackInsightSchema(), "sync",
+	)
+	if err != nil {
 		return nil, err
 	}
 
-SUCCESS:
-	p.SaveCallLog(ctx, req, requestJSON, respJSON, nil, startTime, "sync")
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]interface{})
+	result, raw, err := ParseTrackResult(respStr)
+	if err != nil {
+		log.Error(ctx, "解析Gemini响应失败", zap.Error(err), zap.String("raw", raw))
+		return nil, err
 	}
-	// 修复：将字面量 \n 转换为实际换行符
-	result.LyricsTranslation = strings.ReplaceAll(result.LyricsTranslation, "\\n", "\n")
 
 	result.LLMProvider = "gemini:" + p.model
-	return &result, nil
+	return result, nil
 }
 
 // AnalyzeAlbum 调 Gemini API，对专辑聚合上下文进行深度解析。
@@ -282,7 +274,7 @@ func (p *GeminiProvider) AnalyzeAlbum(
 	startTime := time.Now()
 
 	userPrompt := buildAlbumInsightUserPrompt(req)
-	systemPrompt := buildAlbumInsightSystemPrompt()
+	systemPrompt := buildAlbumInsightSystemPromptWithoutSchema(req)
 	requestPayload := map[string]any{
 		"model":                p.model,
 		"contents":             []string{userPrompt},
@@ -306,9 +298,9 @@ func (p *GeminiProvider) AnalyzeAlbum(
 		p.model,
 		genai.Text(userPrompt),
 		&genai.GenerateContentConfig{
+			Temperature: genai.Ptr(float32(DefaultInsightTemperature)),
 			ThinkingConfig: &genai.ThinkingConfig{
 				IncludeThoughts: true,
-				ThinkingBudget:  nil,
 				ThinkingLevel:   genai.ThinkingLevelMedium,
 			},
 			SystemInstruction:  genai.NewContentFromText(systemPrompt, genai.RoleUser),
@@ -328,55 +320,19 @@ func (p *GeminiProvider) AnalyzeAlbum(
 	respBytes, _ := json.Marshal(gResult)
 	respJSON := string(respBytes)
 
-	raw := TrimCodeFence(respText)
-
-	var result AlbumAnalysisResult
-	if err = json.Unmarshal([]byte(raw), &result); err != nil {
-		if extracted := extractJSON(raw); extracted != "" {
-			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
-				goto SUCCESS
-			}
-		}
+	result, raw, err := ParseAlbumResult(respText)
+	if err != nil {
 		log.Error(ctx, "解析Gemini专辑分析响应失败", zap.Error(err), zap.String("raw", raw))
 		p.SaveAlbumCallLog(ctx, req, requestJSON, respJSON, err, startTime, "sync")
 		return nil, err
 	}
 
-SUCCESS:
 	p.SaveAlbumCallLog(ctx, req, requestJSON, respJSON, nil, startTime, "sync")
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]interface{})
-	}
 	result.LLMProvider = "gemini:" + p.model
-	return &result, nil
+	return result, nil
 }
 
 // AnalyzeTrackStream 实现流式输出
 func (p *GeminiProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalysisRequest) (<-chan string, error) {
-	prompt := buildTrackInsightUserPrompt(req)
-	iter := p.client.Models.GenerateContentStream(ctx, p.model, genai.Text(prompt), nil)
-
-	ch := make(chan string)
-	telemetry.GoSafe(
-		ctx, "ai.gemini.stream_track_analysis", func(asyncCtx context.Context) {
-			defer close(ch)
-			for resp, err := range iter {
-				if err != nil {
-					if err != io.EOF {
-						log.Error(asyncCtx, "Gemini流式输出异常", zap.Error(err))
-					}
-					return
-				}
-				if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-					// 修正：尝试获取 Text 内容
-					part := resp.Candidates[0].Content.Parts[0]
-					if part.Text != "" {
-						ch <- part.Text
-					}
-				}
-			}
-		},
-	)
-
-	return ch, nil
+	return nil, errors.New("流式接口已废弃")
 }

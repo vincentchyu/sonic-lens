@@ -268,6 +268,8 @@ func (s *serviceImpl) processInsightJob(ctx context.Context, job *model.InsightJ
 		return
 	}
 
+	ctx = context.WithValue(ctx, common.ContextKeyJobID, job.ID)
+
 	startedAt := time.Now()
 	if err := model.UpdateInsightJobFields(
 		ctx,

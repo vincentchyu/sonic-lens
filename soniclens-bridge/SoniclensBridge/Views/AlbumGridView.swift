@@ -72,7 +72,8 @@ struct AlbumGridView: View {
                     }
                 }
                 .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.vertical, prefersCompactLayout ? 20 : 32)
+                .padding(.top, prefersCompactLayout ? 20 : 32)
+                .padding(.bottom, 108)
             }
         }
         .task(id: "\(sort.rawValue)|\(query)") {

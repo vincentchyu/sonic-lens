@@ -93,13 +93,13 @@ struct PadAppLayoutView: View {
                         }
                     }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PlaybackBarView(isExpanded: $showNowPlaying)
+                    .environmentObject(store)
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlaybackBarView(isExpanded: $showNowPlaying)
-                .environmentObject(store)
-        }
         .fullScreenCover(isPresented: $showNowPlaying) {
             Group {
                 if let nowPlaying = playbackStore.nowPlaying, playbackStore.hasActiveNowPlaying {

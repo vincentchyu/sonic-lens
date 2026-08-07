@@ -758,6 +758,24 @@ async function loadInsightList() {
         `).join("");
     }
 
+    function getCallTypeOrder(callType) {
+        if (!callType) return 99;
+        if (callType.endsWith("step1")) return 1;
+        if (callType.endsWith("step2")) return 2;
+        if (callType.endsWith("step3")) return 3;
+        return 99;
+    }
+
+    function getCallTypeStepName(callType) {
+        if (!callType) return "";
+        if (callType.endsWith("step1")) return "步骤一 (歌词翻译)";
+        if (callType.endsWith("step2")) return "步骤二 (分段解读)";
+        if (callType.endsWith("step3")) return "步骤三 (深度综合总结)";
+        if (callType === "sync") return "单轮分析";
+        if (callType === "stream") return "单轮流式";
+        return callType;
+    }
+
     function buildInsightCallLogCard(log) {
         if (!log) return "";
         const time = formatJobDateTime(log.created_at);
@@ -770,17 +788,24 @@ async function loadInsightList() {
         const responseJson = prettyJsonLike(log.response_json);
         const requestSize = log.request_json ? String(log.request_json.length) : "0";
         const responseSize = log.response_json ? String(log.response_json.length) : "0";
+        
         const objectBadge = targetType === "album"
             ? '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.16);color:#818cf8;font-size:0.75em;font-weight:700;">专辑</span>'
             : '<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(16,185,129,0.16);color:#34d399;font-size:0.75em;font-weight:700;">曲目</span>';
+
+        const stepName = getCallTypeStepName(log.call_type);
+        const stepBadge = stepName 
+            ? `<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(92,107,192,0.16);color:#7986cb;font-size:0.75em;font-weight:700;">${escapeHtmlText(stepName)}</span>`
+            : "";
 
         return `
             <div style="border: 1px solid #444; border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.03); box-shadow: 0 8px 24px rgba(0,0,0,0.08);">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
                     <div style="min-width: 0;">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
                             <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtmlText(log.provider)} (${escapeHtmlText(log.model)})</span>
                             ${objectBadge}
+                            ${stepBadge}
                         </div>
                         <div style="font-size: 0.8em; opacity: 0.72;">${escapeHtmlText(time)}</div>
                     </div>
@@ -795,7 +820,7 @@ async function loadInsightList() {
                 ${targetMetadata ? `
                 <details data-detail-key="log-${escapeHtmlText(String(log.id || 0))}-metadata" style="margin-bottom: 10px;">
                     <summary style="cursor: pointer; opacity: 0.84; font-size: 0.9em;">对象元数据</summary>
-                    <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
+                    <pre style="margin: 8px 0 0 0; white-space: pre-wrap; background: #1a1a1a; color: #e0e0e0; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(targetMetadata)}</pre>
                 </details>` : ""}
                 ${log.error_msg ? `<div style="margin-bottom: 10px; color: #e74c3c; font-size: 0.86em; line-height: 1.6;">错误: ${escapeHtmlText(log.error_msg)}</div>` : ""}
                 <details data-detail-key="log-${escapeHtmlText(String(log.id || 0))}-payload">
@@ -803,11 +828,11 @@ async function loadInsightList() {
                     <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; font-size: 0.8em;">
                         <div>
                             <div style="font-weight: 700; margin-bottom: 6px;">Request</div>
-                            <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
+                            <pre style="white-space: pre-wrap; background: #1a1a1a; color: #e0e0e0; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(requestJson)}</pre>
                         </div>
                         <div>
                             <div style="font-weight: 700; margin-bottom: 6px;">Response</div>
-                            <pre style="white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
+                            <pre style="white-space: pre-wrap; background: #1a1a1a; color: #e0e0e0; padding: 10px; border-radius: 8px; overflow-x: auto;">${escapeHtmlText(responseJson)}</pre>
                         </div>
                     </div>
                 </details>
@@ -819,7 +844,66 @@ async function loadInsightList() {
         if (!Array.isArray(logs) || logs.length === 0) {
             return `<div class="queue-empty">${escapeHtmlText(emptyText)}</div>`;
         }
-        return `<div style="display: flex; flex-direction: column; gap: 15px;">${logs.map((log) => buildInsightCallLogCard(log)).join("")}</div>`;
+
+        // 按 job_id 进行归组
+        const groups = {};
+        const standalone = [];
+
+        logs.forEach((logItem) => {
+            if (logItem.job_id) {
+                if (!groups[logItem.job_id]) {
+                    groups[logItem.job_id] = [];
+                }
+                groups[logItem.job_id].push(logItem);
+            } else {
+                standalone.push(logItem);
+            }
+        });
+
+        let html = "";
+
+        // 渲染成组的日志
+        Object.keys(groups).forEach((jobId) => {
+            const groupLogs = groups[jobId];
+            
+            // 对每个 job 下的步骤进行排序 (步骤1 -> 2 -> 3)
+            groupLogs.sort((a, b) => {
+                const orderA = getCallTypeOrder(a.call_type);
+                const orderB = getCallTypeOrder(b.call_type);
+                if (orderA !== orderB) return orderA - orderB;
+                return new Date(a.created_at) - new Date(b.created_at);
+            });
+
+            const isSync = jobId.startsWith("multi-step-");
+            const groupTitle = isSync 
+                ? "多轮切分分析 (同步模式)" 
+                : `多轮切分分析 (异步任务: ${escapeHtmlText(jobId.slice(0, 8))}...)`;
+
+            html += `
+                <div style="border: 2px solid #5c6bc0; border-radius: 16px; padding: 16px; background: rgba(92,107,192,0.02); margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
+                        <span style="font-weight: 700; color: #7986cb; font-size: 0.95em; display: flex; align-items: center; gap: 6px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+                            ${groupTitle}
+                        </span>
+                        <span style="font-size: 0.8em; opacity: 0.6; font-family: monospace;">JobID: ${escapeHtmlText(jobId)}</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        ${groupLogs.map((log) => buildInsightCallLogCard(log)).join("")}
+                    </div>
+                </div>
+            `;
+        });
+
+        // 渲染独立的单轮记录
+        if (standalone.length > 0) {
+            if (html !== "") {
+                html += `<div style="font-weight: 700; font-size: 0.9em; opacity: 0.7; margin: 15px 0 10px 0;">独立单轮记录</div>`;
+            }
+            html += `<div style="display: flex; flex-direction: column; gap: 15px;">${standalone.map((log) => buildInsightCallLogCard(log)).join("")}</div>`;
+        }
+
+        return html;
     }
 
     function buildInsightJobDetailHtml(job, options = {}) {

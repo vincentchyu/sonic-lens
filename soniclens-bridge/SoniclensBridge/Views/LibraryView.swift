@@ -577,7 +577,7 @@ struct TrackListView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, showsInlineControls ? 24 : 16)
-                .padding(.bottom, 24)
+                .padding(.bottom, 108)
             }
         }
         .task(id: "\(selectedSort.rawValue)|\(selectedFilter.rawValue)|\(committedQuery)") {

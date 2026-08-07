@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sort"
 	"strings"
@@ -22,7 +21,6 @@ import (
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
-	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 // --- Doubao Provider ---
@@ -124,7 +122,7 @@ func (f *doubaoProviderFactory) Create(model string) (LLMProvider, error) {
 			* 0.2 = 还能接受
 			* 0.3 = 已经开始偶尔漂
 		*/
-		temperature: 0.1,
+		temperature: DefaultInsightTemperature,
 		/*
 			场景
 			推荐 topP
@@ -381,136 +379,92 @@ func buildDoubaoDisplayName(item *arkmgmt.ItemForListEndpointsOutput) string {
 	}
 }
 
-// AnalyzeTrack 调用豆包 API，对歌词进行翻译和深度解析
-func (p *DoubaoProvider) AnalyzeTrack(
-	ctx context.Context, req TrackAnalysisRequest,
-) (*TrackAnalysisResult, error) {
-	// 记录开始时间
+// SendChatRequest 实现 RawChatClient 接口
+func (p *DoubaoProvider) SendChatRequest(
+	ctx context.Context, req TrackAnalysisRequest, systemPrompt, userPrompt string, schema map[string]any, step string,
+) (string, error) {
 	startTime := time.Now()
-	var err error
-	// 构建请求消息
+
 	dReq := model.CreateChatCompletionRequest{
 		Model: p.model,
 		Messages: []*model.ChatCompletionMessage{
 			{
 				Role: model.ChatMessageRoleSystem,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightSystemPromptAll()),
+					StringValue: volcengine.String(systemPrompt),
 				},
 			},
 			{
 				Role: model.ChatMessageRoleUser,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightUserPrompt(req)),
+					StringValue: volcengine.String(userPrompt),
 				},
 			},
 		},
 		Thinking: &model.Thinking{
 			Type: model.ThinkingTypeEnabled,
 		},
-		Temperature: &p.temperature,
-		TopP:        &p.topP,
-		// p.topK,
+		Temperature:       &p.temperature,
+		TopP:              &p.topP,
+		MaxTokens:         volcengine.Int(4096),
 		RepetitionPenalty: &p.repetitionPenalty,
-		/*ResponseFormat: &model.ResponseFormat{
+		ResponseFormat: &model.ResponseFormat{
 			Type: model.ResponseFormatJsonObject,
-			JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
-				Name:        "track_analysis",
-				Description: "Deep analysis of a music track including lyrics translation and literary appreciation.",
-				Schema:      GetTrackInsightSchema(),
-				Strict:      true,
-			},
-		},*/
+		},
 	}
 
-	// 打印请求体
 	reqJSON, _ := json.Marshal(dReq)
 	requestJSON := string(reqJSON)
-	log.Info(ctx, "豆包请求体", zap.String("body", requestJSON))
 
-	// 调用豆包 API
 	resp, err := p.client.CreateChatCompletion(ctx, dReq)
-	// 异步保存调用流水
 	var respJSON string
 	if err == nil {
 		rb, _ := json.Marshal(resp)
 		respJSON = string(rb)
 	}
 	if err != nil {
-		log.Error(ctx, "调用豆包 API 失败", zap.Error(err))
-		return nil, err
+		p.SaveCallLog(ctx, req, requestJSON, respJSON, err, startTime, step)
+		return "", err
 	}
 
-	/*responsesRequest := responses.ResponsesRequest{
-		Input:              nil,
-		Model:              "",
-		MaxOutputTokens:    nil,
-		PreviousResponseId: nil,
-		Thinking:           nil,
-		ServiceTier:        nil,
-		Store:              nil,
-		Stream:             nil,
-		Temperature:        nil,
-		Tools:              nil,
-		TopP:               nil,
-		Instructions:       nil,
-		Include:            nil,
-		Caching:            nil,
-		Text:               nil,
-		ExpireAt:           nil,
-		ToolChoice:         nil,
-		ParallelToolCalls:  nil,
-		MaxToolCalls:       nil,
-		Reasoning:          nil,
-		ContextManagement:  nil,
-	}
-	createResponses, err := p.client.CreateResponses(ctx, &responsesRequest)
-	if err != nil {
-		log.Error(ctx, "调用豆包 API 失败", zap.Error(err))
-		return nil, err
-	}*/
-
-	// 打印响应体
-	log.Debug(ctx, "豆包响应体", zap.String("body", respJSON))
-
-	// 检查响应内容
 	if len(resp.Choices) == 0 || resp.Choices[0].Message.Content == nil || resp.Choices[0].Message.Content.StringValue == nil {
-		log.Warn(ctx, "豆包 API 返回内容为空")
 		err = errors.New("豆包 API 返回内容为空")
+		p.SaveCallLog(ctx, req, requestJSON, respJSON, err, startTime, step)
+		return "", err
+	}
+
+	p.SaveCallLog(ctx, req, requestJSON, respJSON, nil, startTime, step)
+	return *resp.Choices[0].Message.Content.StringValue, nil
+}
+
+// AnalyzeTrack 调用豆包 API，对歌词进行翻译和深度解析
+func (p *DoubaoProvider) AnalyzeTrack(
+	ctx context.Context, req TrackAnalysisRequest,
+) (*TrackAnalysisResult, error) {
+	if config.ConfigObj.AI.MultiStep {
+		return multiStepAnalyzeTrack(ctx, p, req)
+	}
+	return p.analyzeTrackSingleStep(ctx, req)
+}
+
+func (p *DoubaoProvider) analyzeTrackSingleStep(
+	ctx context.Context, req TrackAnalysisRequest,
+) (*TrackAnalysisResult, error) {
+	respStr, err := p.SendChatRequest(
+		ctx, req, buildTrackInsightSystemPromptWithSchema(req), buildTrackInsightUserPrompt(req), nil, "sync",
+	)
+	if err != nil {
 		return nil, err
 	}
 
-	// 获取响应内容
-	raw := TrimCodeFence(*resp.Choices[0].Message.Content.StringValue)
-	normalizedRaw := repairPrematureTopLevelObjectClosure(raw)
-
-	// 解析 JSON 响应
-	var result TrackAnalysisResult
-	if err = json.Unmarshal([]byte(normalizedRaw), &result); err != nil {
-		// 如果解析失败，尝试从文本中提取 JSON 块
-		if extracted := extractJSON(normalizedRaw); extracted != "" {
-			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
-				goto SUCCESS
-			}
-		}
+	result, raw, err := ParseTrackResult(respStr)
+	if err != nil {
 		log.Error(ctx, "解析豆包响应失败", zap.Error(err), zap.String("raw", raw))
-		p.SaveCallLog(ctx, req, requestJSON, respJSON, err, startTime, "sync")
 		return nil, err
 	}
-
-SUCCESS:
-	p.SaveCallLog(ctx, req, requestJSON, respJSON, err, startTime, "sync")
-	if normalizedRaw != raw {
-		log.Warn(ctx, "豆包响应存在多余顶层闭括号，已自动修复", zap.String("model", p.model))
-	}
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]interface{})
-	}
-	// 修复：将字面量 \n 转换为实际换行符
-	result.LyricsTranslation = strings.ReplaceAll(result.LyricsTranslation, "\\n", "\n")
 
 	result.LLMProvider = "doubao:" + p.model
-	return &result, nil
+	return result, nil
 }
 
 // AnalyzeAlbum 调用豆包 API，对专辑聚合上下文进行深度解析。
@@ -526,7 +480,7 @@ func (p *DoubaoProvider) AnalyzeAlbum(
 			{
 				Role: model.ChatMessageRoleSystem,
 				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildAlbumInsightSystemPromptAll()),
+					StringValue: volcengine.String(buildAlbumInsightSystemPromptWithSchema(req)),
 				},
 			},
 			{
@@ -538,6 +492,13 @@ func (p *DoubaoProvider) AnalyzeAlbum(
 		},
 		Thinking: &model.Thinking{
 			Type: model.ThinkingTypeEnabled,
+		},
+		Temperature:       &p.temperature,
+		TopP:              &p.topP,
+		MaxTokens:         volcengine.Int(4096),
+		RepetitionPenalty: &p.repetitionPenalty,
+		ResponseFormat: &model.ResponseFormat{
+			Type: model.ResponseFormatJsonObject,
 		},
 	}
 
@@ -565,112 +526,20 @@ func (p *DoubaoProvider) AnalyzeAlbum(
 		return nil, err
 	}
 
-	raw := TrimCodeFence(*resp.Choices[0].Message.Content.StringValue)
-	normalizedRaw := repairPrematureTopLevelObjectClosure(raw)
-
-	var result AlbumAnalysisResult
-	if err = json.Unmarshal([]byte(normalizedRaw), &result); err != nil {
-		if extracted := extractJSON(normalizedRaw); extracted != "" {
-			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
-				goto SUCCESS
-			}
-		}
+	result, raw, err := ParseAlbumResult(*resp.Choices[0].Message.Content.StringValue)
+	if err != nil {
 		log.Error(ctx, "解析豆包专辑分析响应失败", zap.Error(err), zap.String("raw", raw))
 		p.SaveAlbumCallLog(ctx, req, requestJSON, respJSON, err, startTime, "sync")
 		return nil, err
 	}
 
-SUCCESS:
 	p.SaveAlbumCallLog(ctx, req, requestJSON, respJSON, nil, startTime, "sync")
-	if normalizedRaw != raw {
-		log.Warn(ctx, "豆包专辑响应存在多余顶层闭括号，已自动修复", zap.String("model", p.model))
-	}
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]interface{})
-	}
 	result.LLMProvider = "doubao:" + p.model
-	return &result, nil
+	return result, nil
 }
 
 // AnalyzeTrackStream 实现流式输出
+// Deprecated: 流式接口已废弃
 func (p *DoubaoProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalysisRequest) (<-chan string, error) {
-	startTime := time.Now()
-
-	// 构建请求消息
-	dReq := model.CreateChatCompletionRequest{
-		Model: p.model,
-		Messages: []*model.ChatCompletionMessage{
-			{
-				Role: model.ChatMessageRoleSystem,
-				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightSystemPromptAll()),
-				},
-			},
-			{
-				Role: model.ChatMessageRoleUser,
-				Content: &model.ChatCompletionMessageContent{
-					StringValue: volcengine.String(buildTrackInsightUserPrompt(req)),
-				},
-			},
-		},
-		Thinking: &model.Thinking{
-			Type: model.ThinkingTypeDisabled,
-		},
-		StreamOptions: &model.StreamOptions{
-			IncludeUsage: true,
-		},
-	}
-
-	// 打印请求体
-	reqJSON, _ := json.Marshal(dReq)
-	requestJSON := string(reqJSON)
-	log.Debug(ctx, "豆包流式请求体", zap.String("body", requestJSON))
-
-	// 调用豆包流式 API
-	stream, err := p.client.CreateChatCompletionStream(ctx, dReq)
-	if err != nil {
-		p.SaveCallLog(ctx, req, requestJSON, "", err, startTime, "stream")
-		log.Error(ctx, "调用豆包流式 API 失败", zap.Error(err))
-		return nil, err
-	}
-
-	out := make(chan string, 100)
-	telemetry.GoSafe(
-		ctx, "ai.doubao.stream_track_analysis", func(asyncCtx context.Context) {
-			defer close(out)
-			defer stream.Close()
-
-			var fullResponse strings.Builder
-			var finalErr error
-
-			for {
-				recv, err := stream.Recv()
-				if err != nil {
-					if err != io.EOF {
-						log.Error(asyncCtx, "接收豆包流式响应失败", zap.Error(err))
-						finalErr = err
-					}
-					break
-				}
-
-				// 记录全量内容，用于 SaveCallLog
-				rb, _ := json.Marshal(recv)
-				fullResponse.WriteString(string(rb))
-				fullResponse.WriteString("\n")
-
-				// 发送流式内容
-				if len(recv.Choices) > 0 {
-					content := recv.Choices[0].Delta.Content
-					if content != "" {
-						out <- content
-					}
-				}
-			}
-
-			// 流结束，保存日志
-			p.SaveCallLog(asyncCtx, req, requestJSON, fullResponse.String(), finalErr, startTime, "stream")
-		},
-	)
-
-	return out, nil
+	return nil, errors.New("流式接口已废弃")
 }

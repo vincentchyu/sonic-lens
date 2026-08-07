@@ -819,7 +819,9 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			if err := pendingAlbumService.SavePendingAlbumStagingDraft(c.Request.Context(), workItemID, &draft); err != nil {
+			if err := pendingAlbumService.SavePendingAlbumStagingDraft(
+				c.Request.Context(), workItemID, &draft,
+			); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
@@ -845,11 +847,13 @@ func setupRouter(name string) *gin.Engine {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "staged",
-				"message": "已生成草稿快照，请在预审与差异对比弹窗中审核确认后提交应用。",
-				"preview": preview,
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":  "staged",
+					"message": "已生成草稿快照，请在预审与差异对比弹窗中审核确认后提交应用。",
+					"preview": preview,
+				},
+			)
 		},
 	)
 
@@ -1561,40 +1565,44 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
-	r.POST("/api/albums/:id/lock", func(c *gin.Context) {
-		albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-		if albumID <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
-			return
-		}
-		album, err := model.GetAlbum(c.Request.Context(), albumID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
-			return
-		}
-		if album.SyncStatus != 3 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "只有进入精选维护完成(status=3)的专辑才可以锁定"})
-			return
-		}
-		if err := model.UpdateAlbumSyncStatus(c.Request.Context(), albumID, 4); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	r.POST(
+		"/api/albums/:id/lock", func(c *gin.Context) {
+			albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+				return
+			}
+			album, err := model.GetAlbum(c.Request.Context(), albumID)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+				return
+			}
+			if album.SyncStatus != 3 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "只有进入精选维护完成(status=3)的专辑才可以锁定"})
+				return
+			}
+			if err := model.UpdateAlbumSyncStatus(c.Request.Context(), albumID, 4); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
 
-	r.POST("/api/albums/:id/unlock", func(c *gin.Context) {
-		albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
-		if albumID <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
-			return
-		}
-		if err := model.UpdateAlbumSyncStatus(c.Request.Context(), albumID, 3); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	r.POST(
+		"/api/albums/:id/unlock", func(c *gin.Context) {
+			albumID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+			if albumID <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid album_id"})
+				return
+			}
+			if err := model.UpdateAlbumSyncStatus(c.Request.Context(), albumID, 3); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		},
+	)
 
 	// 获取曲目列表（按专辑排序，支持分页、搜索）
 	r.GET(
@@ -1990,6 +1998,7 @@ type aiRouteService interface {
 	GetOrCreateAlbumInsight(
 		ctx context.Context, albumID int64, force bool, provider, model, legacyModelType string,
 	) ([]*model.AlbumInsight, bool, error)
+	// Deprecated: 流式接口已废弃，后续不再维护与优化 GetOrCreateInsightStream 获取流式解析结果
 	GetOrCreateInsightStream(
 		ctx context.Context, artist, album, track string, trackNumber, discNumber int8, force bool,
 		provider, model, legacyModelType string,

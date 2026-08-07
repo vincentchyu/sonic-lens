@@ -8,9 +8,9 @@ func TestParseAIModelPlatform(t *testing.T) {
 		input    string
 		expected AIModelPlatform
 	}{
-		{name: "openai", input: "openai", expected: AIModelPlatformOpenAI},
+		{name: "gemini", input: "gemini", expected: AIModelPlatformGemini},
 		{name: "trim and lower", input: "  OLLAMA ", expected: AIModelPlatformOllama},
-		{name: "custom", input: "custom", expected: AIModelPlatformCustom},
+		{name: "omlx", input: "omlx", expected: AIModelPlatformOMLX},
 		{name: "invalid", input: "unknown", expected: ""},
 	}
 

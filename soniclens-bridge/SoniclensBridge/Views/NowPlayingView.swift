@@ -219,13 +219,22 @@ struct NowPlayingView: View {
         displayNowPlaying: NowPlaying,
         panelViewportHeight: CGFloat
     ) -> some View {
+        let tabBinding = Binding<MacNowPlayingTab>(
+            get: { selectedTab },
+            set: { newValue in
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    selectedTab = newValue
+                }
+            }
+        )
+
         VStack(spacing: 28) {
             NowPlayingTopBar(
                 favoriteStatus: favoriteStatus,
                 favoriteActionLoading: favoriteActionLoading,
                 favoriteActionNotice: favoriteActionNotice,
                 lyricsFollowMode: $lyricsFollowMode,
-                selectedTab: $selectedTab,
+                selectedTab: tabBinding,
                 statusBannerText: viewModel.playbackState.bannerText,
                 onFavorite: {
                     guard favoriteStatus.allowsFavoriteAction else { return }
@@ -245,17 +254,46 @@ struct NowPlayingView: View {
             .readHeight { topBarHeight = $0 }
 
             HStack(alignment: .top, spacing: 48) {
-                NowPlayingLeftPanel(
-                    nowPlaying: displayNowPlaying,
-                    insightSummary: viewModel.insights.primaryInsight?.teaserText,
-                    favoriteStatusTagText: favoriteStatusTagText,
-                    favoriteStatusTagTone: favoriteStatusTagTone
-                )
+                // 左侧副展示区 (Secondary Slot)
+                ZStack(alignment: .topLeading) {
+                    if selectedTab == .lyrics {
+                        NowPlayingLeftPanel(
+                            nowPlaying: displayNowPlaying,
+                            insightSummary: viewModel.insights.primaryInsight?.teaserText,
+                            favoriteStatusTagText: favoriteStatusTagText,
+                            favoriteStatusTagTone: favoriteStatusTagTone
+                        )
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            )
+                        )
+                    } else {
+                        NowPlayingSideLyricsPanel(
+                            lines: viewModel.lyricLines,
+                            currentLineID: viewModel.currentLineID,
+                            highlightedIndex: viewModel.currentLineIndex,
+                            followMode: $lyricsFollowMode,
+                            onExpandToMain: {
+                                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                                    selectedTab = .lyrics
+                                }
+                            }
+                        )
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .trailing).combined(with: .opacity)
+                            )
+                        )
+                    }
+                }
                 .frame(maxWidth: 380)
                 .frame(height: panelViewportHeight, alignment: .topLeading)
-                .clipped()
 
-                Group {
+                // 右侧主展示区 (Primary Slot)
+                ZStack(alignment: .topLeading) {
                     if selectedTab == .lyrics {
                         NowPlayingLyricsPanel(
                             lines: viewModel.lyricLines,
@@ -263,11 +301,23 @@ struct NowPlayingView: View {
                             highlightedIndex: viewModel.currentLineIndex,
                             followMode: $lyricsFollowMode
                         )
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            )
+                        )
                     } else {
                         MacNowPlayingInsightPanel(
                             items: viewModel.insights,
                             selectedInsightIndex: $viewModel.selectedInsightIndex,
                             insightViewMode: $viewModel.insightViewMode
+                        )
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .trailing).combined(with: .opacity)
+                            )
                         )
                     }
                 }
@@ -632,6 +682,75 @@ struct NowPlayingLeftPanel: View {
                 text: insightSummary ?? "专注当前播放，把封面、歌词和音眸洞察放到同一块大画布里。"
             )
             .padding(.top, 0)
+        }
+    }
+}
+
+struct NowPlayingSideLyricsPanel: View {
+    let lines: [LyricLine]
+    let currentLineID: UUID?
+    let highlightedIndex: Int?
+    @Binding var followMode: Bool
+    let onExpandToMain: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text("LRC 辅助 · 实时同步")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("点击切回主屏")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Image(systemName: "arrow.up.right.and.arrow.down.left.rectangle")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.white.opacity(isHovered ? 0.15 : 0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(isHovered ? 0.24 : 0.12), lineWidth: 1)
+            )
+
+            NowPlayingLyricsPanel(
+                lines: lines,
+                currentLineID: currentLineID,
+                highlightedIndex: highlightedIndex,
+                followMode: $followMode
+            )
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.white.opacity(isHovered ? 0.08 : 0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.white.opacity(isHovered ? 0.22 : 0.08), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.16)) {
+                isHovered = hovering
+            }
+        }
+        .onTapGesture {
+            onExpandToMain()
         }
     }
 }

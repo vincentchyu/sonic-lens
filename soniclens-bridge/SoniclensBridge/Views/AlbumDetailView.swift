@@ -412,7 +412,9 @@ private struct RegularAlbumDetailView: View {
                     insightViewMode: $insightViewMode
                 )
             }
-            .padding(32)
+            .padding(.top, 32)
+            .padding(.horizontal, 32)
+            .padding(.bottom, 108)
         }
     }
 }
@@ -468,8 +470,9 @@ private struct PhoneAlbumDetailView: View {
                     insightViewMode: $insightViewMode
                 )
             }
+            .padding(.top, 20)
             .padding(.horizontal, 16)
-            .padding(.vertical, 20)
+            .padding(.bottom, 108)
         }
     }
 }

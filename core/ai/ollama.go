@@ -191,7 +191,11 @@ func (p *OllamaProvider) AnalyzeTrack(
 	ollamaReq := &api.GenerateRequest{
 		Model:  p.model,
 		System: prompt,
+		Format: json.RawMessage("json"),
 		Stream: new(bool), // set streaming to false
+		Options: map[string]interface{}{
+			"temperature": float32(DefaultInsightTemperature),
+		},
 		Think:  &api.ThinkValue{Value: "medium"},
 		Prompt: "由于本地模型的能力有限，不做analysis_by_section.appreciate_analysis字段的填充和分析",
 	}
@@ -226,29 +230,16 @@ func (p *OllamaProvider) AnalyzeTrack(
 		return nil, err
 	}
 
-	raw := TrimCodeFence(fullContent.String())
-	var result TrackAnalysisResult
-	if err = json.Unmarshal([]byte(raw), &result); err != nil {
-		// 如果解析失败，尝试从文本中提取 JSON 块
-		if extracted := extractJSON(raw); extracted != "" {
-			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
-				goto SUCCESS
-			}
-		}
+	result, raw, err := ParseTrackResult(fullContent.String())
+	if err != nil {
 		log.Error(ctx, "解析ollama响应失败", zap.Error(err), zap.String("raw", raw))
 		p.SaveCallLog(ctx, req, requestJSON, fullResponse.String(), err, startTime, "sync")
 		return nil, err
 	}
-SUCCESS:
-	p.SaveCallLog(ctx, req, requestJSON, fullResponse.String(), nil, startTime, "sync")
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]interface{})
-	}
-	// 修复：将字面量 \n 转换为实际换行符
-	result.LyricsTranslation = strings.ReplaceAll(result.LyricsTranslation, "\\n", "\n")
 
+	p.SaveCallLog(ctx, req, requestJSON, fullResponse.String(), nil, startTime, "sync")
 	result.LLMProvider = "ollama:" + p.model
-	return &result, nil
+	return result, nil
 }
 
 // AnalyzeAlbum 调用本地 Ollama 接口，对专辑聚合上下文进行深度解析。
@@ -261,7 +252,11 @@ func (p *OllamaProvider) AnalyzeAlbum(
 	ollamaReq := &api.GenerateRequest{
 		Model:  p.model,
 		System: prompt,
+		Format: json.RawMessage("json"),
 		Stream: new(bool),
+		Options: map[string]interface{}{
+			"temperature": float32(DefaultInsightTemperature),
+		},
 		Think:  &api.ThinkValue{Value: "medium"},
 		Prompt: "请仅输出符合 schema 的专辑分析 JSON。",
 	}
@@ -295,28 +290,20 @@ func (p *OllamaProvider) AnalyzeAlbum(
 		return nil, err
 	}
 
-	raw := TrimCodeFence(fullContent.String())
-	var result AlbumAnalysisResult
-	if err = json.Unmarshal([]byte(raw), &result); err != nil {
-		if extracted := extractJSON(raw); extracted != "" {
-			if err = json.Unmarshal([]byte(extracted), &result); err == nil {
-				goto SUCCESS
-			}
-		}
+	result, raw, err := ParseAlbumResult(fullContent.String())
+	if err != nil {
 		log.Error(ctx, "解析ollama专辑分析响应失败", zap.Error(err), zap.String("raw", raw))
 		p.SaveAlbumCallLog(ctx, req, requestJSON, fullResponse.String(), err, startTime, "sync")
 		return nil, err
 	}
-SUCCESS:
+
 	p.SaveAlbumCallLog(ctx, req, requestJSON, fullResponse.String(), nil, startTime, "sync")
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]interface{})
-	}
 	result.LLMProvider = "ollama:" + p.model
-	return &result, nil
+	return result, nil
 }
 
 // AnalyzeTrackStream 实现流式输出
+// Deprecated: 流式接口已废弃
 func (p *OllamaProvider) AnalyzeTrackStream(ctx context.Context, req TrackAnalysisRequest) (<-chan string, error) {
 	startTime := time.Now()
 	prompt := buildTrackInsightMergedPrompt(req)

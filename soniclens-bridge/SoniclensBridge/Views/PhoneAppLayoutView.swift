@@ -152,11 +152,11 @@ struct PhoneAppLayoutView: View {
         for destination: PhoneTabDestination,
         @ViewBuilder content: () -> Content
     ) -> some View {
-                NavigationStack {
-                    content()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(AppBackground())
-                        .toolbar {
+        NavigationStack {
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AppBackground())
+                .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Text(destination.title)
                             .font(.headline.weight(.semibold))
@@ -169,6 +169,13 @@ struct PhoneAppLayoutView: View {
                         }
                     }
                 }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if playbackStore.hasActiveNowPlaying {
+                Color.clear
+                    .frame(height: PlaybackBarView.compactHeight + 8)
+                    .allowsHitTesting(false)
+            }
         }
         .tabItem {
             Label(destination.title, systemImage: destination.systemImage)

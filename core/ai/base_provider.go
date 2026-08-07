@@ -20,6 +20,14 @@ type BaseProvider struct {
 	ModelName    string // 模型名称
 }
 
+func (b *BaseProvider) GetProviderName() string {
+	return b.ProviderName
+}
+
+func (b *BaseProvider) GetModelName() string {
+	return b.ModelName
+}
+
 // SaveCallLog 将大模型的出站请求和响应全文 JSON 异步保存到调用流水表中，用于未来排查和恢复现场。
 // 该方法通过 goroutine 异步执行，不阻塞主请求流程。
 //
@@ -68,7 +76,10 @@ func (b *BaseProvider) SaveCallLog(
 			// 计算耗时
 			durationMs := time.Since(startTime).Milliseconds()
 
+			jobID, _ := asyncCtx.Value(common.ContextKeyJobID).(string)
+
 			callLog := &model.LLMCallLog{
+				JobID:              jobID,
 				Provider:           b.ProviderName,
 				Model:              b.ModelName,
 				RequestJSON:        requestJSON,
@@ -132,7 +143,10 @@ func (b *BaseProvider) SaveAlbumCallLog(
 			targetMetadataBytes, _ := json.Marshal(targetMetadata)
 			durationMs := time.Since(startTime).Milliseconds()
 
+			jobID, _ := asyncCtx.Value(common.ContextKeyJobID).(string)
+
 			callLog := &model.LLMCallLog{
+				JobID:              jobID,
 				Provider:           b.ProviderName,
 				Model:              b.ModelName,
 				RequestJSON:        requestJSON,

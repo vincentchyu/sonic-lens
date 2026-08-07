@@ -97,6 +97,12 @@
 - **Bridge URL 编码红线**: `soniclens-bridge` 所有 GET 请求的 query 参数必须统一走 `SoniclensCore/Networking/APIClient.swift` 的百分号编码收口，禁止在业务层手写 query string 或依赖 `+` 的隐式语义。曲名、艺人名、专辑名等元数据只允许传原始值，由共享网络层负责把 `+` 编码为 `%2B`，避免后端将 `+` 还原成空格。
 - **Bridge 分享与音眸红线**: iPhone 分享首期只从 `TrackDetailView` 进入；可复用的是 ShareKit 的数据装配、渲染和动作层，不是 macOS 快照布局。系统分享只走单张长图；保存图片允许在“长图 / 分页”之间显式选择。音眸分享必须复用现有 `InsightTaggedContentParser` 标签语义并渲染全文 segment，不能退回成摘要卡片或大段纯文本。音眸的数据契约与标签语义必须以 `core/ai/agent_insight_track.go` 的 `GetTrackInsightSchema()`、`core/ai/agent_insight_album.go` 的 `GetAlbumInsightSchema()` 和 `templates/pages/lyrics_live.html` 为唯一事实标准；`analysis_by_section`、`<original>/<translation>/<explain>` 解析、主 insight 选择与富渲染树必须收口到共享层，端差异只允许体现在外层容器与排版，`appreciate_analysis` 的每组原文/翻译/解读必须保持标签完整性，不能被切成一组一个标签标题的碎片卡。iPhone 音眸分析已改为“`/api/insight-jobs` 异步任务 + `WS insight_job_updated` 前台推送 + `GET /api/insight-jobs/:id` 恢复兜底 + `soniclens://insight-job/<id>` 深链回流”；详情页禁止再直接持有长时间 `POST /api/track-insight` / `POST /api/album-insight` 作为主调用链，统一通过 `SoniclensCore/Store/AppStore.swift` 挂载的 `InsightAnalysisCoordinator` 管理单活跃任务、路由快照和 Live Activity。iOS 端长时任务必须关联 Live Activity 进度反馈；封面渲染必须走 `LiveActivityArtworkStore` 异步下载至本地，禁止在 Widget 侧直接触发网络请求。
 - **Bridge 视觉热区红线**: 首页、正在播放页和其他常驻热区的动态背景、模糊材质、阴影与常驻动画必须提供性能模式或紧凑降级路径；`APIClient` 默认复用共享 `URLSession`，`PlayerViewModel` 这类热点 ViewModel 必须优先并行可并行请求并丢弃过期结果。
+- **Bridge macOS 开发红线**:
+  - **AppKit 与 SwiftUI 边界隔离**: macOS 专属代码（如 `NSWindow` 操作、`NSVisualEffectView` 窗口级宿主、窗口控制按钮控制）严禁泄漏到 iPad/iPhone 目标代码中；跨平台代码需使用 `#if os(macOS)` 或抽象平台适配层 (`PlatformUI.swift`) 隔离。
+  - **NSVisualEffectView 玻璃宿主**: macOS mini 播放条或高阶透明材质必须由窗口级/宿主级 `NSVisualEffectView` 长期承载后再嵌入 SwiftUI 内容，严禁直接在 SwiftUI 修饰链 (`background`/`clipShape`) 中简单放置以避免前后台切换时退化为实色。
+  - **XcodeGen 工程驱动**: 任何 target/scheme/Info.plist 更改必须更新 `project.yml` 并运行 `xcodegen generate`，严禁直接在 Xcode 界面上手修改 `.xcodeproj` 文件，避免被生成工具覆盖。
+  - **高频状态 Observation 隔离**: 密集列表和播放常驻组件禁止直接订阅全局 `AppStore` 的高频更新，高频状态必须收口到细粒度的 `PlaybackStore` / `FavoriteStore`；复杂列表更新需保持 single-flight 并使用请求 token 丢弃过期异步结果。
+  - **响应式 UI 性能模式**: 常驻热区（如正在播放沉浸背景、歌词滚动与高密度网格）必须包含紧凑/低性能设备降级路径，避免开销较大的实时模糊与大范围动画阻塞主线程。
 - **细节归档原则**: 具体 UI 规格、排序规则、专辑详情布局、多碟展示与高密度滚动性能策略，不再堆叠在本核心记忆中；应优先维护在 `soniclens-bridge/Docs/` 下的专题文档。
 
 ### 2.4 Web 端规约
@@ -154,7 +160,7 @@
     - **规则**: `/api/insights/all` 必须显式支持 `analysis_target_type`；默认曲目 `track`，专辑 `album` 必须走独立查询与独立 UI tab，不能混成同一个列表语义。
 - **[llm_call_log.go](./internal/model/llm_call_log.go)**:
     - **功能**: 大模型调用流水审计与恢复现场。
-    - **规则**: `analysis_target_type` 与 `target_key` 是主查询维度，`target_metadata` 专门保存对象元数据，`track_info` 只允许作为兼容展示字段。AI 模型选择链路已升级为“平台 + 模型”双字段，`llm_call_logs.provider/model` 与 `target_metadata` 必须同时保留 requested/effective 信息；稳定期结构以 DDL 与 model struct 为准，不再依赖运行时补列。
+    - **规则**: `analysis_target_type` 与 `target_key` 是主查询维度，`target_metadata` 专门保存对象元数据，`track_info` 只允许作为兼容展示字段。AI 模型选择链路已升级为“平台 + 模型”双字段，`llm_call_logs.provider/model` 与 `target_metadata` 必须同时保留 requested/effective 信息；新增 `job_id` 关联字段，支持通过 `job_id` 强关联聚合多轮分析流水并进行排序展示，在后台展示时当 `job_id` 为空时自动 fallback 至默认名字关联。稳定期结构以 DDL 与 model struct 为准。
 - **[track_lyrics.go](./internal/model/track_lyrics.go)**:
     - **功能**: 原始歌词与翻译歌词持久化。
     - **规则**: `track_lyrics.synced` 只表示“可解析出至少一个合法 LRC 时间标签”，`[Verse]` / `[ar:...]` 这类标签不能单独触发同步歌词状态。
@@ -186,7 +192,7 @@
 ### 3.3 相关基础设施
 
 - **[core/ai/](./core/ai/)**:
-    - **规则**: AI provider 抽象已拆分为“平台工厂 + 运行时 `LLMProvider`”，平台枚举统一以 `common.AIModelPlatform` 为准；`/api/ai-models` 只返回平台列表，`/api/ai-models/:platform/models` 返回模型目录。模型目录只走 Redis 读穿缓存，不新增 MySQL 模型目录表；`internal/logic/insight` 的 provider cache key 必须按 `platform + model` 组合。Gemini SDK 统一通过 `genai.ClientConfig.HTTPClient` 注入 `core/telemetry.WrapHTTPClient(...)`，配置了 `GeminiConfig.BaseURL` 时也必须同步传入 SDK。
+    - **规则**: AI provider 抽象已拆分为“平台工厂 + 运行时 `LLMProvider`”，已彻底删除 `openai` 支持，Custom 已改名并对齐 OMLX 规范。新增 `RawChatClient` 统一底座接口以支持 `MultiStepAnalyzeTrack`（多步流式切分分析）：按 Step 1 (歌词翻译) -> Step 2 (分段解读) -> Step 3 (深度总结与指标) 无状态多轮推进；集成 `executeStepWithRetry` 单步指数退避重试，以及步骤失败时保留已成功早期结果的优雅降级策略；落地纯音乐/无歌词曲目（通过 `IsInstrumentalOrEmptyLyrics`）Step 1 与 Step 2 双步骤自动跳过机制，显著省 Token 并缩短延迟。支持从 context 提取 `ContextKeyJobID` 注入日志以跨协程追踪调试。平台枚举统一以 `common.AIModelPlatform` 为准；`/api/ai-models` 只返回平台列表，`/api/ai-models/:platform/models` 返回模型目录。模型目录只走 Redis 读穿缓存，不新增 MySQL 模型目录表；`internal/logic/insight` 的 provider cache key 必须按 `platform + model` 组合。Gemini SDK 统一通过 `genai.ClientConfig.HTTPClient` 注入 `core/telemetry.WrapHTTPClient(...)`，配置了 `GeminiConfig.BaseURL` 时也必须同步传入 SDK。
 - **[core/telemetry/](./core/telemetry/)**:
     - **规则**: telemetry 已升级为 SigNoz OTLP gRPC exporter + MeterProvider 闭环；未配置 OTLP endpoint 时回退 stdout trace exporter。自建出站 `http.Client` 应优先通过 `WrapHTTPClient(...)` 包装。Telemetry 初始化完成后必须输出启动自检日志；日志接入 SigNoz 时优先用本地 Collector `filelog` receiver 采集本地日志文件，不要在业务代码里叠第二套 logs exporter。Scrobbler 正在播放链路坚持“单首歌一个长生命周期根 span + 按变化触发阶段 span / event”；收藏探测必须先用进程内热缓存和退避策略吸收稳态轮询，避免 Jaeger / SigNoz 被重复探测淹没。
 - **[core/musicbrainz/](./core/musicbrainz/)**:
@@ -196,5 +202,5 @@
 - **[core/objectstorage/](./core/objectstorage/)**:
     - **规则**: S3 / MinIO / R2 这类基于 AWS SDK v2 的对象存储链路，统一走 smithy 原生 OTel adapter 接到全局 tracer/meter provider，避免在对象存储调用外层再叠手写 span。
 
-*最后更新日期：2026-08-07 | 文档版本: v3.4*
+*最后更新日期：2026-08-08 | 文档版本: v3.5*
 AI MUST READ THIS FILE BEFORE MODIFYING CODE.

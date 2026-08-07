@@ -158,22 +158,19 @@ type ObjectStorageConfig struct {
 }
 
 // AIConfig 大模型相关配置
-// provider 用于选择具体实现，例如：openai、gemini、ollama、doubao 等
+// provider 用于选择具体实现，例如：gemini、ollama、doubao、omlx 等
 type AIConfig struct {
-	Provider string         `yaml:"provider"`
-	OpenAI   OpenAIConfig   `yaml:"openai"`
-	Gemini   GeminiConfig   `yaml:"gemini"`
-	Ollama   OllamaConfig   `yaml:"ollama"`
-	Doubao   DoubaoConfig   `yaml:"doubao"`
-	Custom   CustomAIConfig `yaml:"custom"`
+	Provider  string       `yaml:"provider"`
+	MultiStep bool         `yaml:"multiStep"`
+	Gemini    GeminiConfig `yaml:"gemini"`
+	Ollama    OllamaConfig `yaml:"ollama"`
+	Doubao    DoubaoConfig `yaml:"doubao"`
+	OMLX      OMLXConfig   `yaml:"omlx"`
 }
 
 // GetAvailableProviders 返回当前配置中所有已配置的 AI 提供商
 func (c AIConfig) GetAvailableProviders() []string {
 	var providers []string
-	if c.OpenAI.APIKey != "" {
-		providers = append(providers, "openai")
-	}
 	if c.Gemini.APIKey != "" {
 		providers = append(providers, "gemini")
 	}
@@ -183,8 +180,8 @@ func (c AIConfig) GetAvailableProviders() []string {
 	if c.Doubao.APIKey != "" {
 		providers = append(providers, "doubao")
 	}
-	if c.Custom.APIKey != "" {
-		providers = append(providers, "custom")
+	if c.OMLX.APIKey != "" {
+		providers = append(providers, "omlx")
 	}
 	return providers
 }
@@ -201,15 +198,8 @@ func (c AIConfig) GetAvailablePlatforms() []common.AIModelPlatform {
 	return platforms
 }
 
-// OpenAIConfig OpenAI 配置
-type OpenAIConfig struct {
-	APIKey  string `yaml:"apiKey"`
-	BaseURL string `yaml:"baseUrl"`
-	Model   string `yaml:"model"`
-}
-
-// Custom AI 配置
-type CustomAIConfig struct {
+// OMLX 配置
+type OMLXConfig struct {
 	APIKey  string `yaml:"apiKey"`
 	BaseURL string `yaml:"baseUrl"`
 	Model   string `yaml:"model"`

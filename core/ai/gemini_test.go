@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/genai"
+
 	"github.com/vincentchyu/sonic-lens/config"
 )
 
@@ -87,4 +89,16 @@ func TestTrimCodeFence(t *testing.T) {
 	for _, c := range cases {
 		assert.Equal(t, c.expected, TrimCodeFence(c.input))
 	}
+}
+
+func TestGeminiThinkingConfigExclusive(t *testing.T) {
+	// 验证 genai.ThinkingConfig 不能同时设置 ThinkingBudget 与 ThinkingLevel
+	// Gemini API 规则：You can only set only one of thinking budget and thinking level.
+	cfg := &genai.ThinkingConfig{
+		IncludeThoughts: true,
+		ThinkingLevel:   genai.ThinkingLevelMedium,
+	}
+
+	assert.Nil(t, cfg.ThinkingBudget, "ThinkingBudget 必须为 nil 以免与 ThinkingLevel 冲突")
+	assert.NotEmpty(t, cfg.ThinkingLevel, "ThinkingLevel 不能为空")
 }
