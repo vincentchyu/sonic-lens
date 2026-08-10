@@ -187,10 +187,6 @@ func initPprof() {
 }
 
 func init() {
-	http.DefaultTransport = &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-	}
-
 	http.DefaultClient = &http.Client{
 		Transport: http.DefaultTransport,
 	}

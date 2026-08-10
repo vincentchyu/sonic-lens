@@ -80,6 +80,12 @@ SonicLens 是一个围绕“音乐轨迹属于你自己”构建的开源项目�
 
 如果你是第一次了解这个项目，这部分基本就是它和普通“音乐记录脚本”最大的区别。
 
+## 架构复杂度与技术挑战
+
+`SonicLens` (音眸) 并非简单的 Scrobble 工具或常规 CRUD 系统，而是一个**中高难度、企业级标准、跨端协同的专业领域系统**。详尽的技术难点、架构设计与系统挑战分析请参阅专有文档：
+
+👉 **[架构复杂度与技术难度分析 (docs/PROJECT_DIFFICULTY_ANALYSIS.md)](docs/PROJECT_DIFFICULTY_ANALYSIS.md)**
+
 ## 效果展示
 
 我们为所有端点提供了一致但深度适配的原生体验，包含 **Web 后台**、**Mac 桌面客户端** 以及 **iPhone 移动端**。
@@ -291,6 +297,7 @@ xcodebuild \
 
 如果你想继续深入：
 
+- 架构复杂度与技术难度分析：`docs/PROJECT_DIFFICULTY_ANALYSIS.md`
 - 客户端打包与启动说明：`soniclens-bridge/Docs/PACKAGING_AND_LAUNCH.md`
 - 客户端构建与验证：`soniclens-bridge/Docs/BUILD_AND_VERIFY.md`
 - 客户端架构说明：`soniclens-bridge/Docs/ARCHITECTURE.md`
