@@ -116,6 +116,7 @@ struct SharePosterArtworkView: View {
 struct SharePosterHeader: View {
     let header: ShareHeaderPayload
     let continuationLabel: String?
+    var continuationPreview: String? = nil
     var renderedImage: PlatformShareImage? = nil
 
     private let heroMinHeight: CGFloat = 274
@@ -133,7 +134,7 @@ struct SharePosterHeader: View {
                                 .foregroundStyle(.white.opacity(0.88))
                         }
 
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 5) {
                         Text(continuationLabel)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.68))
@@ -148,6 +149,17 @@ struct SharePosterHeader: View {
                                 .foregroundStyle(Color.white.opacity(0.76))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .minimumScaleFactor(0.75)
+                        }
+                        if let previewText = formattedPreviewText {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.turn.down.right")
+                                    .font(.system(size: 9, weight: .semibold))
+                                Text("接上: \(previewText)")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(Color.white.opacity(0.55))
+                            .padding(.top, 2)
                         }
                     }
 
@@ -248,6 +260,18 @@ struct SharePosterHeader: View {
         case (true, true):
             return nil
         }
+    }
+
+    private var formattedPreviewText: String? {
+        guard let text = continuationPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            return nil
+        }
+        let singleLine = text.replacingOccurrences(of: "\n", with: " ")
+        if singleLine.count > 25 {
+            return String(singleLine.prefix(25)) + "..."
+        }
+        return singleLine
     }
 }
 

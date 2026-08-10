@@ -518,16 +518,20 @@ final class LibraryViewModel: ObservableObject {
         logger.info("开始后台同步，强制全量 \(forceFullSync, privacy: .public)")
 
         do {
-            try await ensureIndexStore()
-            try await syncService.sync(using: server, forceFullSync: forceFullSync)
+            let syncResult = try await syncService.sync(using: server, forceFullSync: forceFullSync)
             guard currentServerURL == nil || currentServerURL == server.baseURL else {
                 logger.debug("后台同步完成后发现服务端已切换，放弃回写旧结果")
                 isRefreshing = false
                 syncState = .idle
                 return
             }
-            await reloadAlbums(sort: currentAlbumSort, query: currentAlbumQuery, force: true)
-            await reloadTracks(sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery, force: true)
+            if syncResult.hasChanges || forceFullSync {
+                logger.info("检测到资料库增量变化，重载列表 albums=\(syncResult.updatedAlbumsCount) tracks=\(syncResult.updatedTracksCount)")
+                await reloadAlbums(sort: currentAlbumSort, query: currentAlbumQuery, force: true)
+                await reloadTracks(sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery, force: true)
+            } else {
+                logger.debug("资料库无增量变化，跳过全量视图重排")
+            }
 
             do {
                 let count = try await fetchUnscrobbledCount(using: server)

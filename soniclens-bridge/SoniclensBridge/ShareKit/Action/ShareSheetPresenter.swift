@@ -64,6 +64,26 @@ private final class ShareImageActivityItemSource: NSObject, UIActivityItemSource
 }
 #else
 import SwiftUI
+import AppKit
+
+@MainActor
+enum MacShareActionHelper {
+    @discardableResult
+    static func copyImagesToPasteboard(fileURLs: [URL]) -> Bool {
+        let images = fileURLs.compactMap { NSImage(contentsOf: $0) }
+        guard !images.isEmpty else { return false }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        return pasteboard.writeObjects(images)
+    }
+
+    static func showSharingPicker(fileURLs: [URL], relativeTo rect: NSRect, of view: NSView) {
+        let items: [Any] = fileURLs.compactMap { NSImage(contentsOf: $0) }
+        guard !items.isEmpty else { return }
+        let picker = NSSharingServicePicker(items: items)
+        picker.show(relativeTo: rect, of: view, preferredEdge: .minY)
+    }
+}
 
 struct ShareSheetPresenter: View {
     let items: [Any]

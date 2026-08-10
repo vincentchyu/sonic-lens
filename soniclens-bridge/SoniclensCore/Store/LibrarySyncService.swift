@@ -1,6 +1,12 @@
 import Foundation
 import OSLog
 
+struct LibrarySyncResult {
+    let hasChanges: Bool
+    let updatedAlbumsCount: Int
+    let updatedTracksCount: Int
+}
+
 final class LibrarySyncService {
     private let indexStore: LibraryIndexStore
     private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "LibrarySync")
@@ -9,7 +15,8 @@ final class LibrarySyncService {
         self.indexStore = indexStore
     }
 
-    func sync(using server: ServerConfig, forceFullSync: Bool = false) async throws {
+    @discardableResult
+    func sync(using server: ServerConfig, forceFullSync: Bool = false) async throws -> LibrarySyncResult {
         let client = APIClient(baseURL: server.baseURL)
         let requiresResync = try await indexStore.requiresFullResync()
         let shouldForceFullSync = forceFullSync || requiresResync
@@ -19,6 +26,8 @@ final class LibrarySyncService {
         )
 
         let response: LibrarySyncResponse
+        var hasChanges = false
+
         if shouldForceFullSync {
             response = try await client.getJSON(
                 path: APIPath.librarySync,
@@ -29,11 +38,13 @@ final class LibrarySyncService {
             )
             try await indexStore.resetForFullResync()
             try await indexStore.replaceAll(with: response)
+            hasChanges = true
         } else {
             response = try await client.getJSON(
                 path: APIPath.librarySync,
                 queryItems: [URLQueryItem(name: "since_version", value: "\(currentVersion)")]
             )
+            hasChanges = !response.albums.isEmpty || !response.tracks.isEmpty || !response.deletedAlbumIDs.isEmpty || !response.deletedTrackIDs.isEmpty
             do {
                 try await indexStore.apply(response)
             } catch {
@@ -47,6 +58,7 @@ final class LibrarySyncService {
                 )
                 try await indexStore.resetForFullResync()
                 try await indexStore.replaceAll(with: fullResponse)
+                hasChanges = true
             }
         }
 
@@ -65,7 +77,13 @@ final class LibrarySyncService {
         let finalVersion = try await indexStore.currentSyncVersion()
         let finalSchemaVersion = try await indexStore.currentSyncSchemaVersion()
         logger.log(
-            "finish library sync persistedVersion=\(finalVersion, privacy: .public) persistedSchema=\(finalSchemaVersion, privacy: .public)"
+            "finish library sync persistedVersion=\(finalVersion, privacy: .public) persistedSchema=\(finalSchemaVersion, privacy: .public) hasChanges=\(hasChanges, privacy: .public)"
+        )
+
+        return LibrarySyncResult(
+            hasChanges: hasChanges,
+            updatedAlbumsCount: response.albums.count,
+            updatedTracksCount: response.tracks.count
         )
     }
 }

@@ -105,7 +105,7 @@ struct AlbumInsightPosterView: View {
     }
 }
 
-private struct InfoPosterContent: View {
+struct InfoPosterContent: View {
     let fields: [ShareInfoField]
 
     var body: some View {
@@ -123,29 +123,37 @@ private struct InfoPosterContent: View {
             }
 
             ForEach(fields) { field in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(field.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.58))
-                    Text(displayValue(for: field))
-                        .font(.system(size: 15, weight: .medium))
-                        .lineSpacing(6)
-                        .foregroundStyle(.white.opacity(0.94))
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let note = field.note {
-                        Text("\n\(note)")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.5))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .lineSpacing(3)
-                    }
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                SharePosterInfoFieldCard(field: field)
             }
         }
+    }
+}
+
+struct SharePosterInfoFieldCard: View {
+    let field: ShareInfoField
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(field.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.58))
+            Text(displayValue(for: field))
+                .font(.system(size: 15, weight: .medium))
+                .lineSpacing(6)
+                .foregroundStyle(.white.opacity(0.94))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let note = field.note {
+                Text("\n\(note)")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(3)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func displayValue(for field: ShareInfoField) -> String {
@@ -168,7 +176,7 @@ private extension String {
     }
 }
 
-private struct LyricsLongPosterContent: View {
+struct LyricsLongPosterContent: View {
     let blocks: [ShareTextBlock]
 
     var body: some View {
@@ -184,28 +192,36 @@ private struct LyricsLongPosterContent: View {
                 )
             } else {
                 ForEach(blocks) { block in
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let title = block.title {
-                            Text(title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.56))
-                        }
-                        Text(block.text)
-                            .font(.system(size: 18, weight: .medium))
-                            .lineSpacing(8)
-                            .foregroundStyle(.white.opacity(0.94))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(16)
-                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    SharePosterLyricsBlockCard(block: block)
                 }
             }
         }
     }
 }
 
-private struct InsightLongPosterContent: View {
+struct SharePosterLyricsBlockCard: View {
+    let block: ShareTextBlock
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title = block.title {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.56))
+            }
+            Text(block.text)
+                .font(.system(size: 18, weight: .medium))
+                .lineSpacing(8)
+                .foregroundStyle(.white.opacity(0.94))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+}
+
+struct InsightLongPosterContent: View {
     let document: InsightShareDocument
 
     var body: some View {
@@ -228,7 +244,7 @@ private struct InsightLongPosterContent: View {
     }
 }
 
-private struct SharePosterInsightCard: View {
+struct SharePosterInsightCard: View {
     let card: InsightShareCard
 
     var body: some View {
@@ -243,7 +259,7 @@ private struct SharePosterInsightCard: View {
     }
 }
 
-private struct SharePosterInsightTextCard: View {
+struct SharePosterInsightTextCard: View {
     let title: String
     let text: String
 
@@ -265,7 +281,7 @@ private struct SharePosterInsightTextCard: View {
     }
 }
 
-private struct SharePosterInsightTaggedCard: View {
+struct SharePosterInsightTaggedCard: View {
     let title: String
     let groups: [InsightShareGroup]
     let text: String?
@@ -296,18 +312,18 @@ private struct SharePosterInsightTaggedCard: View {
     }
 }
 
-private struct SharePosterInsightSectionCard: View {
+struct SharePosterInsightSectionCard: View {
     let title: String
     let sections: [InsightShareSection]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
 
             ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(section.title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.64))
@@ -323,7 +339,7 @@ private struct SharePosterInsightSectionCard: View {
                     }
 
                     if !section.groups.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 10) {
                             ForEach(section.groups) { group in
                                 SharePosterInsightGroupCard(
                                     group: group,
@@ -334,18 +350,16 @@ private struct SharePosterInsightSectionCard: View {
                         }
                     }
                 }
-                .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
-private struct SharePosterInsightGroupCard: View {
+struct SharePosterInsightGroupCard: View {
     let group: InsightShareGroup
     let indexLabel: String?
     let showExplainPanel: Bool
@@ -396,7 +410,7 @@ private struct SharePosterInsightGroupCard: View {
     }
 }
 
-private struct SharePosterEmptyContentView: View {
+struct SharePosterEmptyContentView: View {
     let title: String
     let subtitle: String
 
@@ -414,3 +428,4 @@ private struct SharePosterEmptyContentView: View {
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
+

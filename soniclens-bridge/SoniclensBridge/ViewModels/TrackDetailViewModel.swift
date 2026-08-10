@@ -17,6 +17,8 @@ final class TrackDetailViewModel: ObservableObject {
     @Published var lyrics: TrackLyricsResponse?
     @Published var lyricLines: [LyricLine] = []
     @Published var insights: [Insight] = []
+    @Published var lyricsLoadFailed: Bool = false
+    @Published var insightsLoadFailed: Bool = false
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var insightGenerationState: InsightGenerationState = .idle
@@ -49,19 +51,99 @@ final class TrackDetailViewModel: ObservableObject {
     ) async {
         isLoading = true
         errorMessage = nil
+        lyricsLoadFailed = false
+        insightsLoadFailed = false
         let client = APIClient(baseURL: server.baseURL)
         let requestKey = [artist, album ?? "", track, String(trackNumber ?? 0), String(discNumber ?? 0)].joined(separator: "•")
         artworkRequestKey = requestKey
-        do {
-            applyResolvedArtwork(nil)
-            resolveArtworkInBackground(
-                using: server,
-                requestKey: requestKey,
-                artist: artist,
-                album: album
-            )
 
-            lyrics = try await client.getJSON(
+        applyResolvedArtwork(nil)
+        resolveArtworkInBackground(
+            using: server,
+            requestKey: requestKey,
+            artist: artist,
+            album: album
+        )
+
+        async let lyricsTask: (TrackLyricsResponse?, Bool) = {
+            do {
+                let resp: TrackLyricsResponse = try await client.getJSON(
+                    path: APIPath.trackLyrics,
+                    queryItems: [
+                        URLQueryItem(name: "artist", value: artist),
+                        URLQueryItem(name: "album", value: album ?? ""),
+                        URLQueryItem(name: "track", value: track),
+                        URLQueryItem(name: "trackNumber", value: trackNumber.map(String.init)),
+                        URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
+                    ]
+                )
+                return (resp, false)
+            } catch {
+                return (nil, true)
+            }
+        }()
+
+        async let insightsTask: (TrackInsightResponse?, Bool) = {
+            do {
+                let resp = try await fetchTrackInsights(
+                    using: client,
+                    artist: artist,
+                    album: album,
+                    track: track,
+                    trackNumber: trackNumber,
+                    discNumber: discNumber
+                )
+                return (resp, false)
+            } catch {
+                return (nil, true)
+            }
+        }()
+
+        let (fetchedLyrics, lyricsFailed) = await lyricsTask
+        let (fetchedInsightResponse, insightsFailed) = await insightsTask
+
+        lyricsLoadFailed = lyricsFailed
+        insightsLoadFailed = insightsFailed
+
+        if lyricsFailed {
+            logger.warning("曲目歌词加载失败 艺人=\(artist, privacy: .public) 曲目=\(track, privacy: .public)")
+            ToastManager.shared.show("歌词装载失败，请检查网络", style: .warning)
+        }
+
+        if let fetchedLyrics {
+            lyrics = fetchedLyrics
+            lyricLines = LRCParser.parseLyrics(fetchedLyrics.lyrics, hasLRC: fetchedLyrics.hasLRC)
+        } else {
+            lyrics = nil
+            lyricLines = []
+        }
+
+        if let fetchedInsightResponse {
+            insights = fetchedInsightResponse.insights
+            selectedInsightIndex = Self.recommendedInsightIndex(
+                in: insights,
+                recommendedInsightID: fetchedInsightResponse.recommendedInsightID
+            )
+            insightViewMode = .current
+        } else {
+            insights = []
+            selectedInsightIndex = 0
+        }
+
+        isLoading = false
+    }
+
+    func reloadLyrics(
+        using server: ServerConfig,
+        artist: String,
+        album: String?,
+        track: String,
+        trackNumber: Int? = nil,
+        discNumber: Int? = nil
+    ) async {
+        let client = APIClient(baseURL: server.baseURL)
+        do {
+            let resp: TrackLyricsResponse = try await client.getJSON(
                 path: APIPath.trackLyrics,
                 queryItems: [
                     URLQueryItem(name: "artist", value: artist),
@@ -71,25 +153,13 @@ final class TrackDetailViewModel: ObservableObject {
                     URLQueryItem(name: "discNumber", value: discNumber.map(String.init))
                 ]
             )
-            lyricLines = LRCParser.parseLyrics(lyrics?.lyrics ?? "", hasLRC: lyrics?.hasLRC ?? false)
-            let insightResponse = try await fetchTrackInsights(
-                using: client,
-                artist: artist,
-                album: album,
-                track: track,
-                trackNumber: trackNumber,
-                discNumber: discNumber
-            )
-            insights = insightResponse.insights
-            selectedInsightIndex = Self.recommendedInsightIndex(
-                in: insights,
-                recommendedInsightID: insightResponse.recommendedInsightID
-            )
-            insightViewMode = .current
-            isLoading = false
+            lyrics = resp
+            lyricLines = LRCParser.parseLyrics(resp.lyrics, hasLRC: resp.hasLRC)
+            lyricsLoadFailed = false
+            ToastManager.shared.show("歌词加载成功", style: .success)
         } catch {
-            errorMessage = "曲目详情加载失败"
-            isLoading = false
+            lyricsLoadFailed = true
+            ToastManager.shared.show("歌词重新加载失败", style: .error)
         }
     }
 

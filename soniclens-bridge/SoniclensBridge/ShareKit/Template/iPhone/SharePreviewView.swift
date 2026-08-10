@@ -205,12 +205,225 @@ struct SharePreviewView: View {
 }
 #else
 import SwiftUI
+import AppKit
+
+private struct PreparedPreviewData {
+    let plan: ShareContinuousPaginationPlan
+    let allNodes: [ShareFlowItemNode]
+    let footerPayload: ShareFooterPayload
+}
 
 struct SharePreviewView: View {
     let payload: SharePayload
+    @Environment(\.dismiss) private var dismiss
+    @State private var isRendering = false
+    @State private var noticeMessage: String?
+    @State private var noticeStyle: Color = .green
+
+    @State private var preparedData: PreparedPreviewData?
+
+    private let renderer = ShareRenderer.shared
+
+    init(payload: SharePayload) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        print("[ShareTiming] 4. SharePreviewView.init 触发, scene: \(payload.scene)")
+        self.payload = payload
+        let tPlanStart = CFAbsoluteTimeGetCurrent()
+        let plan = SharePayloadPaginator.makePlan(payload: payload, targetPageHeight: 1080)
+        let allNodes = SharePayloadPaginator.extractFlowNodes(from: payload)
+        let footerPayload = Self.extractFooter(for: payload)
+        let tPlanEnd = CFAbsoluteTimeGetCurrent()
+        print("[ShareTiming] 5. SharePayloadPaginator 分页计划构建完成，耗时: \(String(format: "%.2f", (tPlanEnd - tPlanStart) * 1000)) ms, init 总耗时: \(String(format: "%.2f", (tPlanEnd - t0) * 1000)) ms")
+        _preparedData = State(initialValue: PreparedPreviewData(plan: plan, allNodes: allNodes, footerPayload: footerPayload))
+    }
+
+    private static func extractFooter(for payload: SharePayload) -> ShareFooterPayload {
+        switch payload {
+        case let .insight(p): return p.footer
+        case let .lyrics(p): return p.footer
+        case let .info(p): return p.footer
+        case let .albumInfo(p): return p.footer
+        case let .albumInsight(p): return p.footer
+        }
+    }
 
     var body: some View {
-        EmptyView()
+        VStack(spacing: 0) {
+            // 顶部 Header 状态栏
+            HStack {
+                Text("SonicLens 大屏海报导出预览 (16:9 Ultra HD)")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                Button("关闭") {
+                    dismiss()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(Color.black.opacity(0.4))
+
+            // 中间海报全图自适应等比缩放预览 (16:9 Fit Canvas)
+            ZStack {
+                Color.black.opacity(0.85).ignoresSafeArea()
+                    .onTapGesture { dismiss() } // Click outside to dismiss
+
+                GeometryReader { geo in
+                    let availableWidth = geo.size.width - 60
+                    let availableHeight = geo.size.height - 60
+                    let scale = min(availableWidth / 1920, availableHeight / 1080, 1.0)
+
+                    if let prepared = preparedData {
+                        ScrollView(.horizontal, showsIndicators: true) {
+                            HStack(spacing: 24) {
+                                ForEach(prepared.plan.slices, id: \.id) { slice in
+                                    let sliceNodes: [ShareFlowItemNode] = {
+                                        if slice.startIndex <= slice.endIndex && slice.endIndex < prepared.allNodes.count {
+                                            return Array(prepared.allNodes[slice.startIndex...slice.endIndex])
+                                        }
+                                        return []
+                                    }()
+
+                                    MacSharePaginatedPosterView(
+                                        header: payload.header,
+                                        footer: prepared.footerPayload,
+                                        slice: slice,
+                                        scene: payload.scene,
+                                        nodes: sliceNodes,
+                                        targetPageHeight: 1080,
+                                        renderedImage: nil
+                                    )
+                                    .scaleEffect(scale)
+                                    .frame(width: 1920 * scale, height: 1080 * scale)
+                                    .shadow(color: Color.black.opacity(0.6), radius: 24, x: 0, y: 12)
+                                }
+                            }
+                            .padding(.horizontal, 30)
+                            .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .center)
+                        }
+                    }
+                }
+            }
+
+            // 底部控制动作条
+            HStack(spacing: 16) {
+                if let noticeMessage {
+                    Text(noticeMessage)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(noticeStyle.opacity(0.9), in: Capsule())
+                }
+
+                Spacer()
+
+                Button(action: copyToClipboard) {
+                    Label("复制图片 (Cmd+C)", systemImage: "doc.on.doc")
+                }
+                .keyboardShortcut("c", modifiers: [.command])
+
+                Button(action: saveImageFile) {
+                    Label("保存为 PNG 文件", systemImage: "square.and.arrow.down")
+                }
+
+                Button(action: sharePicker) {
+                    Label("系统分享", systemImage: "square.and.arrow.up")
+                }
+            }
+            .padding(16)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .frame(minWidth: 1000, minHeight: 680)
+        .onAppear {
+            print("[ShareTiming] 6. SharePreviewView.onAppear (macOS) 视图挂载完成！scene: \(payload.scene)")
+        }
+    }
+
+    private func copyToClipboard() {
+        Task {
+            isRendering = true
+            defer { isRendering = false }
+            do {
+                let result = try await renderer.render(payload: payload)
+                if MacShareActionHelper.copyImagesToPasteboard(fileURLs: result.fileURLs) {
+                    showNotice("已复制 \(result.fileURLs.count) 张图片到剪贴板！", color: .green)
+                }
+            } catch {
+                showNotice("复制失败: \(error.localizedDescription)", color: .red)
+            }
+        }
+    }
+
+    private func saveImageFile() {
+        Task {
+            isRendering = true
+            defer { isRendering = false }
+            do {
+                let result = try await renderer.render(payload: payload)
+                guard !result.fileURLs.isEmpty else { return }
+
+                let panel = NSSavePanel()
+                panel.allowedContentTypes = [.png]
+                panel.nameFieldStringValue = "\(payload.filename).png"
+                panel.canCreateDirectories = true
+                panel.begin { response in
+                    if response == .OK, let targetURL = panel.url {
+                        if result.fileURLs.count == 1 {
+                            try? FileManager.default.copyItem(at: result.fileURLs[0], to: targetURL)
+                        } else {
+                            let baseName = targetURL.deletingPathExtension().path
+                            let ext = targetURL.pathExtension
+                            for (index, url) in result.fileURLs.enumerated() {
+                                let target = URL(fileURLWithPath: "\(baseName)-\(index + 1).\(ext)")
+                                try? FileManager.default.copyItem(at: url, to: target)
+                            }
+                        }
+                        showNotice("保存成功 (\(result.fileURLs.count) 页)！", color: .green)
+                    }
+                }
+            } catch {
+                showNotice("导出失败: \(error.localizedDescription)", color: .red)
+            }
+        }
+    }
+
+    private func sharePicker() {
+        Task {
+            isRendering = true
+            defer { isRendering = false }
+            do {
+                let result = try await renderer.render(payload: payload)
+                guard !result.fileURLs.isEmpty else { return }
+                if let window = NSApp.keyWindow, let contentView = window.contentView {
+                    MacShareActionHelper.showSharingPicker(fileURLs: result.fileURLs, relativeTo: contentView.bounds, of: contentView)
+                }
+            } catch {
+                showNotice("分享失败", color: .red)
+            }
+        }
+    }
+
+    private func showNotice(_ message: String, color: Color) {
+        noticeMessage = message
+        noticeStyle = color
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await MainActor.run { noticeMessage = nil }
+        }
+    }
+
+    private func footer(for payload: SharePayload) -> ShareFooterPayload {
+        switch payload {
+        case let .insight(p): return p.footer
+        case let .lyrics(p): return p.footer
+        case let .info(p): return p.footer
+        case let .albumInfo(p): return p.footer
+        case let .albumInsight(p): return p.footer
+        }
     }
 }
 #endif

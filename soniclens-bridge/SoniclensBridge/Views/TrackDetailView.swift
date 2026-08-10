@@ -15,7 +15,6 @@ struct TrackDetailView: View {
     let track: Track
     @State private var selectedTab: TrackDetailTab = .info
     @State private var previewTime: TimeInterval = 0
-    @State private var sharePreviewRequest: SharePreviewRequest?
 
     init(track: Track, selectedTab: TrackDetailTab = .info) {
         self.track = track
@@ -32,11 +31,6 @@ struct TrackDetailView: View {
 
     var body: some View {
         ZStack {
-            if let message = viewModel.errorMessage {
-                ErrorBanner(message: message)
-                    .padding(16)
-            }
-
             ScrollView {
                 VStack(alignment: .leading, spacing: isPhoneLayout ? 16 : 20) {
                     TrackDetailHeader(
@@ -145,9 +139,6 @@ struct TrackDetailView: View {
             .presentationDetents(isPhoneLayout ? [.medium, .large] : [.fraction(0.45), .large])
             .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $sharePreviewRequest) { request in
-            SharePreviewView(payload: request.payload)
-        }
         #endif
     }
 
@@ -155,17 +146,17 @@ struct TrackDetailView: View {
     private var exportMenu: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button("导出：基础信息") {
-                    exportSnapshotPNG(infoSection.padding(32), suggestedFilename: "\(track.artist)-\(track.track)-信息")
+                Button("导出海报：音眸解析") {
+                    openSharePreview(scene: .trackInsight)
                 }
-                Button("导出：歌词") {
-                    exportSnapshotPNG(lyricsSection.padding(32), suggestedFilename: "\(track.artist)-\(track.track)-歌词")
+                Button("导出海报：歌词") {
+                    openSharePreview(scene: .trackLyrics)
                 }
-                Button("导出：音眸") {
-                    exportSnapshotPNG(insightsSection.padding(32), suggestedFilename: "\(track.artist)-\(track.track)-音眸")
+                Button("导出海报：基础信息") {
+                    openSharePreview(scene: .trackInfo)
                 }
             } label: {
-                Label("导出快照", systemImage: "square.and.arrow.up")
+                Label("导出/分享", systemImage: "square.and.arrow.up")
             }
         }
     }
@@ -204,8 +195,27 @@ struct TrackDetailView: View {
             }
 
             if viewModel.lyricLines.isEmpty {
-                Text("暂无歌词")
-                    .foregroundColor(.secondary)
+                VStack(spacing: 12) {
+                    if viewModel.lyricsLoadFailed {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Color.orange)
+                        Text("歌词装载失败")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button(action: retryLoadLyrics) {
+                            Label("重新加载", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Text("暂无歌词")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
             } else {
                 if let duration = track.duration, duration > 0, viewModel.lyricLines.contains(where: { $0.time != nil }) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -219,6 +229,20 @@ struct TrackDetailView: View {
                 LyricsPane(lines: viewModel.lyricLines, currentLineID: viewModel.currentLineID(forPreviewTime: previewTime))
                     .frame(minHeight: 260)
             }
+        }
+    }
+
+    private func retryLoadLyrics() {
+        guard let server = store.currentServer else { return }
+        Task {
+            await viewModel.reloadLyrics(
+                using: server,
+                artist: track.artist,
+                album: track.album,
+                track: track.track,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber
+            )
         }
     }
 
@@ -323,6 +347,9 @@ struct TrackDetailView: View {
     }
 
     private func openSharePreview(scene: ShareScene) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        print("[ShareTiming] 1. [曲目] openSharePreview 触发, scene: \(scene)")
+        let tBuildStart = CFAbsoluteTimeGetCurrent()
         let payload = SharePayloadBuilder.build(
             scene: scene,
             track: track,
@@ -331,7 +358,9 @@ struct TrackDetailView: View {
             insight: currentInsight,
             isFavorite: isCurrentTrackFavorite
         )
-        sharePreviewRequest = SharePreviewRequest(payload: payload)
+        let tBuildEnd = CFAbsoluteTimeGetCurrent()
+        print("[ShareTiming] 2. [曲目] SharePayloadBuilder.build 耗时: \(String(format: "%.2f", (tBuildEnd - tBuildStart) * 1000)) ms")
+        store.presentSharePreview(payload: payload)
     }
 
     private var insightInFlightHint: String? {

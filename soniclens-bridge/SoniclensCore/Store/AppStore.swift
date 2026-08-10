@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import OSLog
+#if os(macOS)
+import AppKit
+#endif
 
 extension Notification.Name {
     static let libraryFavoriteDidChange = Notification.Name("libraryFavoriteDidChange")
@@ -80,6 +83,18 @@ final class AppStore: ObservableObject {
     @Published var connectionStatus: ConnectionStatus = .idle
     @Published var recentServers: [ServerConfig] = []
     @Published private(set) var activeConnectionTargetKey: String?
+    @Published var sharePreviewRequest: SharePreviewRequest?
+
+    func presentSharePreview(payload: SharePayload) {
+        #if os(macOS)
+        NSApp.activate(ignoringOtherApps: true)
+        #endif
+        sharePreviewRequest = SharePreviewRequest(payload: payload)
+    }
+
+    func dismissSharePreview() {
+        sharePreviewRequest = nil
+    }
 
     let playbackStore = PlaybackStore()
     let favoriteStore = FavoriteStore()

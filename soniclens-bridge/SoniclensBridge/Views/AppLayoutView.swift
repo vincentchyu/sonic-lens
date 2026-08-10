@@ -61,6 +61,23 @@ enum SidebarDestination: String, CaseIterable, Hashable {
             return "待上报记录"
         }
     }
+
+    var keyboardShortcutKey: KeyEquivalent {
+        switch self {
+        case .home:
+            return "1"
+        case .albums:
+            return "2"
+        case .tracks:
+            return "3"
+        case .unreported:
+            return "4"
+        case .sonicLens:
+            return "5"
+        case .futureFeatures:
+            return "6"
+        }
+    }
 }
 
 struct AppLayoutView: View {
@@ -88,25 +105,26 @@ struct AppLayoutView: View {
                     .background(AppWindowBackground(useMaterial: false))
                     .toolbar {
                         ToolbarItemGroup(placement: .principal) {
-                            ToolbarTitleSubtitleView(
-                                title: selection.title,
+                            ToolbarTitleMenu(
+                                selection: $selection,
                                 subtitle: toolbarSubtitle
                             )
-                            .equatable()
                         }
                         ToolbarItemGroup(placement: .automatic) {
+                            toolbarPageOperations
+
+                            ToolbarDivider()
+
+                            PerformanceModeToolbarButton(isEnabled: $performanceModeEnabled)
+
                             if store.currentServer != nil {
                                 Button {
                                     store.disconnect()
                                 } label: {
-                                    Image(systemName: "power")
+                                    ToolbarIconButton(systemImage: "power", helpText: "断开当前服务端")
                                 }
-                                .help("断开当前服务端")
+                                .buttonStyle(.plain)
                             }
-                            Toggle("性能模式", isOn: $performanceModeEnabled)
-                                .toggleStyle(.switch)
-                                .help("降低动效/材质/阴影开销，提升长时间运行稳定性")
-                            toolbarContent
                         }
                     }
             }
@@ -166,6 +184,9 @@ struct AppLayoutView: View {
                 await libraryViewModel.refresh(using: server)
             }
         }
+        .sheet(item: $store.sharePreviewRequest) { request in
+            SharePreviewView(payload: request.payload)
+        }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
             Task {
                 await store.performForegroundConnectionHealthCheckIfNeeded()
@@ -184,6 +205,18 @@ struct AppLayoutView: View {
             nowPlayingOverlayController.detach()
         }
         .frame(minWidth: 1100, minHeight: 720)
+        .background(
+            Group {
+                Button("") { selection = .home }.keyboardShortcut("1", modifiers: .control)
+                Button("") { selection = .albums }.keyboardShortcut("2", modifiers: .control)
+                Button("") { selection = .tracks }.keyboardShortcut("3", modifiers: .control)
+                Button("") { selection = .unreported }.keyboardShortcut("4", modifiers: .control)
+                Button("") { selection = .sonicLens }.keyboardShortcut("5", modifiers: .control)
+                Button("") { selection = .futureFeatures }.keyboardShortcut("6", modifiers: .control)
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+        )
     }
 
     @ViewBuilder
@@ -227,15 +260,15 @@ struct AppLayoutView: View {
     }
 
     @ViewBuilder
-    private var toolbarContent: some View {
+    private var toolbarPageOperations: some View {
         switch selection {
         case .albums:
-            LibrarySortMenu(title: "排序", selection: $albumSort, options: LibrarySort.albumOptions)
             ToolbarSearchField(text: $albumQuery)
+            LibrarySortMenu(title: "排序", selection: $albumSort, options: LibrarySort.albumOptions)
         case .tracks:
+            ToolbarSearchField(text: $trackQuery)
             LibrarySortMenu(title: "排序", selection: $trackSort, options: LibrarySort.trackOptions)
             TrackFilterMenu(selection: $trackFilter)
-            ToolbarSearchField(text: $trackQuery)
         default:
             EmptyView()
         }
@@ -535,12 +568,38 @@ enum LibrarySort: String, CaseIterable {
 
     static let albumOptions: [LibrarySort] = [.recent, .updated, .releaseDate, .alpha, .plays]
     static let trackOptions: [LibrarySort] = [.recent, .updated, .alpha, .plays]
+
+    var systemImage: String {
+        switch self {
+        case .recent:
+            return "clock"
+        case .updated:
+            return "arrow.clockwise"
+        case .releaseDate:
+            return "calendar"
+        case .alpha:
+            return "textformat.abc"
+        case .plays:
+            return "flame.fill"
+        }
+    }
 }
 
 enum TrackFilter: String, CaseIterable {
     case all = "全部曲目"
     case favorites = "已收藏"
     case unreported = "未上报"
+
+    var systemImage: String {
+        switch self {
+        case .all:
+            return "music.note.list"
+        case .favorites:
+            return "heart.fill"
+        case .unreported:
+            return "exclamationmark.triangle"
+        }
+    }
 }
 
 struct LibrarySortMenu: View {
@@ -550,17 +609,22 @@ struct LibrarySortMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(options, id: \.self) { sort in
-                Button {
-                    selection = sort
-                } label: {
-                    MenuSelectionRow(title: sort.rawValue, isSelected: selection == sort)
+            Picker(title, selection: $selection) {
+                ForEach(options, id: \.self) { sort in
+                    Label(sort.rawValue, systemImage: sort.systemImage)
+                        .tag(sort)
                 }
             }
+            .pickerStyle(.inline)
         } label: {
-            ToolbarPillLabel(title: title, systemImage: "arrow.up.arrow.down")
+            ToolbarIconButton(
+                systemImage: selection.systemImage,
+                isActive: !selection.isDefault,
+                helpText: "排序：\(selection.rawValue)"
+            )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
     }
 }
 
@@ -569,68 +633,165 @@ struct TrackFilterMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(TrackFilter.allCases, id: \.self) { filter in
-                Button {
-                    selection = filter
-                } label: {
-                    MenuSelectionRow(title: filter.rawValue, isSelected: selection == filter)
+            Picker("筛选", selection: $selection) {
+                ForEach(TrackFilter.allCases, id: \.self) { filter in
+                    Label(filter.rawValue, systemImage: filter.systemImage)
+                        .tag(filter)
                 }
             }
+            .pickerStyle(.inline)
         } label: {
-            ToolbarPillLabel(
-                title: selection.isDefault ? "筛选" : selection.rawValue,
-                systemImage: "line.3.horizontal.decrease.circle"
+            ToolbarIconButton(
+                systemImage: selection.systemImage,
+                isActive: !selection.isDefault,
+                activeTint: .red,
+                helpText: "筛选：\(selection.rawValue)"
             )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+    }
+}
+
+struct PerformanceModeToolbarButton: View {
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isEnabled.toggle()
+            }
+        } label: {
+            ToolbarIconButton(
+                systemImage: isEnabled ? "gauge.with.dots.needle.50percent" : "speedometer",
+                isActive: isEnabled,
+                activeTint: .orange,
+                helpText: isEnabled ? "性能模式已开启（极简渲染）" : "开启性能模式",
+                showIndicatorDot: isEnabled
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ToolbarDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.15))
+            .frame(width: 1, height: 14)
+            .padding(.horizontal, 4)
     }
 }
 
 struct ToolbarSearchField: View {
     @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("搜索", text: $text)
-                .textFieldStyle(.plain)
+            if let isFocused {
+                TextField("搜索", text: $text)
+                    .textFieldStyle(.plain)
+                    .focused(isFocused)
+            } else {
+                TextField("搜索", text: $text)
+                    .textFieldStyle(.plain)
+            }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .frame(width: 200)
+        .padding(.vertical, 5)
+        .frame(width: 160, height: 28)
         .background(
-            Capsule()
-                .fill(Color.white.opacity(0.14))
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
         )
         .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke((isFocused?.wrappedValue ?? false) ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.12), lineWidth: 1)
         )
         .accessibilityLabel("搜索")
     }
 }
 
-struct ToolbarPillLabel: View {
-    let title: String
+struct ToolbarIconButton: View {
     let systemImage: String
+    var title: String? = nil
+    var isActive: Bool = false
+    var activeTint: Color = .accentColor
+    var helpText: String? = nil
+    var showIndicatorDot: Bool = false
+    var action: (() -> Void)? = nil
+
+    @State private var isHovered = false
 
     var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.14))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
-            )
+        Group {
+            if let action {
+                Button(action: action) {
+                    content
+                }
+                .buttonStyle(.plain)
+            } else {
+                content
+            }
+        }
+        .ifLet(helpText) { view, help in
+            view.help(help)
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isActive ? activeTint : (isHovered ? Color.primary : Color.secondary))
+
+            if let title {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(isActive ? Color.primary : Color.secondary)
+            }
+
+            if showIndicatorDot {
+                Circle()
+                    .fill(activeTint)
+                    .frame(width: 4, height: 4)
+            }
+        }
+        .padding(.horizontal, title == nil ? 0 : 8)
+        .frame(width: title == nil ? 28 : nil, height: 28)
+        .frame(minWidth: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isActive ? activeTint.opacity(0.15) : (isHovered ? Color.primary.opacity(0.08) : Color.primary.opacity(0.04)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(isActive ? activeTint.opacity(0.35) : (isHovered ? Color.primary.opacity(0.18) : Color.primary.opacity(0.08)), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
     }
 }
+
+private extension View {
+    @ViewBuilder
+    func ifLet<Value, Content: View>(_ value: Value?, transform: (Self, Value) -> Content) -> some View {
+        if let value {
+            transform(self, value)
+        } else {
+            self
+        }
+    }
+}
+
 
 struct ToolbarTitleSubtitleView: View, Equatable {
     let title: String
@@ -650,6 +811,78 @@ struct ToolbarTitleSubtitleView: View, Equatable {
                     .lineLimit(1)
             }
         }
+    }
+}
+
+struct ToolbarTitleMenu: View {
+    @Binding var selection: SidebarDestination
+    let subtitle: String?
+
+    @State private var isHovered = false
+
+    private let browseItems: [SidebarDestination] = [.home, .albums, .tracks, .unreported]
+    private let deepContentItems: [SidebarDestination] = [.sonicLens]
+    private let planningItems: [SidebarDestination] = [.futureFeatures]
+
+    var body: some View {
+        Menu {
+            Section("浏览") {
+                ForEach(browseItems, id: \.self) { item in
+                    destinationButton(for: item)
+                }
+            }
+
+            Section("深度内容") {
+                ForEach(deepContentItems, id: \.self) { item in
+                    destinationButton(for: item)
+                }
+            }
+
+            Section("规划") {
+                ForEach(planningItems, id: \.self) { item in
+                    destinationButton(for: item)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                ToolbarTitleSubtitleView(
+                    title: selection.title,
+                    subtitle: subtitle
+                )
+                .equatable()
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .help("点击快速切换模块 (⌃1~⌃6)")
+    }
+
+    @ViewBuilder
+    private func destinationButton(for item: SidebarDestination) -> some View {
+        Toggle(isOn: Binding(
+            get: { selection == item },
+            set: { if $0 { selection = item } }
+        )) {
+            Label(item.title, systemImage: item.systemImage)
+        }
+        .keyboardShortcut(item.keyboardShortcutKey, modifiers: .control)
     }
 }
 

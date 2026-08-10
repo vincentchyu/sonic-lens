@@ -611,11 +611,13 @@ struct InsightTaggedRow: Hashable {
 }
 
 enum InsightTaggedContentParser {
-    private static let tagPattern = #"<(original|translation|explain)>([\s\S]*?)<(?:/)?\1>"#
+    private static let compiledRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"<(original|translation|explain)>([\s\S]*?)<(?:/)?\1>"#, options: [.caseInsensitive])
+    }()
 
     static func parse(_ text: String) -> [InsightTaggedSegment]? {
         let cleaned = text.replacingOccurrences(of: "\\n", with: "\n")
-        guard let regex = try? NSRegularExpression(pattern: tagPattern, options: [.caseInsensitive]) else {
+        guard let regex = compiledRegex else {
             return nil
         }
 

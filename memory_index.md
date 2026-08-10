@@ -1,5 +1,17 @@
 # 记忆索引
 
+## 2026-08-12
+
+- **日期**: 2026-08-12
+    - **特性摘要**: 实现 macOS 侧边栏折叠状态下的顶部标题 Quick Switcher Menu 与 Option (`⌥1`~`⌥6`) 系统快捷键导航，解决侧边栏收起后模块切换阻尼大问题，保持大屏沉浸体验的同时实现一击与键盘秒级切页。
+    - **链接**: [macOS 侧边栏折叠状态 Quick Switcher 导航与 ⌥1~⌥6 快捷键特性清单](memory/2026-08-12/collapsed_sidebar_quick_switcher_navigation_manifest.md)
+
+## 2026-08-10
+
+- **日期**: 2026-08-10
+    - **特性摘要**: ShareKit 引擎全面覆盖 macOS 大屏 16:9 画幅与 Bento Grid 双栏流式分页 (Dual-Column)，解决切片窄框偏小与溢出截断问题；实现多页海报剪贴板批量写入、多图自动编号导出与横向画廊式滚动预览；完成 `AlbumDetailView` 专辑海报分享全覆盖，支持无音眸时优雅降级卡片提示；清理历史 `SnapshotExport.swift` 快照代码，并保持 iOS iPhone 端的长图导出与系统分享逻辑 100% 独立与验证通过。
+    - **链接**: [ShareKit macOS 大屏 Bento Grid 双栏分页海报与专辑分享全覆盖特性清单](memory/2026-08-10/sharekit_mac_bento_grid_export_manifest.md)
+
 ## 2026-08-09
 
 - **日期**: 2026-08-09

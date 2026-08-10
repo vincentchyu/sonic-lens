@@ -23,13 +23,7 @@ final class ShareRenderer {
 
     func render(payload: SharePayload, mode: RenderMode = .automatic) async throws -> ShareRenderResult {
         let artworkImage = await loadArtworkImage(from: payload.header.artworkURL)
-        let measurementView = SharePosterViewFactory.makeView(
-            payload: payload,
-            renderedImage: artworkImage,
-            showsFooter: false
-        )
-        let measuredHeight = measureHeight(of: measurementView, width: LongPosterPaginator.posterWidth)
-        let paginationPlan = LongPosterPaginator.makePlan(contentHeight: measuredHeight)
+        let plan = SharePayloadPaginator.makePlan(payload: payload)
 
         switch mode {
         case .singleLongImage:
@@ -38,27 +32,43 @@ final class ShareRenderer {
                 artworkImage: artworkImage,
                 pageText: nil
             )
-        case .automatic where paginationPlan.slices.count == 1:
+        case .automatic where plan.slices.count == 1:
             return try renderSingleResult(
                 payload: payload,
                 artworkImage: artworkImage,
-                pageText: paginationPlan.slices[0].pageText
+                pageText: plan.slices[0].pageText
             )
         case .automatic, .pagedImages:
             break
         }
 
-        let footer = footer(for: payload)
-        let continuationHeaderRenderer = ContinuationChromeRenderer(payload: payload, renderedImage: artworkImage)
-
+        let footerPayload = footer(for: payload)
+        let allNodes = SharePayloadPaginator.extractFlowNodes(from: payload)
         var urls: [URL] = []
-        for (index, slice) in paginationPlan.slices.enumerated() {
-            let image = try renderPaginatedImage(
-                contentView: measurementView,
+
+        for (index, slice) in plan.slices.enumerated() {
+            let sliceNodes: [ShareFlowItemNode]
+            if slice.startIndex <= slice.endIndex && slice.endIndex < allNodes.count {
+                sliceNodes = Array(allNodes[slice.startIndex...slice.endIndex])
+            } else {
+                sliceNodes = []
+            }
+
+            let pageView = SharePaginatedPosterView(
+                header: payload.header,
+                footer: footerPayload,
                 slice: slice,
-                footer: footer,
-                continuationHeaderRenderer: continuationHeaderRenderer
+                scene: payload.scene,
+                nodes: sliceNodes,
+                targetPageHeight: plan.targetPageHeight,
+                renderedImage: artworkImage
             )
+
+            let image = try renderSingleImage(
+                from: AnyView(pageView),
+                size: CGSize(width: LongPosterPaginator.posterWidth, height: plan.targetPageHeight)
+            )
+
             let encodedData = try imageData(from: image)
             urls.append(
                 try tempFileStore.writeImageData(
@@ -70,7 +80,10 @@ final class ShareRenderer {
             )
         }
 
-        return ShareRenderResult(fileURLs: urls, logicalSize: paginationPlan.logicalSize)
+        return ShareRenderResult(
+            fileURLs: urls,
+            logicalSize: CGSize(width: LongPosterPaginator.posterWidth, height: plan.targetPageHeight)
+        )
     }
 
     private func renderSingleResult(
@@ -194,33 +207,6 @@ final class ShareRenderer {
         }
     }
 
-    private func renderPaginatedImage(
-        contentView: AnyView,
-        slice: LongPosterPaginationPlan.Slice,
-        footer: ShareFooterPayload,
-        continuationHeaderRenderer: ContinuationChromeRenderer
-    ) throws -> UIImage {
-        let headerInset = slice.continuationLabel == nil ? CGFloat(0) : LongPosterPaginator.continuationHeaderHeight
-        let footerInset: CGFloat = 64
-        let canvasHeight = headerInset + slice.contentHeight + footerInset
-        let pageView = SharePaginatedRenderView(
-            contentView: contentView,
-            slice: slice,
-            footer: footer,
-            continuationHeaderRenderer: continuationHeaderRenderer,
-            canvasHeight: canvasHeight,
-            headerInset: headerInset,
-            footerInset: footerInset
-        )
-
-        let renderer = ImageRenderer(content: pageView)
-        renderer.scale = renderScale(for: canvasHeight)
-        guard let image = renderer.uiImage else {
-            throw ShareRendererError.renderFailed
-        }
-        return image
-    }
-
     private func imageData(from image: UIImage) throws -> EncodedImageData {
         if let pngData = image.pngData() {
             return EncodedImageData(data: pngData, fileExtension: "png")
@@ -244,42 +230,124 @@ final class ShareRenderer {
     }
 }
 
-private struct SharePaginatedRenderView: View {
-    let contentView: AnyView
-    let slice: LongPosterPaginationPlan.Slice
-    let footer: ShareFooterPayload
-    let continuationHeaderRenderer: ContinuationChromeRenderer
-    let canvasHeight: CGFloat
-    let headerInset: CGFloat
-    let footerInset: CGFloat
+private enum ShareRendererError: LocalizedError {
+    case renderFailed
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.black
-
-            contentView
-                .offset(y: headerInset - slice.contentOffsetY)
-
-            if let label = slice.continuationLabel,
-               let headerImage = continuationHeaderRenderer.renderHeader(label: label) {
-                Image(uiImage: headerImage)
-                    .resizable()
-                    .frame(
-                        width: LongPosterPaginator.posterWidth - 40,
-                        height: LongPosterPaginator.continuationHeaderHeight - 20
-                    )
-                    .offset(x: 20, y: 16)
-            }
-
-            if let footerImage = continuationHeaderRenderer.renderFooter(footer: footer, pageText: slice.pageText) {
-                Image(uiImage: footerImage)
-                    .resizable()
-                    .frame(width: LongPosterPaginator.posterWidth - 40, height: 40)
-                    .offset(x: 20, y: canvasHeight - footerInset + 10)
-            }
+    var errorDescription: String? {
+        switch self {
+        case .renderFailed:
+            return "分享图片渲染失败"
         }
-        .frame(width: LongPosterPaginator.posterWidth, height: canvasHeight, alignment: .topLeading)
-        .clipped()
+    }
+}
+#else
+import SwiftUI
+import AppKit
+
+@MainActor
+final class ShareRenderer {
+    static let shared = ShareRenderer()
+
+    private let tempFileStore = ShareTempFileStore()
+
+    private init() {}
+
+    enum RenderMode {
+        case automatic
+        case singleLongImage
+        case pagedImages
+    }
+
+    private struct EncodedImageData {
+        let data: Data
+        let fileExtension: String
+    }
+
+    func render(payload: SharePayload, mode: RenderMode = .automatic) async throws -> ShareRenderResult {
+        let artworkImage = await loadArtworkImage(from: payload.header.artworkURL)
+        let plan = SharePayloadPaginator.makePlan(payload: payload, targetPageHeight: 1080)
+
+        let footerPayload = footer(for: payload)
+        let allNodes = SharePayloadPaginator.extractFlowNodes(from: payload)
+        var urls: [URL] = []
+
+        for (index, slice) in plan.slices.enumerated() {
+            let sliceNodes: [ShareFlowItemNode]
+            if slice.startIndex <= slice.endIndex && slice.endIndex < allNodes.count {
+                sliceNodes = Array(allNodes[slice.startIndex...slice.endIndex])
+            } else {
+                sliceNodes = []
+            }
+
+            let pageView = MacSharePaginatedPosterView(
+                header: payload.header,
+                footer: footerPayload,
+                slice: slice,
+                scene: payload.scene,
+                nodes: sliceNodes,
+                targetPageHeight: 1080,
+                renderedImage: artworkImage
+            )
+
+            let image = try renderSingleImage(
+                from: AnyView(pageView),
+                size: CGSize(width: 1920, height: 1080)
+            )
+
+            let encodedData = try imageData(from: image)
+            urls.append(
+                try tempFileStore.writeImageData(
+                    encodedData.data,
+                    suggestedFilename: payload.filename,
+                    pageIndex: index,
+                    fileExtension: encodedData.fileExtension
+                )
+            )
+        }
+
+        return ShareRenderResult(
+            fileURLs: urls,
+            logicalSize: CGSize(width: 1920, height: 1080)
+        )
+    }
+
+    private func footer(for payload: SharePayload) -> ShareFooterPayload {
+        switch payload {
+        case let .insight(p): return p.footer
+        case let .lyrics(p): return p.footer
+        case let .info(p): return p.footer
+        case let .albumInfo(p): return p.footer
+        case let .albumInsight(p): return p.footer
+        }
+    }
+
+    private func loadArtworkImage(from urlString: String?) async -> NSImage? {
+        guard let urlString, let url = URL(string: urlString) else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return NSImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private func renderSingleImage(from view: AnyView, size: CGSize) throws -> NSImage {
+        let framed = view.frame(width: size.width, height: size.height, alignment: .top).clipped()
+        let renderer = ImageRenderer(content: framed)
+        renderer.scale = 2.0
+        guard let nsImage = renderer.nsImage else {
+            throw ShareRendererError.renderFailed
+        }
+        return nsImage
+    }
+
+    private func imageData(from image: NSImage) throws -> EncodedImageData {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+            throw ShareRendererError.renderFailed
+        }
+        return EncodedImageData(data: pngData, fileExtension: "png")
     }
 }
 
@@ -291,47 +359,6 @@ private enum ShareRendererError: LocalizedError {
         case .renderFailed:
             return "分享图片渲染失败"
         }
-    }
-}
-
-@MainActor
-private final class ContinuationChromeRenderer {
-    private let payload: SharePayload
-    private let renderedImage: UIImage?
-
-    init(payload: SharePayload, renderedImage: UIImage?) {
-        self.payload = payload
-        self.renderedImage = renderedImage
-    }
-
-    func renderHeader(label: String) -> UIImage? {
-        let view = SharePosterHeader(header: payload.header, continuationLabel: label, renderedImage: renderedImage)
-            .frame(width: LongPosterPaginator.posterWidth - 40)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 3
-        return renderer.uiImage
-    }
-
-    func renderFooter(footer: ShareFooterPayload, pageText: String) -> UIImage? {
-        let view = SharePosterFooter(footer: footer, pageText: pageText)
-            .frame(width: LongPosterPaginator.posterWidth - 40)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 3
-        return renderer.uiImage
-    }
-}
-#else
-import Foundation
-
-@MainActor
-final class ShareRenderer {
-    static let shared = ShareRenderer()
-
-    private init() {}
-
-    func render(payload: SharePayload) async throws -> ShareRenderResult {
-        _ = payload
-        return ShareRenderResult(fileURLs: [], logicalSize: .zero)
     }
 }
 #endif

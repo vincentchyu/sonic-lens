@@ -15,7 +15,6 @@ struct AlbumDetailView: View {
     let albumID: Int64
     @State private var isCurationExpanded: Bool = true
     @State private var selectedTab: AlbumDetailTab = .info
-    @State private var sharePreviewRequest: SharePreviewRequest?
 
     init(albumID: Int64, selectedTab: AlbumDetailTab = .info) {
         self.albumID = albumID
@@ -140,10 +139,26 @@ struct AlbumDetailView: View {
             .presentationDetents(isPhoneLayout ? [.medium, .large] : [.fraction(0.45), .large])
             .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $sharePreviewRequest) { request in
-            SharePreviewView(payload: request.payload)
-        }
         #endif
+    }
+
+    private func openSharePreview(scene: ShareScene) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        print("[ShareTiming] 1. [专辑] openSharePreview 触发, scene: \(scene)")
+        guard let detail = viewModel.detail else {
+            print("[ShareTiming] [专辑] viewModel.detail 为 nil，中断")
+            return
+        }
+        let tBuildStart = CFAbsoluteTimeGetCurrent()
+        let payload = SharePayloadBuilder.buildAlbum(
+            scene: scene,
+            albumDetail: detail,
+            albumInsight: currentAlbumInsight,
+            resolvedArtworkURL: viewModel.resolvedArtworkURL
+        )
+        let tBuildEnd = CFAbsoluteTimeGetCurrent()
+        print("[ShareTiming] 2. [专辑] SharePayloadBuilder.buildAlbum 耗时: \(String(format: "%.2f", (tBuildEnd - tBuildStart) * 1000)) ms")
+        store.presentSharePreview(payload: payload)
     }
 
     private func searchCandidates() {
@@ -160,35 +175,14 @@ struct AlbumDetailView: View {
     private var exportMenu: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button("导出：专辑详情") {
-                    if let detail = viewModel.detail {
-                        exportSnapshotPNG(
-                            AlbumSnapshotView(
-                                detail: detail,
-                                resolvedArtworkURL: viewModel.resolvedArtworkURL,
-                                candidates: viewModel.candidates
-                            )
-                            .padding(32),
-                            suggestedFilename: "\(detail.artist)-\(detail.displayName)-专辑"
-                        )
-                    }
+                Button("导出海报：基础信息") {
+                    openSharePreview(scene: .albumInfo)
                 }
-                Button("导出：音眸专辑") {
-                    if let detail = viewModel.detail {
-                        exportSnapshotPNG(
-                            AlbumInsightSnapshotView(
-                                detail: detail,
-                                trackPresentation: viewModel.trackPresentation,
-                                insight: currentAlbumInsight,
-                                resolvedArtworkURL: viewModel.resolvedArtworkURL
-                            )
-                            .padding(32),
-                            suggestedFilename: "\(detail.artist)-\(detail.displayName)-专辑音眸"
-                        )
-                    }
+                Button("导出海报：音眸专辑") {
+                    openSharePreview(scene: .albumInsight)
                 }
             } label: {
-                Label("导出快照", systemImage: "square.and.arrow.up")
+                Label("导出/分享", systemImage: "square.and.arrow.up")
             }
             .disabled(viewModel.detail == nil)
         }
@@ -254,17 +248,6 @@ struct AlbumDetailView: View {
     private var insightJobTaskToken: String {
         guard let job = matchingInsightJob else { return "none" }
         return "\(job.id)::\(job.phase.rawValue)::\(job.updatedAt ?? "")"
-    }
-
-    private func openSharePreview(scene: ShareScene) {
-        guard let detail = viewModel.detail else { return }
-        let payload = SharePayloadBuilder.buildAlbum(
-            scene: scene,
-            albumDetail: detail,
-            albumInsight: currentAlbumInsight,
-            resolvedArtworkURL: viewModel.resolvedArtworkURL
-        )
-        sharePreviewRequest = SharePreviewRequest(payload: payload)
     }
 
     private var currentAlbumInsight: AlbumInsight? {
@@ -473,67 +456,6 @@ private struct PhoneAlbumDetailView: View {
             .padding(.top, 20)
             .padding(.horizontal, 16)
             .padding(.bottom, 108)
-        }
-    }
-}
-
-struct AlbumSnapshotView: View {
-    let detail: AlbumDetail
-    let resolvedArtworkURL: String?
-    let candidates: [ReleaseCandidate]
-
-    var body: some View {
-        let favoriteTrackIDs = Set(detail.tracks.filter(\.isFavorited).map(\.id))
-        VStack(alignment: .leading, spacing: 20) {
-            AlbumHeroSection(
-                detail: detail,
-                resolvedArtworkURL: resolvedArtworkURL ?? ArtworkURLResolver.resolveArtworkPath(detail.coverArtURL, artworkBaseURL: nil),
-                layout: .regular,
-                favoriteTrackCount: favoriteTrackIDs.count,
-                trackCountOverride: detail.tracks.count,
-                totalDurationOverride: detail.tracks.reduce(0) { $0 + ($1.duration ?? 0) }
-            )
-
-            AlbumDetailContentView(
-                albumID: detail.id,
-                detail: detail,
-                candidates: candidates,
-                favoriteTrackIDs: favoriteTrackIDs,
-                trackPresentation: AlbumTrackPresentation.build(from: detail.tracks),
-                isCurationExpanded: .constant(true),
-                isSearchingCandidates: false,
-                heroLayout: .regular,
-                onSearch: {},
-                onConfirm: { _ in }
-            )
-        }
-    }
-}
-
-struct AlbumInsightSnapshotView: View {
-    let detail: AlbumDetail
-    let trackPresentation: AlbumTrackPresentation
-    let insight: AlbumInsight?
-    let resolvedArtworkURL: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            AlbumHeroSection(
-                detail: detail,
-                resolvedArtworkURL: resolvedArtworkURL,
-                layout: .regular,
-                favoriteTrackCount: 0,
-                trackCountOverride: trackPresentation.trackCount,
-                totalDurationOverride: trackPresentation.totalDuration
-            )
-
-            AlbumInsightContentView(
-                insight: insight,
-                generationState: .idle,
-                generationStatusMessage: nil,
-                isCompact: false,
-                onGenerateInsight: nil
-            )
         }
     }
 }

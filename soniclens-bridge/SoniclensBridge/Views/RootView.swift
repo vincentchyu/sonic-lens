@@ -37,6 +37,7 @@ struct RootView: View {
                 #endif
             }
         }
+        .withGlobalToast()
         .task {
             await store.bootstrapConnectionIfNeeded()
         }

@@ -3,7 +3,9 @@ import Foundation
 enum InsightShareParser {
     static func parse(_ insight: Insight?) -> InsightShareDocument {
         guard let insight else {
-            return InsightShareDocument(cards: [])
+            return InsightShareDocument(cards: [
+                .text(id: "empty_insight", title: "音眸解析", text: "当前曲目尚未生成 AI 音眸解析。\n可在曲目详情页中选择 AI 模型一键发起生成。")
+            ])
         }
 
         var cards: [InsightShareCard] = []
@@ -41,12 +43,18 @@ enum InsightShareParser {
             cards.append(.text(id: "era_context", title: "时代语境", text: era))
         }
 
+        if cards.isEmpty {
+            cards.append(.text(id: "empty_insight", title: "音眸解析", text: "当前曲目暂无有效音眸解析内容。"))
+        }
+
         return InsightShareDocument(cards: cards)
     }
 
     static func parseAlbum(_ insight: AlbumInsight?) -> InsightShareDocument {
         guard let insight else {
-            return InsightShareDocument(cards: [])
+            return InsightShareDocument(cards: [
+                .text(id: "empty_insight", title: "专辑音眸", text: "当前专辑尚未生成深度音眸解析。\n可在专辑详情页音眸标签中选择 AI 模型一键发起生成。")
+            ])
         }
 
         var cards: [InsightShareCard] = []
@@ -66,6 +74,10 @@ enum InsightShareParser {
 
         if let era = trimmed(insight.eraContext) {
             cards.append(.text(id: "era_context", title: "时代语境", text: era))
+        }
+
+        if cards.isEmpty {
+            cards.append(.text(id: "empty_insight", title: "专辑音眸", text: "当前专辑暂无有效音眸解析内容。"))
         }
 
         return InsightShareDocument(cards: cards)
