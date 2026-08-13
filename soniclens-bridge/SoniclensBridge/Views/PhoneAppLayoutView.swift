@@ -60,22 +60,31 @@ struct PhoneAppLayoutView: View {
                 TabView(selection: $selection) {
                     phoneNavigationTab(for: .home) {
                         PhoneHomeView(onOpenNowPlaying: openNowPlaying)
+                            .toolbar {
+                                UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled)
+                            }
                     }
 
                     phoneNavigationTab(for: .albums) {
-                        PhoneAlbumLibraryTab(viewModel: libraryViewModel, routedAlbum: $routedAlbum)
+                        PhoneAlbumLibraryTab(performanceModeEnabled: $performanceModeEnabled, viewModel: libraryViewModel, routedAlbum: $routedAlbum)
                     }
 
                     phoneNavigationTab(for: .tracks) {
-                        PhoneTrackLibraryTab(viewModel: libraryViewModel, routedTrack: $routedTrack)
+                        PhoneTrackLibraryTab(performanceModeEnabled: $performanceModeEnabled, viewModel: libraryViewModel, routedTrack: $routedTrack)
                     }
 
                     phoneNavigationTab(for: .sonicLens) {
                         SonicLensInsightsView(viewModel: libraryViewModel)
+                            .toolbar {
+                                UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled)
+                            }
                     }
 
                     phoneNavigationTab(for: .unreported) {
                         UnreportedListView(viewModel: libraryViewModel)
+                            .toolbar {
+                                UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled)
+                            }
                     }
                 }
                 .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
@@ -162,11 +171,9 @@ struct PhoneAppLayoutView: View {
                             .font(.headline.weight(.semibold))
                     }
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 12) {
-                            disconnectToolbarButton
-                            performanceMenu
-                        }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Text(destination.title)
+                            .font(.headline.weight(.semibold))
                     }
                 }
         }
@@ -181,29 +188,6 @@ struct PhoneAppLayoutView: View {
             Label(destination.title, systemImage: destination.systemImage)
         }
         .tag(destination)
-    }
-
-    private var performanceMenu: some View {
-        Menu {
-            Toggle("性能模式", isOn: $performanceModeEnabled)
-            Text("降低动效、阴影和复杂材质负担")
-                .font(.caption)
-        } label: {
-            Image(systemName: "gauge.medium")
-        }
-    }
-
-    @ViewBuilder
-    private var disconnectToolbarButton: some View {
-        if store.currentServer != nil {
-            Button {
-                store.disconnect()
-            } label: {
-                Image(systemName: "power")
-            }
-            .help("断开当前服务端")
-            .accessibilityLabel("断开当前服务端")
-        }
     }
 
     private func openNowPlaying() {
@@ -235,8 +219,10 @@ struct PhoneAppLayoutView: View {
     }
 }
 
+
 private struct PhoneAlbumLibraryTab: View {
     @EnvironmentObject private var store: AppStore
+    @Binding var performanceModeEnabled: Bool
     @State private var sort: LibrarySort = .recent
     @State private var searchText = ""
     @State private var committedQuery = ""
@@ -263,7 +249,7 @@ private struct PhoneAlbumLibraryTab: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled) {
                 LibrarySortMenu(title: "排序", selection: $sort, options: LibrarySort.albumOptions)
             }
         }
@@ -296,6 +282,7 @@ private struct PhoneAlbumLibraryTab: View {
 }
 
 private struct PhoneTrackLibraryTab: View {
+    @Binding var performanceModeEnabled: Bool
     @State private var sort: LibrarySort = .recent
     @State private var filter: TrackFilter = .all
     @State private var searchText = ""
@@ -322,7 +309,7 @@ private struct PhoneTrackLibraryTab: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled) {
                 LibrarySortMenu(title: "排序", selection: $sort, options: LibrarySort.trackOptions)
                 TrackFilterMenu(selection: $filter)
             }

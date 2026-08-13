@@ -86,9 +86,7 @@ struct PadAppLayoutView: View {
                             .equatable()
                         }
 
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            disconnectToolbarButton
-                            performanceMenu
+                        UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled) {
                             toolbarContent
                         }
                     }
@@ -199,23 +197,13 @@ struct PadAppLayoutView: View {
         }
     }
 
-    private var performanceMenu: some View {
-        Menu {
-            Toggle("性能模式", isOn: $performanceModeEnabled)
-            Text("降低动效、阴影和复杂材质负担")
-                .font(.caption)
-        } label: {
-            ToolbarPillLabel(title: "性能", systemImage: "gauge.medium")
-        }
-    }
-
     @ViewBuilder
     private var disconnectToolbarButton: some View {
         if store.currentServer != nil {
             Button {
                 store.disconnect()
             } label: {
-                ToolbarPillLabel(title: "断开", systemImage: "power")
+                ToolbarIconButton(systemImage: "power", helpText: "断开当前服务端")
             }
             .buttonStyle(.plain)
             .help("断开当前服务端")

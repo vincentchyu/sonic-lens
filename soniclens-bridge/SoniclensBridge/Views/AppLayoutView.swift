@@ -110,21 +110,8 @@ struct AppLayoutView: View {
                                 subtitle: toolbarSubtitle
                             )
                         }
-                        ToolbarItemGroup(placement: .automatic) {
+                        UnifiedLibraryToolbarGroup(performanceModeEnabled: $performanceModeEnabled) {
                             toolbarPageOperations
-
-                            ToolbarDivider()
-
-                            PerformanceModeToolbarButton(isEnabled: $performanceModeEnabled)
-
-                            if store.currentServer != nil {
-                                Button {
-                                    store.disconnect()
-                                } label: {
-                                    ToolbarIconButton(systemImage: "power", helpText: "断开当前服务端")
-                                }
-                                .buttonStyle(.plain)
-                            }
                         }
                     }
             }
@@ -781,6 +768,45 @@ struct ToolbarIconButton: View {
     }
 }
 
+struct UnifiedLibraryToolbarGroup<Controls: View>: ToolbarContent {
+    @Binding var performanceModeEnabled: Bool
+    @EnvironmentObject private var store: AppStore
+    @ViewBuilder var pageControls: () -> Controls
+
+    init(performanceModeEnabled: Binding<Bool>, @ViewBuilder pageControls: @escaping () -> Controls = { EmptyView() }) {
+        self._performanceModeEnabled = performanceModeEnabled
+        self.pageControls = pageControls
+    }
+
+    private var groupPlacement: ToolbarItemPlacement {
+        #if os(macOS)
+        return .automatic
+        #else
+        return .topBarTrailing
+        #endif
+    }
+
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: groupPlacement) {
+            pageControls()
+
+            ToolbarDivider()
+
+            PerformanceModeToolbarButton(isEnabled: $performanceModeEnabled)
+
+            if store.currentServer != nil {
+                Button {
+                    store.disconnect()
+                } label: {
+                    ToolbarIconButton(systemImage: "power", helpText: "断开当前服务端")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("断开当前服务端")
+            }
+        }
+    }
+}
+
 private extension View {
     @ViewBuilder
     func ifLet<Value, Content: View>(_ value: Value?, transform: (Self, Value) -> Content) -> some View {
@@ -814,6 +840,27 @@ struct ToolbarTitleSubtitleView: View, Equatable {
     }
 }
 
+struct ToolbarPillLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.14))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
+            )
+    }
+}
+
+#if os(macOS)
 struct ToolbarTitleMenu: View {
     @Binding var selection: SidebarDestination
     let subtitle: String?
@@ -885,6 +932,7 @@ struct ToolbarTitleMenu: View {
         .keyboardShortcut(item.keyboardShortcutKey, modifiers: .control)
     }
 }
+#endif
 
 struct MenuSelectionRow: View {
     let title: String

@@ -67,6 +67,7 @@ xcrun simctl create "iPad Air 5" \
 ### 1.5 本项目当前 Scheme
 - macOS：`SoniclensBridgeMac`
 - iPadOS：`SoniclensBridgePad`
+- iOS (iPhone)：`SoniclensBridgePhone`
 
 ### 1.6 Bonjour 与局域网要求
 Bridge 依赖局域网发现 SonicLens 服务端。当前 Info.plist 已配置：
@@ -161,6 +162,50 @@ xcodebuild \
 - `Development`
 - `Ad Hoc`
 - `App Store Connect`
+
+### 3.5 终端无线/WiFi 编译安装与启动真机 (devicectl)
+
+在 Xcode 15+ / iOS 17+ 环境下，利用 Apple 原生 `xcrun devicectl` 命令行工具，无需打开 Xcode 软件界面即可直接通过 WiFi 局域网完成真机编译、安装与拉起运行。DerivedData 统一缓存至 `../.derivedData/phone`。
+
+#### 1) 一键组合命令 (编译 + WiFi安装 + 自动启动)
+
+```bash
+cd /Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge
+
+# 打包 Phone 并安装唤起至 Vincent’s iPhone
+xcodebuild -project SoniclensBridge.xcodeproj \
+  -scheme SoniclensBridgePhone \
+  -destination "name=Vincent’s iPhone" \
+  -derivedDataPath "../.derivedData/phone" build && \
+xcrun devicectl device install app --device "Vincent’s iPhone" ../.derivedData/phone/Build/Products/Debug-iphoneos/SoniclensBridgePhone.app && \
+xcrun devicectl device process launch --device "Vincent’s iPhone" com.vincentchyu.soniclens-bridge.phone
+```
+
+#### 2) 分步指令说明
+
+- **编译生成真机包**：
+  ```bash
+  xcodebuild -project SoniclensBridge.xcodeproj \
+    -scheme SoniclensBridgePhone \
+    -destination "name=Vincent’s iPhone" \
+    -derivedDataPath "../.derivedData/phone" build
+  ```
+- **通过 WiFi 安装 App 到真机**：
+  ```bash
+  xcrun devicectl device install app --device "Vincent’s iPhone" ../.derivedData/phone/Build/Products/Debug-iphoneos/SoniclensBridgePhone.app
+  ```
+- **在真机上唤起运行 App**：
+  ```bash
+  xcrun devicectl device process launch --device "Vincent’s iPhone" com.vincentchyu.soniclens-bridge.phone
+  ```
+
+#### 3) zsh 快捷别名 (Alias)
+
+可在 `~/.zshrc` 中添加快捷别名 `run-phone`：
+
+```bash
+alias run-phone='cd /Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge && xcodebuild -project SoniclensBridge.xcodeproj -scheme SoniclensBridgePhone -destination "name=Vincent’s iPhone" -derivedDataPath "../.derivedData/phone" build && xcrun devicectl device install app --device "Vincent’s iPhone" ../.derivedData/phone/Build/Products/Debug-iphoneos/SoniclensBridgePhone.app && xcrun devicectl device process launch --device "Vincent’s iPhone" com.vincentchyu.soniclens-bridge.phone'
+```
 
 ## 4. iPad 模拟器打包与启动
 
