@@ -63,14 +63,12 @@ EXISTS(
     WHERE ai.is_disabled = false
       AND (ai.album_id = a.id OR ((ai.album_id = 0 OR ai.album_id IS NULL) AND ai.artist = a.artist AND ai.album = a.name))
 ) AS has_insight,
-COALESCE(SUM(t.play_count), 0) AS play_count,
-a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at`,
-		).
-		Joins("LEFT JOIN track AS t ON t.album = a.name AND t.artist = a.artist AND COALESCE(t.album_subtitle, '') = COALESCE(a.name_subtitle, '')").
-		Group("a.id, a.name, a.name_subtitle, a.artist, a.release_date, a.original_release_date, a.cover_art_url, a.cover_art_mime, a.cover_art_object_key, a.created_at")
+a.play_count AS play_count,
+a.created_at, a.updated_at`,
+		)
 
 	if !since.IsZero() {
-		query = query.Where("a.updated_at >= ? OR t.updated_at >= ?", since, since)
+		query = query.Where("a.updated_at >= ?", since)
 	}
 
 	err := query.Order("a.id ASC").Scan(&rows).Error
@@ -98,12 +96,10 @@ EXISTS(
     WHERE ai.is_disabled = false
       AND (ai.album_id = a.id OR ((ai.album_id = 0 OR ai.album_id IS NULL) AND ai.artist = a.artist AND ai.album = a.name))
 ) AS has_insight,
-COALESCE(SUM(t.play_count), 0) AS play_count,
-a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at`,
+a.play_count AS play_count,
+a.created_at, a.updated_at`,
 		).
-		Joins("LEFT JOIN track AS t ON t.album = a.name AND t.artist = a.artist AND COALESCE(t.album_subtitle, '') = COALESCE(a.name_subtitle, '')").
 		Where("a.id IN ?", ids).
-		Group("a.id, a.name, a.name_subtitle, a.artist, a.release_date, a.original_release_date, a.cover_art_url, a.cover_art_mime, a.cover_art_object_key, a.created_at").
 		Order("a.id ASC").
 		Scan(&rows).Error
 	if err != nil {

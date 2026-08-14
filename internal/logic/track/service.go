@@ -25,6 +25,7 @@ var (
 	modelGetTrackByIdentity                = model.GetTrackByIdentity
 	modelGetTrackByIdentityWithSubtitle    = model.GetTrackByIdentityWithSubtitle
 	modelInsertTrackPlayRecord             = model.InsertTrackPlayRecord
+	modelIsDuplicateTrackPlayRecord        = model.IsDuplicateTrackPlayRecord
 	modelProcessTrackPlayRecord            = model.ProcessTrackPlayRecord
 	modelSetAppleMusicFavorite             = model.SetAppleMusicFavorite
 	modelSetLastFmFavorite                 = model.SetLastFmFavorite

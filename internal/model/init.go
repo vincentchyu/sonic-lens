@@ -47,7 +47,14 @@ func GetDB() *gorm.DB {
 	return GlobalDBForMysql
 }
 
-func InitDB(dataSourceName string, l *zap.Logger) error {
+func isMySQL(db *gorm.DB) bool {
+	if db == nil || db.Dialector == nil {
+		return true
+	}
+	return db.Dialector.Name() == "mysql"
+}
+
+func InitDB(l *zap.Logger) error {
 	if config.ConfigObj.Database.Mysql.GetMysqlDSN() == "" {
 		return errors.New("mysql dsn is required")
 	}

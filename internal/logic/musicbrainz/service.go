@@ -531,11 +531,12 @@ func deepingMaintenance(ctx context.Context, albumID int64) error {
 	originalReleaseDate := extractReleaseGroupFirstReleaseDate(release)
 	var genreStr string
 	if len(release.Genres) > 0 {
-		var genres []string
 		for _, g := range release.Genres {
-			genres = append(genres, common.CapitalizeWords(g.Name))
+			if clean := model.NormalizeGenre(nil, g.Name); clean != "" {
+				genreStr = clean
+				break
+			}
 		}
-		genreStr = strings.Join(genres, ",")
 	}
 
 	// 开启事务处理所有数据库操作

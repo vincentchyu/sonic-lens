@@ -9,7 +9,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 )
 
@@ -41,6 +40,7 @@ func newAlbumCleanupTestDB(t *testing.T, name string) *gorm.DB {
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
+				play_count INTEGER DEFAULT 0,
 				created_at DATETIME,
 				updated_at DATETIME
 			)
@@ -84,11 +84,34 @@ func newAlbumCleanupTestDB(t *testing.T, name string) *gorm.DB {
 			)
 		`).Error,
 	)
+	require.NoError(
+		t, db.Exec(`
+			CREATE TABLE track_play_records (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				artist TEXT,
+				album TEXT,
+				track TEXT,
+				album_id INTEGER DEFAULT 0,
+				resolved_track_id INTEGER DEFAULT 0,
+				play_time DATETIME
+			)
+		`).Error,
+	)
+	require.NoError(
+		t, db.Exec(`
+			CREATE TABLE track (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				artist TEXT,
+				album TEXT,
+				track TEXT,
+				play_count INTEGER DEFAULT 0
+			)
+		`).Error,
+	)
 
 	prevConfig := *config.ConfigObj
 	prevMySQL := GlobalDBForMysql
 
-	config.ConfigObj.Database.Type = string(common.DatabaseTypeSQLite)
 	GlobalDBForMysql = db
 
 	t.Cleanup(

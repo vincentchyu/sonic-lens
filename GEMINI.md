@@ -31,7 +31,7 @@
 ### 1.1 核心模块树 (Module Tree)
 
 - **`main.go`**: 应用总入口。负责初始化配置、日志、数据库连接及启动 API Server。
-- **`cmd/`**: 独立命令行工具集，用于同步、回放和维护任务。
+- **`cmd/`**: 独立命令行工具入口与扩展包，提供统一的子命令注册入口（`RegisterCommands`）。
 - **`common/`**: 通用枚举、转换与基础工具，供全项目复用。
 - **`core/`**: 基础设施与外部能力适配层，负责日志、数据库、缓存、WebSocket、歌词、AI、播放器/第三方服务集成等底座能力。
 - **`internal/`**: 核心领域层，负责 DAO、业务编排、播放器适配与后台同步任务。
@@ -42,8 +42,9 @@
 
 **快速定位梗概**
 
+- 命令行工具与子命令扩展看 `cmd/`；新增 CLI 命令必须遵循 `cmd/commands.go` 规约，通过 `cmd.RegisterCommands(rootCmd)` 统一挂载，严禁在 `cmd/` 中直接写裸 SQL。
 - 数据库 CRUD 与事务入口看 `internal/model/`；不要在 `api/` 或 `logic/` 直接散落 GORM 细节。
-- 业务流程编排看 `internal/logic/`；播放器状态接入看 `internal/scrobbler/`；批处理/回放/补写任务看 `internal/sync/`。
+- 业务流程编排看 `internal/logic/`；播放器状态接入看 `internal/scrobbler/`；批处理与后台数据同步看 `internal/sync/`。
 - 实时协议与播放态广播看 `core/websocket/`；歌词解析与 LRC 同步判定看 `core/lyrics/`；AI 结构化 schema 看 `core/ai/`。
 - 读接口缓存优先在 `api/` 层按路由挂载 Redis middleware，默认 TTL 5 分钟，可按接口覆盖；空结果走 3 秒短 TTL 负缓存，命中时要回写 `ETag` / `Cache-Control`，Redis 不可用时必须透明降级。
 - Web 端页面逻辑主要落在 `templates/*.html`；后台总入口已轻量拆分为 `templates/admin.html` shell、`templates/admin/*.html` partial、`static/admin/admin.css` 和 `static/admin/*.js`，`/` 与 `/admin` 共用该入口。其中 `/api/dashboard/*` 仍表示“仪表盘统计域”，不要和后台入口命名混淆。Bridge 共享能力看 `soniclens-bridge/SoniclensCore/`，端侧容器与交互看 `soniclens-bridge/SoniclensBridge/ViewModels` 和 `soniclens-bridge/SoniclensBridge/Views`。
@@ -70,7 +71,7 @@
 - **异步协程红线**: 禁止直接写裸 `go func` / `go xxx(...)`；统一使用 `core/telemetry.GoSafe`、`GoSafeDetached` 或 `GoOnlySafe`，分别处理“新建异步 span”“脱离取消的异步 span”“仅 recover 不起长期 span”的场景，避免 panic 打崩进程并避免长循环 trace 失真。
 - **可观测性红线**: 面向 SigNoz 的 tracing / metrics 统一走 `core/telemetry` 提供的全局 tracer/meter provider；HTTP 入站走 `otelgin`，Redis 走 `redisotel`，GORM 走 `gorm opentelemetry tracing plugin`，`database/sql` 连接池指标走 `otelsql.RegisterDBStatsMetrics`，不要再在这些标准链路旁边叠加手写重复 span。
 - **错误处理**: 禁止忽略错误。使用 `%w` 进行错误包装以保留调用链。
-- **测试边界**: 默认 `go test ./...` 必须可在无本地音乐文件、无私有配置、无外部服务凭据环境下稳定运行；依赖真实文件系统、真实第三方 API 或本地私有配置的测试统一使用 `integration` build tag 隔离。
+- **测试边界**: 默认 `go test -count=1 ./...` 必须可在无本地实体数据库、无本地音乐文件、无私有配置、无外部服务凭据与宿主播放器 GUI 进程环境下 100% 独立秒级稳定运行；依赖真实文件系统、真实第三方 API、真实 AppleScript 或宿主 GUI 应用的测试统一使用 `//go:build integration` build tag 隔离。DAO / Service 单测严禁直连真实 MySQL，统一使用 `internal/testutil.NewMemoryDB`（SQLite 内存库）或 `internal/testutil.NewMockDB`（sqlmock），具体编写指南与脚手架模版见项目专属技能 `.agents/skills/soniclens-unit-test/`。
 
 
 ### 2.2 数据库设计指南 (GORM)
@@ -82,7 +83,8 @@
 - **上下文绑定**: 所有数据库操作必须使用 `.WithContext(ctx)` 确保链路可追踪。
 - **并发控制**: 重要更新（如 `PlayCount` 增加）应实现基于 `version` 字段的**乐观锁**机制。
 - **索引原则**: 复合索引遵循最左前缀原则。新系统必须包含 `created_at` 和 `updated_at`。
-- **测试与 SQLite 限制规约**: `GlobalDBForSqlLite` 已被废弃。禁止在任何新生产代码中引入或使用对 `GlobalDBForSqlLite` 的依赖；仅为旧测试编译与运行兼容，允许 `GetDB()` 在全局 MySQL 实例为 `nil` 且全局 SQLite 实例不为 `nil` 时透明回退。未来编写测试或修改 DAO 时应逐步使用 Mock 数据库，避免污染全局状态。
+- **测试与 SQLite 限制规约**: `GlobalDBForSqlLite` 已被废弃。数据库统一使用 MySQL，测试使用标准 SQLite in-memory 库，方言判断由 `isMySQL(db)` 自动根据 Dialector 判定，严禁在配置或代码中引入对静态 Database.Type / Database.Path 的依赖。
+- **统计派生表无自增 ID 规约**: 所有的排行榜与派生汇总快照表（如 `top_artist_stat`、`top_album_stat`、`top_genre_stat`、`track_rank_stat` 与 `play_source_stat`）严禁使用 `autoIncrement` 自增 ID 主键。统一使用符合业务语义的自然复合主键（如 `(period_days, rank)`、`(period_days, metric_type, rank)` 等），消除频繁 Delete/Insert 刷新导致的自增 ID 膨胀、主键索引碎片与自增锁开销。
 
 ### 2.3 客户端规约
 - **日志打印要求**: **所有日志必须使用中文**。打印不同级别的日志（具体使用什么级别看紧急程度，不要滥用）, 关键的函数要出入口要打印。
@@ -94,7 +96,7 @@
 - **Bridge macOS 玻璃宿主红线**: macOS mini 播放条若需要真实 backdrop blur，必须使用窗口级 `NSVisualEffectView` 宿主长期承载，再把 SwiftUI 内容嵌入其中；禁止继续把 `NSVisualEffectView` 塞进 SwiftUI `background`、`clipShape`、按钮样式或普通 overlay 修饰链里，否则前后台切换时容易退化成实色背景。
 - **Bridge 正在播放红线**: 三端 `NowPlaying` 必须优先消费 `WS now_playing` 提供的 `apple_music_state`、`lastfm_state`、`favorite_state`，`favorite_pending` / `unfavorite_pending` 不能再被布尔位抹平；共享态应收口到 `SoniclensCore` 的 favorite projection，再由各端 UI 复用同一套状态推导与提示文案。正在播放页与全局播放条的本地进度只允许在最近一次 `now_playing` 更新仍然新鲜时继续自增；如果 WS 静默超过短阈值，就必须自动冻结当前进度，收到新的 `now_playing` 后再恢复推进，禁止在暂停后继续空跑计时器。客户端必须保留每条 `now_playing` 快照的接收时间作为新鲜度事实源，不能在重新进入页面时把旧快照当成“刚同步”的活跃播放；`WS now_playing` 也是“存在播放对象”的最高优先级事实源，静默检测只允许影响进度推进与状态 banner，不允许把仍持有的播放对象直接降级成“无活动播放”空卡片。
 - **Bridge 连接与恢复红线**: Bonjour 自动发现若已拿到解析地址，连接链路必须优先直连解析地址；连接过程中必须同时提供顶部阶段反馈、行内反馈、取消能力与全局断开入口，不能让用户处于“点了没反应”的状态。已连接过的服务端在下次启动时应优先做静默健康检查，成功后直接进 dashboard；失败时必须保留当前连接上下文并进入用户决策态，允许用户选择“退出当前连接”或“重新连接”，禁止软件在未告知用户的情况下自动断开。
-- **Bridge URL 编码红线**: `soniclens-bridge` 所有 GET 请求的 query 参数必须统一走 `SoniclensCore/Networking/APIClient.swift` 的百分号编码收口，禁止在业务层手写 query string 或依赖 `+` 的隐式语义。曲名、艺人名、专辑名等元数据只允许传原始值，由共享网络层负责把 `+` 编码为 `%2B`，避免后端将 `+` 还原成空格。
+- **Bridge URL 编码与路径参数红线**: `soniclens-bridge` 所有 GET 请求的 query 参数必须统一走 `SoniclensCore/Networking/APIClient.swift` 的百分号编码收口，禁止在业务层手写 query string 或依赖 `+` 的隐式语义。曲名、艺人名、专辑名等元数据只允许传原始值，由共享网络层负责把 `+` 编码为 `%2B`，避免后端将 `+` 还原成空格；`APIClient` 拼接完整 Path 必须走 `URL(string: normalizedPath, relativeTo: baseURL)`，严禁使用 `baseURL.appendingPathComponent(path)` 导致带有斜杠或 `%20` 的路径被二次编码为 `%2520`。服务端路由（如 `/api/genres/:name/albums` 与 `/api/albums`）及 DAO 层必须全链路启用 `NormalizeGenreQueryToken` 自动防御性 unescape，杜绝未解码 URL 字符穿透至 SQL 查询。
 - **Bridge 分享与音眸红线**: 曲目与专辑分享已全面统一接入 `ShareKit`。iPhone 端保持 390pt 单栏与系统分享单张长图模式；macOS 端适配 16:9 (1920x1080) Bento Grid 双栏流式分页 (Dual-Column)，支持横向画廊预览、剪贴板多图写入与文件自动编号保存。音眸分享必须复用现有 `InsightTaggedContentParser` 标签语义并渲染全文 segment，不能退回成摘要卡片或大段纯文本。当曲目/专辑尚未生成音眸时，必须返回优雅的降级卡片提示，禁止出现 0 Slice 无响应框。旧有 `SnapshotExport.swift` 快照代码已清理废弃，禁止再引入裸 View 图片渲染导出。音眸的数据契约与标签语义必须以 `core/ai/agent_insight_track.go` 的 `GetTrackInsightSchema()`、`core/ai/agent_insight_album.go` 的 `GetAlbumInsightSchema()` 和 `templates/pages/lyrics_live.html` 为唯一事实标准；`analysis_by_section`、`<original>/<translation>/<explain>` 解析、主 insight 选择与富渲染树必须收口到共享层，端差异只允许体现在外层容器与排版，`appreciate_analysis` 的每组原文/翻译/解读必须保持标签完整性，不能被切成一组一个标签标题的碎片卡。iPhone 音眸分析已改为“`/api/insight-jobs` 异步任务 + `WS insight_job_updated` 前台推送 + `GET /api/insight-jobs/:id` 恢复兜底 + `soniclens://insight-job/<id>` 深链回流”；详情页禁止再直接持有长时间 `POST /api/track-insight` / `POST /api/album-insight` 作为主调用链，统一通过 `SoniclensCore/Store/AppStore.swift` 挂载的 `InsightAnalysisCoordinator` 管理单活跃任务、路由快照和 Live Activity。iOS 端长时任务必须关联 Live Activity 进度反馈；封面渲染必须走 `LiveActivityArtworkStore` 异步下载至本地，禁止在 Widget 侧直接触发网络请求。
 - **Bridge 视觉热区红线**: 首页、正在播放页和其他常驻热区的动态背景、模糊材质、阴影与常驻动画必须提供性能模式或紧凑降级路径；`APIClient` 默认复用共享 `URLSession`，`PlayerViewModel` 这类热点 ViewModel 必须优先并行可并行请求并丢弃过期结果。
 - **Bridge macOS 开发红线**:
@@ -109,7 +111,7 @@
 ### 2.4 Web 端规约
 - **日志打印要求**: **所有日志必须使用中文**。打印不同级别的日志（具体使用什么级别看紧急程度，不要滥用）, 关键的函数要出入口要打印。
 - **当前现状**: Web 端大量核心功能仍承载于 Go Templates + Vanilla JS。Admin 后台总入口已拆分为 shell + partial + 静态 CSS/JS，后续修改 `admin.html` 时只允许维护页面骨架和 `{{ template ... }}` 入口，大段 HTML 应进入 `templates/admin/`，样式进入 `static/admin/admin.css`，脚本进入 `static/admin/*.js`；列表页 loading / empty / error 状态优先走 `static/admin/ui-state.js` 的 `renderAdminLoading/Empty/Error`；`dashboard` 命名只保留给仪表盘统计子域和既有统计 API。
-- **Web Dashboard 维护红线**: 待处理专辑维护必须具备“实时 vs 冻结”对账能力，检测到 context stale 时强制提示刷新；手动维护路径必须支持位置重排与归因证据回填。
+- **Web Dashboard 维护红线**: 待处理专辑维护必须具备“实时 vs 冻结”对账能力，检测到 context stale 时强制提示刷新；手动维护路径必须支持位置重排与归因证据回填；待归因与预审维护链路必须严格保持 `album_subtitle`（版本说明）与 `release_type`（发行格式）的端到端闭环，禁止在 DTO、物料解析或落库覆盖时丢失版本信息。
 
 ---
 
@@ -138,7 +140,7 @@
     - **规则**: 所有跨表事务都应优先走 `model.InTx(...)`，不要再让 Logic 直接持有裸 GORM 事务细节。
 - **[track_play_record.go](./internal/model/track_play_record.go)**:
     - **功能**: 听歌流水历史，用于统计、同步 Last.fm、资料库归因与排障。
-    - **规则**: 回填 `album_id` 时不可再使用低置信三元组兜底。实时 scrobble 与后台 replay 都应优先复用 `ProcessTrackPlayRecord` / `ReplayTrackPlayRecords`，不要在命令层手工串联“查记录 -> 增播放 -> 回填状态”。`track_play_record` 现已显式记录 `resolved_track_id`、`resolution_status`、`resolution_confidence`、`library_applied`、`trace_id`、`root_span_id`、`trace_sampled`、`cover_art_path`、`album_subtitle` 与 `release_type`；最近播放、D1 镜像、待归因上下文与排障都应优先消费这些结构化字段，不能再退回时间/标题模糊匹配或 `artist + album` 兜底。其中 `release_type` 用于在播放落库时完整归档裁剪出的发行类型后缀，保证 unresolved 未归因状态前的流水原始线索完整不丢失。
+    - **规则**: 回填 `album_id` 时不可再使用低置信三元组兜底。实时 scrobble 优先复用 `ProcessTrackPlayRecord`，不要在各处手工串联“查记录 -> 增播放 -> 填状态”。`track_play_record` 现已显式记录 `resolved_track_id`、`resolution_status`、`resolution_confidence` 和 `library_applied`。自动数据修补引擎 `RepairAndReconcileTrackPlayRecordsTx` / `RepairAndReconcileTrackPlayRecords` 可扫描历史元数据残缺流水（缺少 `resolved_track_id`、`album_id`、`genre` 或 `release_type`），自动剥离 `Album` 中的连字符发行后缀（` - Single`/` - EP`/` - LP`），经由完备流水继承、`track` 主表匹配与 `album` 主表匹配完成 4 层自动推导修补；Web 管理后台提供统一对账入口 `/api/admin/stats/reconcile`，负责触发 `track.play_count` / `album.play_count` / `genre` / `release_type` 的全表一致性播放量纠偏。`track_play_record` 同时记录 `trace_id`、`root_span_id`、`trace_sampled`、`cover_art_path`、`album_subtitle` 与 `release_type`；`ProcessTrackPlayRecord` 成功归因 `album_id` 后会从关联 `Album` 实体双向回填与更新 `release_type`（无格式限制的全长专辑默认回填为 `"album"`），保证最近播放、D1 镜像、待归因上下文与排障能够 100% 消费结构化发行类型。
 - **[track_favorite_event.go](./internal/model/track_favorite_event.go)**:
     - **功能**: 收藏事件表，用于“先记意图，再归因回填”。
     - **规则**: `track_favorite_event` 只表示待归因收藏意图，不得替代 `track` 表中的稳定收藏事实；事件表会显式记录 `provider_favorite`、`resolved_track_id`、`resolution_status`、`resolution_confidence` 与 `applied`，对外读取必须统一走 logic 层 favorite projection 合成稳定态与 pending 态。`POST /api/favorite` 与 `WS now_playing` 必须同时输出 `apple_music_state`、`lastfm_state`、`favorite_state`；兼容布尔位 `apple_music` / `lastfm` 表示有效收藏态，`favorite_pending` 也应表现为 `true`。收藏身份查找已纳入 `album_subtitle`，实时探测必须优先复用 projection 缓存与版本失效机制。
@@ -167,9 +169,10 @@
     - **规则**: `track_lyrics.synced` 只表示“可解析出至少一个合法 LRC 时间标签”，`[Verse]` / `[ar:...]` 这类标签不能单独触发同步歌词状态。
 - **[genre.go](./internal/model/genre.go)**:
     - **功能**: 音乐流派库。
+    - **规则**: `internal/cache/genre_cache.go`（从数据库 `genre` 物理表动态加载认证数据）是全局唯一流派权威源。彻底弃用硬编码的静态字典 `common.GenreMap`；寻址时优先通过 `GenreCache` 解析标准英文 Title Case 规范名；严禁自动生成 `cn-slug-xxx` 伪流派；`ReconcileGenrePlayCountsTx` 是流派播放数的全量对账入口，**绝对禁止**在对账中为未认证/未知流派调用 `tx.Create` 自动创建新记录，未匹配项仅进入 `unmatchedGenres` 列表供管理后台人工干预映射；对账时自动将历史残留的 `cn-slug-`、中文 `name` 或多段拼接脏流派的 `play_count` 安全置 0；用户人工映射后即时热刷新 `GenreCache`；在 `GetAlbumsByGenre` 与 `GetAlbumsByGenreCount` 查询流派关联专辑时，必须使用 `buildExactGenreMatchClause` 进行精确 Token 词界匹配，确保热门流派展示数值与关联专辑列表呈现 100% 精准闭环对齐；`GetTopGenresWithDetails` 支持 Top 50 流派查询，当预聚合快照条数不足 limit 时自适应回退查 `genre` 物理表并补齐 Rank。
 - **[dashboard_stat.go](./internal/model/dashboard_stat.go)**:
     - **功能**: Top 艺术家、流派占比、年度统计等复杂聚合。
-    - **规则**: `top-artists` 响应中的头像应通过 `artist_profile` 补齐，统计层只负责排名与计数；热门专辑统计必须显式输出 `album_subtitle`，优先从 `album.name_subtitle` 回填，缺失时再回退播放流水。
+    - **规则**: `top-artists` 响应中的头像应通过 `artist_profile` 补齐，统计层只负责排名与计数；热门专辑统计必须显式输出 `album_subtitle`，优先从 `album.name_subtitle` 回填，缺失时再回退播放流水；`top_genre_stat` 刷新机制保底写入至少 Top 50 热门流派，满足高阶排行诉求。
 - **[init.go](./internal/model/init.go)**:
     - **功能**: 数据库初始化、AutoMigrate 与 model 链路可观测性挂载。
     - **规则**: GORM tracing 统一走 `gorm.io/plugin/opentelemetry/tracing`，数据库连接池指标统一通过 `otelsql.RegisterDBStatsMetrics` 注册；不要再在 GORM logger 里手写 SQL span。
@@ -203,5 +206,5 @@
 - **[core/objectstorage/](./core/objectstorage/)**:
     - **规则**: S3 / MinIO / R2 这类基于 AWS SDK v2 的对象存储链路，统一走 smithy 原生 OTel adapter 接到全局 tracer/meter provider，避免在对象存储调用外层再叠手写 span。
 
-*最后更新日期：2026-08-08 | 文档版本: v3.5*
+*最后更新日期：2026-08-13 | 文档版本: v3.6*
 AI MUST READ THIS FILE BEFORE MODIFYING CODE.

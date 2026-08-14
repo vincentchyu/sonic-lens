@@ -215,10 +215,34 @@ func escapeTrackPlayRecordObjectKey(objectKey string) string {
 	return strings.Join(escaped, "/")
 }
 
+// IsDuplicateTrackPlayRecord 检查在指定时间窗口内是否已存在同源同曲目的重复听歌流水
+func IsDuplicateTrackPlayRecord(ctx context.Context, record *TrackPlayRecord, window time.Duration) (bool, error) {
+	if record == nil || record.Artist == "" || record.Track == "" {
+		return false, nil
+	}
+	db := GetDB()
+	if db == nil {
+		return false, nil
+	}
+	var count int64
+	startTime := record.PlayTime.Add(-window)
+	endTime := record.PlayTime.Add(window)
+	err := db.WithContext(ctx).Model(&TrackPlayRecord{}).
+		Where("source = ? AND artist = ? AND track = ? AND play_time >= ? AND play_time <= ?",
+			record.Source, record.Artist, record.Track, startTime, endTime).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func InsertTrackPlayRecord(ctx context.Context, record *TrackPlayRecord) error {
 	if record == nil {
 		return errors.New("track play record is nil")
 	}
+
+	record.Genre = NormalizeGenre(nil, record.Genre)
 
 	// 验证记录中的艺术家、专辑和曲目信息
 	if err := common.ValidateTrackInfo(ctx, record.Artist, record.Album, record.Track); err != nil {
@@ -468,13 +492,25 @@ func buildTrackPlayRecordResolvedFields(
 		if albumObj, err := GetAlbumTx(tx, albumID); err == nil && albumObj != nil {
 			fields["album_subtitle"] = albumObj.NameSubtitle
 			if record != nil && strings.TrimSpace(record.Genre) == "" && albumObj.Genre != "" {
-				fields["genre"] = albumObj.Genre
+				fields["genre"] = NormalizeGenre(tx, albumObj.Genre)
+			}
+			if albumObj.ReleaseType != "" {
+				fields["release_type"] = albumObj.ReleaseType
+			} else if record != nil && strings.TrimSpace(record.ReleaseType) != "" {
+				fields["release_type"] = record.ReleaseType
+				_ = tx.Model(&Album{}).Where("id = ?", albumID).Update("release_type", record.ReleaseType).Error
+			} else {
+				fields["release_type"] = "album"
+				_ = tx.Model(&Album{}).Where("id = ?", albumID).Update("release_type", "album").Error
 			}
 		}
 	}
 
 	if record != nil && strings.TrimSpace(record.Genre) == "" && resolvedTrack.Genre != "" {
-		fields["genre"] = resolvedTrack.Genre
+		fields["genre"] = NormalizeGenre(tx, resolvedTrack.Genre)
+	}
+	if _, ok := fields["release_type"]; !ok && record != nil && strings.TrimSpace(record.ReleaseType) != "" {
+		fields["release_type"] = record.ReleaseType
 	}
 
 	if _, ok := fields["cover_art_path"]; !ok && albumCoverArtPath != "" {
@@ -516,22 +552,20 @@ func recentPlayRecordCoverArtPathExpr(tableAlias string) string {
 
 func buildAlbumCoverArtPathExpr(alias string) string {
 	objectStoragePrefix, hasObjectStoragePrefix := buildTrackPlayRecordObjectStorageCDNPrefix()
-	switch config.ConfigObj.Database.Type {
-	case string(common.DatabaseTypeMySQL):
+	if isMySQL(GetDB()) {
 		if hasObjectStoragePrefix {
 			return "COALESCE(NULLIF(" + alias + ".cover_art_url, ''), CASE WHEN " + alias + ".cover_art_object_key IS NOT NULL AND " + alias + ".cover_art_object_key <> '' THEN CONCAT(" + sqlStringLiteral(objectStoragePrefix) + ", '/', " + alias + ".cover_art_object_key) ELSE NULL END)"
 		}
 		return "NULLIF(" + alias + ".cover_art_url, '')"
-	default:
-		if hasObjectStoragePrefix {
-			return "COALESCE(NULLIF(" + alias + ".cover_art_url, ''), CASE WHEN " + alias + ".cover_art_object_key IS NOT NULL AND " + alias + ".cover_art_object_key <> '' THEN " + sqlStringLiteral(
-				strings.TrimRight(
-					objectStoragePrefix, "/",
-				)+"/",
-			) + " || " + alias + ".cover_art_object_key ELSE NULL END)"
-		}
-		return "NULLIF(" + alias + ".cover_art_url, '')"
 	}
+	if hasObjectStoragePrefix {
+		return "COALESCE(NULLIF(" + alias + ".cover_art_url, ''), CASE WHEN " + alias + ".cover_art_object_key IS NOT NULL AND " + alias + ".cover_art_object_key <> '' THEN " + sqlStringLiteral(
+			strings.TrimRight(
+				objectStoragePrefix, "/",
+			)+"/",
+		) + " || " + alias + ".cover_art_object_key ELSE NULL END)"
+	}
+	return "NULLIF(" + alias + ".cover_art_url, '')"
 }
 
 func sqlStringLiteral(value string) string {
@@ -604,6 +638,9 @@ func ProcessTrackPlayRecord(ctx context.Context, recordID int64, metadata TrackM
 				}
 				if applied && albumID > 0 {
 					fields["library_applied"] = true
+					if err := IncrementAlbumPlayCountTx(tx, albumID); err != nil {
+						return err
+					}
 				}
 			}
 			return tx.Model(&TrackPlayRecord{}).Where("id = ?", recordID).Updates(fields).Error
@@ -621,7 +658,7 @@ func inferReplayTrackMetadata(record *TrackPlayRecord) TrackMetadata {
 		MusicBrainzID: record.MusicBrainzID,
 		Source:        record.Source,
 		PlayerType:    record.Source,
-		Genre:         record.Genre,
+		Genre:         NormalizeGenre(nil, record.Genre),
 		Confidence:    common.TrackMetadataConfidenceLow,
 	}
 
@@ -799,6 +836,11 @@ func ApplyTrackPlayRecordToResolvedTrackTx(
 		if err := incrementExistingTrackPlayCountTx(tx, trackID); err != nil {
 			return false, err
 		}
+		if albumID > 0 {
+			if err := IncrementAlbumPlayCountTx(tx, albumID); err != nil {
+				return false, err
+			}
+		}
 		appliedNow = true
 	}
 
@@ -897,7 +939,7 @@ func GetRecentPlayRecordsByDays(ctx context.Context, days int) (map[string][]*Tr
 
 	// 根据数据库类型使用不同的日期函数
 	var err error
-	if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
+	if isMySQL(GetDB()) {
 		err = recentPlayRecordsQuery(ctx).Where(
 			"DATE_FORMAT(`tpr`.`play_time`, '%Y-%m-%d') > ?", startTime,
 		).Order("play_time DESC, id DESC").Find(&records).Error
@@ -1083,3 +1125,220 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 func GetTopTracksByPlayCount(ctx context.Context, days int, limit int) ([]*TopTrack, error) {
 	return GetTopTracksByPlayCountFromStat(ctx, days, limit)
 }
+
+// RepairAndReconcileTrackPlayRecordsReport 记录听歌流水修补统计。
+type RepairAndReconcileTrackPlayRecordsReport struct {
+	TotalProcessed      int64 `json:"total_processed"`
+	RepairedTrackID     int64 `json:"repaired_track_id"`
+	RepairedAlbumID     int64 `json:"repaired_album_id"`
+	RepairedGenre       int64 `json:"repaired_genre"`
+	RepairedReleaseType int64 `json:"repaired_release_type"`
+}
+
+// RepairAndReconcileTrackPlayRecordsTx 自动分析并补全 track_play_records 中残缺的 genre, resolved_track_id, album_id, release_type 等核心字段。
+func RepairAndReconcileTrackPlayRecordsTx(tx *gorm.DB) (*RepairAndReconcileTrackPlayRecordsReport, error) {
+	if tx == nil {
+		return nil, errors.New("tx is nil")
+	}
+
+	report := &RepairAndReconcileTrackPlayRecordsReport{}
+
+	// 查找所有存在元数据残缺的听歌流水
+	var uncompletedRecords []*TrackPlayRecord
+	err := tx.Model(&TrackPlayRecord{}).
+		Where("genre IS NULL OR genre = '' OR album_id IS NULL OR album_id = 0 OR resolved_track_id IS NULL OR resolved_track_id = 0 OR resolution_status != ? OR release_type IS NULL OR (release_type = '' AND album_id > 0)", TrackPlayRecordResolutionResolved).
+		Find(&uncompletedRecords).Error
+	if err != nil {
+		return nil, err
+	}
+
+	report.TotalProcessed = int64(len(uncompletedRecords))
+	if report.TotalProcessed == 0 {
+		return report, nil
+	}
+
+	for _, rec := range uncompletedRecords {
+		updates := map[string]interface{}{}
+
+		// 剥离连字符发行后缀与规范化文本
+		cleanAlbum, extractedReleaseType := common.ParseAlbumTitleAndReleaseType(rec.Album)
+		artist := normalizeTrackStorageText(rec.Artist)
+		album := normalizeTrackStorageText(cleanAlbum)
+		trackName := normalizeTrackStorageText(rec.Track)
+		subtitle := normalizeTrackStorageText(rec.AlbumSubtitle)
+
+		resolvedTrackID := rec.ResolvedTrackID
+		albumID := rec.AlbumID
+		genre := NormalizeGenre(tx, rec.Genre)
+		releaseType := rec.ReleaseType
+		if releaseType == "" {
+			releaseType = extractedReleaseType
+		}
+
+		// 1. Pass 1: 尝试通过同名已完备的其他流水记录继承
+		if resolvedTrackID <= 0 || albumID <= 0 || genre == "" || releaseType == "" {
+			var prototype TrackPlayRecord
+			err := tx.Model(&TrackPlayRecord{}).
+				Where("artist = ? AND album = ? AND track = ? AND resolved_track_id > 0 AND album_id > 0 AND genre IS NOT NULL AND genre != ''", artist, album, trackName).
+				Order("play_time DESC, id DESC").
+				First(&prototype).Error
+			if err == nil {
+				if resolvedTrackID <= 0 {
+					resolvedTrackID = prototype.ResolvedTrackID
+				}
+				if albumID <= 0 {
+					albumID = prototype.AlbumID
+				}
+				if genre == "" {
+					genre = prototype.Genre
+				}
+				if subtitle == "" && prototype.AlbumSubtitle != "" {
+					subtitle = prototype.AlbumSubtitle
+				}
+				if releaseType == "" && prototype.ReleaseType != "" {
+					releaseType = prototype.ReleaseType
+				}
+			}
+		}
+
+		// 2. Pass 2: 匹配 Track 主表实体
+		var trackObj *Track
+		if resolvedTrackID <= 0 {
+			t, err := findTrackByIdentityWithOptions(
+				tx,
+				TrackIdentity{
+					Artist:        artist,
+					Album:         album,
+					AlbumSubtitle: subtitle,
+					Track:         trackName,
+					TrackNumber:   rec.TrackNumber,
+					DiscNumber:    rec.DiscNumber,
+				},
+				trackIdentityResolveOptions{allowLooseNameFallback: true},
+			)
+			if err == nil && t != nil {
+				trackObj = t
+				resolvedTrackID = t.ID
+			}
+		} else if resolvedTrackID > 0 {
+			t, err := GetTrackByIDTx(tx, resolvedTrackID)
+			if err == nil {
+				trackObj = t
+			}
+		}
+
+		// 若匹配到 trackObj，提取与更新相关归因属性
+		if trackObj != nil {
+			if resolvedTrackID <= 0 {
+				resolvedTrackID = trackObj.ID
+			}
+			if albumID <= 0 {
+				albumID = getAlbumIDByTrackInfoTx(
+					tx,
+					trackObj.Artist,
+					trackObj.Album,
+					trackObj.AlbumSubtitle,
+					trackObj.Track,
+					trackObj.TrackNumber,
+					trackObj.DiscNumber,
+				)
+			}
+			if genre == "" && trackObj.Genre != "" {
+				genre = NormalizeGenre(tx, trackObj.Genre)
+			}
+		}
+
+		// 3. Pass 3: 匹配 Album 主表实体 (补全 album_id 与 genre, release_type)
+		if albumID > 0 || albumID <= 0 {
+			var albumObj Album
+			var albumErr error
+			if albumID > 0 {
+				albumErr = tx.First(&albumObj, albumID).Error
+			} else {
+				albumErr = tx.Where("artist = ? AND name = ?", artist, album).
+					Order("sync_status DESC, id ASC").
+					First(&albumObj).Error
+			}
+			if albumErr == nil {
+				if albumID <= 0 {
+					albumID = albumObj.ID
+				}
+				if genre == "" && albumObj.Genre != "" {
+					genre = NormalizeGenre(tx, albumObj.Genre)
+				}
+				if subtitle == "" && albumObj.NameSubtitle != "" {
+					subtitle = albumObj.NameSubtitle
+				}
+				if releaseType == "" && albumObj.ReleaseType != "" {
+					releaseType = albumObj.ReleaseType
+				} else if releaseType != "" && albumObj.ReleaseType == "" {
+					_ = tx.Model(&Album{}).Where("id = ?", albumObj.ID).Update("release_type", releaseType).Error
+				} else if releaseType == "" && albumObj.ReleaseType == "" {
+					releaseType = "album"
+					_ = tx.Model(&Album{}).Where("id = ?", albumObj.ID).Update("release_type", "album").Error
+				}
+			}
+		}
+
+		// 4. Pass 4: 封面路径回填与终态推导
+		if albumID > 0 {
+			albumCoverPath, _ := getAlbumCoverArtPathByIDTx(tx, albumID)
+			if coverPath := normalizeTrackPlayRecordCoverArtPath(rec.CoverArtPath, albumCoverPath); coverPath != "" {
+				if coverPath != rec.CoverArtPath {
+					updates["cover_art_path"] = coverPath
+				}
+			}
+		}
+
+		// 比对并收集需要更新的字段
+		if resolvedTrackID > 0 && rec.ResolvedTrackID != resolvedTrackID {
+			updates["resolved_track_id"] = resolvedTrackID
+			updates["resolution_status"] = TrackPlayRecordResolutionResolved
+			updates["resolution_confidence"] = common.TrackMetadataConfidenceHigh
+			updates["library_applied"] = true
+			report.RepairedTrackID++
+		} else if resolvedTrackID > 0 && rec.ResolutionStatus != TrackPlayRecordResolutionResolved {
+			updates["resolution_status"] = TrackPlayRecordResolutionResolved
+			updates["library_applied"] = true
+		}
+
+		if albumID > 0 && rec.AlbumID != albumID {
+			updates["album_id"] = albumID
+			report.RepairedAlbumID++
+		}
+
+		if genre != "" && rec.Genre != genre {
+			updates["genre"] = genre
+			report.RepairedGenre++
+		}
+
+		if releaseType != "" && rec.ReleaseType != releaseType {
+			updates["release_type"] = releaseType
+			report.RepairedReleaseType++
+		}
+
+		if subtitle != "" && rec.AlbumSubtitle != subtitle {
+			updates["album_subtitle"] = subtitle
+		}
+
+		if len(updates) > 0 {
+			if err := tx.Model(&TrackPlayRecord{}).Where("id = ?", rec.ID).Updates(updates).Error; err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return report, nil
+}
+
+// RepairAndReconcileTrackPlayRecords 在事务中执行听歌流水自动修复补全
+func RepairAndReconcileTrackPlayRecords(ctx context.Context) (*RepairAndReconcileTrackPlayRecordsReport, error) {
+	var report *RepairAndReconcileTrackPlayRecordsReport
+	err := InTx(ctx, func(tx *gorm.DB) error {
+		var err error
+		report, err = RepairAndReconcileTrackPlayRecordsTx(tx)
+		return err
+	})
+	return report, err
+}
+

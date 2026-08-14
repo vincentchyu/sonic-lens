@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -411,7 +412,7 @@ func newInsightFeedbackTestRouter(service insightFeedbackService) *gin.Engine {
 func TestRegisterAIRoutesListPlatforms(t *testing.T) {
 	service := &fakeAIRouteService{
 		platforms: []ai.PlatformOption{
-			{ID: common.AIModelPlatformOpenAI, DisplayName: "OpenAI"},
+			{ID: common.AIModelPlatformOllama, DisplayName: "OpenAI"},
 			{ID: common.AIModelPlatformGemini, DisplayName: "Gemini"},
 		},
 	}
@@ -434,7 +435,7 @@ func TestRegisterAIRoutesListPlatforms(t *testing.T) {
 	if len(resp.Platforms) != 2 {
 		t.Fatalf("unexpected platform count: %d", len(resp.Platforms))
 	}
-	if resp.Platforms[0].ID != common.AIModelPlatformOpenAI {
+	if resp.Platforms[0].ID != common.AIModelPlatformOllama {
 		t.Fatalf("unexpected first platform: %s", resp.Platforms[0].ID)
 	}
 }
@@ -442,14 +443,14 @@ func TestRegisterAIRoutesListPlatforms(t *testing.T) {
 func TestRegisterAIRoutesListModelsByPlatform(t *testing.T) {
 	service := &fakeAIRouteService{
 		modelsByPlatform: map[common.AIModelPlatform][]ai.ModelOption{
-			common.AIModelPlatformOpenAI: {
+			common.AIModelPlatformOllama: {
 				{ID: "gpt-5", DisplayName: "GPT-5", IsDefault: true},
 			},
 		},
 	}
 	router := newAITestRouter(service)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/ai-models/openai/models", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ai-models/ollama/models", nil)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
@@ -907,4 +908,96 @@ type aiSelectionError struct {
 
 func (e *aiSelectionError) Error() string {
 	return e.message
+}
+
+type fakeGenreRouteService struct {
+	lastGenreQueried string
+	albumsToReturn   []*model.Album
+	totalToReturn    int64
+	genreInfo        *model.Genre
+}
+
+func (f *fakeGenreRouteService) GetAlbumsByGenre(ctx context.Context, genre string, limit, offset int, sortBy string) ([]*model.Album, error) {
+	f.lastGenreQueried = genre
+	return f.albumsToReturn, nil
+}
+
+func (f *fakeGenreRouteService) GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error) {
+	return f.totalToReturn, nil
+}
+
+func (f *fakeGenreRouteService) GetGenreByName(ctx context.Context, name string) (*model.Genre, error) {
+	return f.genreInfo, nil
+}
+
+func (f *fakeGenreRouteService) CreateGenre(ctx context.Context, genre *model.Genre) error { return nil }
+func (f *fakeGenreRouteService) GetGenreByID(ctx context.Context, id uint) (*model.Genre, error) { return nil, nil }
+func (f *fakeGenreRouteService) GetAllGenres(ctx context.Context, limit, offset int) ([]*model.Genre, error) { return nil, nil }
+func (f *fakeGenreRouteService) UpdateGenre(ctx context.Context, genre *model.Genre) error { return nil }
+func (f *fakeGenreRouteService) DeleteGenre(ctx context.Context, id uint) error { return nil }
+func (f *fakeGenreRouteService) IncrementGenrePlayCount(ctx context.Context, name string) error { return nil }
+func (f *fakeGenreRouteService) GetGenreCount(ctx context.Context) (int64, error) { return 0, nil }
+func (f *fakeGenreRouteService) GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error) { return nil, nil }
+func (f *fakeGenreRouteService) GetTopGenresWithDetails(ctx context.Context, limit int) ([]*model.TopGenre, error) { return nil, nil }
+
+func TestGenreAlbumsRouteUnescaping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fakeService := &fakeGenreRouteService{
+		albumsToReturn: []*model.Album{
+			{ID: 47, Name: "万能青年旅店", Artist: "万能青年旅店", Genre: "Adult Alternative"},
+		},
+		totalToReturn: 1,
+		genreInfo:     &model.Genre{Name: "Adult Alternative", NameZh: "成人另类"},
+	}
+
+	router := gin.New()
+	router.GET("/api/genres/:name/albums", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		genreName := c.Param("name")
+		if unescaped, err := url.PathUnescape(genreName); err == nil && unescaped != "" {
+			genreName = unescaped
+		} else if unescaped, err := url.QueryUnescape(genreName); err == nil && unescaped != "" {
+			genreName = unescaped
+		}
+		if strings.Contains(genreName, "%20") || strings.Contains(genreName, "%2B") || strings.Contains(genreName, "%2F") {
+			if unescaped, err := url.QueryUnescape(genreName); err == nil && unescaped != "" {
+				genreName = unescaped
+			}
+		}
+		genreName = strings.TrimSpace(genreName)
+		albums, err := fakeService.GetAlbumsByGenre(ctx, genreName, 20, 0, "play_count")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total, _ := fakeService.GetAlbumsByGenreCount(ctx, genreName)
+		c.JSON(http.StatusOK, gin.H{
+			"genre":    genreName,
+			"genre_zh": "成人另类",
+			"albums":   albums,
+			"total":    total,
+		})
+	})
+
+	// 1. 标准 URL 编码: GET /api/genres/Adult%20Alternative/albums
+	req1 := httptest.NewRequest(http.MethodGet, "/api/genres/Adult%20Alternative/albums", nil)
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec1.Code)
+	}
+	if fakeService.lastGenreQueried != "Adult Alternative" {
+		t.Fatalf("expected decoded 'Adult Alternative', got '%s'", fakeService.lastGenreQueried)
+	}
+
+	// 2. 二次转义防御: GET /api/genres/Adult%2520Alternative/albums
+	req2 := httptest.NewRequest(http.MethodGet, "/api/genres/Adult%2520Alternative/albums", nil)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec2.Code)
+	}
+	if fakeService.lastGenreQueried != "Adult Alternative" {
+		t.Fatalf("expected defense unescaped 'Adult Alternative', got '%s'", fakeService.lastGenreQueried)
+	}
 }

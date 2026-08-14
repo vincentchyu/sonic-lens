@@ -45,6 +45,13 @@ struct HomeHotGenrePresentationItem: Identifiable, Equatable {
     let relativeWeight: Double
     let accentKey: HomeHotAccentKey
     let navigationTarget: HomeHotModuleNavigationTarget
+
+    var rawGenreName: String {
+        if case .genre(let name) = navigationTarget {
+            return name
+        }
+        return title
+    }
 }
 
 struct HomeHotArtistPresentationItem: Identifiable, Equatable {

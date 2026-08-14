@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 	artworkcore "github.com/vincentchyu/sonic-lens/core/artwork"
 	"github.com/vincentchyu/sonic-lens/core/log"
@@ -29,7 +28,7 @@ var dashboardTrackRankObjectStorageGet = objectstorage.Get
 var dashboardArtistProfileObjectStorageGet = objectstorage.Get
 
 type DashboardStat struct {
-	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	ID          int64     `gorm:"column:id;type:bigint;primaryKey" json:"id"`
 	TotalPlays  int64     `gorm:"column:total_plays;type:bigint;default:0" json:"total_plays"`
 	TotalTracks int64     `gorm:"column:total_tracks;type:bigint;default:0" json:"total_tracks"`
 	TotalArtist int64     `gorm:"column:total_artist;type:bigint;default:0" json:"total_artist"`
@@ -42,8 +41,7 @@ func (DashboardStat) TableName() string {
 }
 
 type PlaySourceStat struct {
-	ID        int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	Source    string    `gorm:"column:source;type:varchar(100);not null;uniqueIndex:uk_source" json:"source"`
+	Source    string    `gorm:"column:source;type:varchar(100);primaryKey" json:"source"`
 	Count     int64     `gorm:"column:count;type:bigint;default:0" json:"count"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
@@ -53,12 +51,11 @@ func (PlaySourceStat) TableName() string {
 }
 
 type TopArtistStat struct {
-	ID          int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodDays  int       `gorm:"column:period_days;type:bigint;not null;default:0" json:"period_days"`
-	MetricType  string    `gorm:"column:metric_type;type:varchar(20);not null" json:"metric_type"`
+	PeriodDays  int       `gorm:"column:period_days;type:bigint;primaryKey;default:0" json:"period_days"`
+	MetricType  string    `gorm:"column:metric_type;type:varchar(20);primaryKey" json:"metric_type"`
+	Rank        int       `gorm:"column:rank;type:bigint;primaryKey" json:"rank"`
 	Artist      string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
 	MetricValue int64     `gorm:"column:metric_value;type:bigint;default:0" json:"metric_value"`
-	Rank        int       `gorm:"column:rank;type:bigint;not null" json:"rank"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
@@ -67,14 +64,13 @@ func (TopArtistStat) TableName() string {
 }
 
 type TopAlbumStat struct {
-	ID            int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodDays    int       `gorm:"column:period_days;type:bigint;not null" json:"period_days"`
+	PeriodDays    int       `gorm:"column:period_days;type:bigint;primaryKey" json:"period_days"`
+	Rank          int       `gorm:"column:rank;type:bigint;primaryKey" json:"rank"`
 	AlbumID       int64     `gorm:"column:album_id;type:bigint;index" json:"album_id"` // 新增关联
 	Album         string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
 	AlbumSubtitle string    `gorm:"column:album_subtitle;type:varchar(255)" json:"album_subtitle"`
 	Artist        string    `gorm:"column:artist;type:varchar(255);default:''" json:"artist"`
 	PlayCount     int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
-	Rank          int       `gorm:"column:rank;type:bigint;not null" json:"rank"`
 	UpdatedAt     time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
@@ -83,12 +79,11 @@ func (TopAlbumStat) TableName() string {
 }
 
 type TopGenreStat struct {
-	ID              int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
+	Rank            int       `gorm:"column:rank;type:bigint;primaryKey" json:"rank"`
 	GenreName       string    `gorm:"column:genre_name;type:varchar(255);not null;uniqueIndex:uk_genre_name" json:"genre_name"`
 	GenreNameZh     string    `gorm:"column:genre_name_zh;type:varchar(255);default:''" json:"genre_name_zh"`
 	TrackGenreCount int64     `gorm:"column:track_genre_count;type:bigint;default:0" json:"track_genre_count"`
 	GenreCount      int64     `gorm:"column:genre_count;type:bigint;default:0" json:"genre_count"`
-	Rank            int       `gorm:"column:rank;type:bigint;not null" json:"rank"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
@@ -118,8 +113,8 @@ func (PlayTrendHourlyStat) TableName() string {
 }
 
 type TrackRankStat struct {
-	ID                int64     `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
-	PeriodType        string    `gorm:"column:period_type;type:varchar(20);not null" json:"period_type"`
+	PeriodType        string    `gorm:"column:period_type;type:varchar(20);primaryKey" json:"period_type"`
+	Rank              int       `gorm:"column:rank;type:int;primaryKey" json:"rank"`
 	TrackID           int64     `gorm:"column:track_id;type:bigint;default:0;index:idx_track_rank_track_id" json:"track_id"`
 	Artist            string    `gorm:"column:artist;type:varchar(255);not null" json:"artist"`
 	Album             string    `gorm:"column:album;type:varchar(255);not null" json:"album"`
@@ -127,7 +122,6 @@ type TrackRankStat struct {
 	TrackNumber       int8      `gorm:"column:track_number;type:tinyint;default:1" json:"track_number"`
 	DiscNumber        int8      `gorm:"column:disc_number;type:tinyint;default:1" json:"disc_number"`
 	PlayCount         int64     `gorm:"column:play_count;type:bigint;default:0" json:"play_count"`
-	Rank              int       `gorm:"column:rank;type:int;not null" json:"rank"`
 	CoverArtURL       string    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
 	CoverArtMime      string    `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
 	CoverArtObjectKey string    `gorm:"column:cover_art_object_key;type:varchar(512)" json:"cover_art_object_key"`
@@ -291,6 +285,8 @@ func refreshDashboardStatsHeavyWithOptions(ctx context.Context, topN, trendDays,
 	db := GetDB().WithContext(ctx)
 	err := db.Transaction(
 		func(tx *gorm.DB) error {
+			_ = ReconcileAlbumPlayCountsTx(tx)
+			_ = ReconcileGenrePlayCountsTx(tx)
 			if err := refreshTopArtistStats(tx, topN); err != nil {
 				return fmt.Errorf("refresh top artist stats failed: %w", err)
 			}
@@ -528,6 +524,11 @@ func refreshTopAlbumStats(tx *gorm.DB, topN int) error {
 }
 
 func refreshTopGenreStats(tx *gorm.DB, topN int) error {
+	genreLimit := topN
+	if genreLimit < 50 {
+		genreLimit = 50
+	}
+
 	type topGenreRow struct {
 		GenreName       string
 		TrackGenreCount int64
@@ -541,7 +542,7 @@ func refreshTopGenreStats(tx *gorm.DB, topN int) error {
 		).
 		Where("name != ''").
 		Order("play_count DESC").
-		Limit(topN).
+		Limit(genreLimit).
 		Find(&rows).Error; err != nil {
 		return err
 	}
@@ -595,7 +596,7 @@ func refreshTrendStats(tx *gorm.DB, trendDays, hourlyTrendDays int) error {
 	var dailySQL string
 	var hourlySQL string
 
-	if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
+	if isMySQL(tx) {
 		dailySQL = "SELECT DATE_FORMAT(play_time, '%Y-%m-%d') as stat_date, COUNT(*) as play_count FROM track_play_records WHERE play_time >= ? GROUP BY DATE_FORMAT(play_time, '%Y-%m-%d')"
 		hourlySQL = "SELECT DATE_FORMAT(play_time, '%Y-%m-%d') as stat_date, HOUR(play_time) as hour, COUNT(*) as play_count FROM track_play_records WHERE play_time >= ? GROUP BY DATE_FORMAT(play_time, '%Y-%m-%d'), HOUR(play_time)"
 	} else {
@@ -707,7 +708,7 @@ func GetTrackPlayCountsFromStat(ctx context.Context, period string, limit, offse
 
 	query := GetDB().WithContext(ctx).Model(&TrackRankStat{}).Where("period_type = ?", normalized)
 	if keyword != "" {
-		if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
+		if isMySQL(GetDB()) {
 			query = query.Where("MATCH(track, artist, album) AGAINST(? IN BOOLEAN MODE)", keyword)
 		} else {
 			kw := "%" + keyword + "%"
@@ -1025,10 +1026,10 @@ func normalizeTrackRankPeriods(periods []string) []string {
 }
 
 func ensureTrackRankStatIndexes(ctx context.Context) error {
-	if config.ConfigObj.Database.Type != string(common.DatabaseTypeMySQL) {
+	db := GetDB().WithContext(ctx)
+	if !isMySQL(db) {
 		return nil
 	}
-	db := GetDB().WithContext(ctx)
 	migrator := db.Migrator()
 
 	if !migrator.HasIndex(&TrackRankStat{}, "idx_track_rank_period_rank") {
@@ -1230,7 +1231,7 @@ func GetPlayTrendFromStatByDays(ctx context.Context, days int) (
 
 	var dailySQL string
 	var hourlySQL string
-	if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
+	if isMySQL(GetDB()) {
 		dailySQL = "SELECT DATE(stat_date) as stat_date, play_count FROM play_trend_daily_stat WHERE stat_date >= ?"
 		hourlySQL = "SELECT DATE(stat_date) as stat_date, hour, play_count FROM play_trend_hourly_stat WHERE stat_date >= ?"
 	} else {

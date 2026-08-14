@@ -3,12 +3,15 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
+	"github.com/vincentchyu/sonic-lens/core/objectstorage"
+	"github.com/vincentchyu/sonic-lens/core/telemetry"
 )
 
 // Album represents a music album
@@ -35,6 +38,7 @@ type Album struct {
 	CoverArtURL       string    `gorm:"column:cover_art_url;type:varchar(1024)" json:"cover_art_url"`
 	CoverArtMime      string    `gorm:"column:cover_art_mime;type:varchar(128)" json:"cover_art_mime"`
 	CoverArtObjectKey string    `gorm:"column:cover_art_object_key;type:varchar(512);index:idx_album_cover_art_object_key" json:"cover_art_object_key"`
+	PlayCount         int64     `gorm:"column:play_count;type:bigint;default:0;index:idx_album_play_count" json:"play_count"` // 持久化播放次数
 	CreatedAt         time.Time `gorm:"column:created_at;type:timestamp;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt         time.Time `gorm:"column:updated_at;type:timestamp;default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
@@ -95,6 +99,7 @@ func normalizeAlbumReleaseTypeSuffix(album *Album) {
 func getOrCreateAlbumTx(db *gorm.DB, album *Album) error {
 	// 落库前统一剥离 Apple Music 发行类型连字符后缀，防止 "In The Sun - EP" 写入专辑名。
 	normalizeAlbumReleaseTypeSuffix(album)
+	album.Genre = NormalizeGenre(db, album.Genre)
 	subtitle := normalizedAlbumSubtitle(album.NameSubtitle)
 	var exact Album
 	err := db.Where(
@@ -166,7 +171,11 @@ func getOrCreateAlbumTx(db *gorm.DB, album *Album) error {
 	return db.Create(album).Error
 }
 
-func mergeAlbumFields(target, source *Album) {
+func mergeAlbumFields(target *Album, source *Album) {
+	if target == nil || source == nil {
+		return
+	}
+
 	if target.ReleaseDate == "" && source.ReleaseDate != "" {
 		target.ReleaseDate = source.ReleaseDate
 	}
@@ -184,7 +193,7 @@ func mergeAlbumFields(target, source *Album) {
 		target.ReleaseType = source.ReleaseType
 	}
 	if target.Genre == "" && source.Genre != "" {
-		target.Genre = source.Genre
+		target.Genre = NormalizeGenre(nil, source.Genre)
 	}
 	if target.Country == "" && source.Country != "" {
 		target.Country = source.Country
@@ -441,3 +450,338 @@ func GetAlbumsCount(ctx context.Context, keyword string) (int64, error) {
 	err := db.Count(&count).Error
 	return count, err
 }
+
+// GetAlbumsByGenre 根据流派英文标准名检索关联专辑列表（支持专辑主表流派和曲目反向归因，结合听歌流水与曲目播放量实现热度贯通）
+// buildExactGenreMatchClause 构建跨多标签流派列的精确词界匹配 WHERE 条件
+func buildExactGenreMatchClause(column string, genre string) (string, []interface{}) {
+	clean := strings.TrimSpace(genre)
+	if clean == "" {
+		return "1 = 0", nil
+	}
+
+	conds := []string{
+		column + " = ?",
+		column + " LIKE ?",
+		column + " LIKE ?",
+		column + " LIKE ?",
+		column + " LIKE ?",
+		column + " LIKE ?",
+		column + " LIKE ?",
+		column + " LIKE ?",
+	}
+	args := []interface{}{
+		clean,
+		clean + ",%",
+		clean + "/%",
+		clean + ";%",
+		"%, " + clean,
+		"%," + clean,
+		"%/" + clean,
+		"%;" + clean,
+	}
+
+	midDelims := []string{", ", ",", "/", ";"}
+	for _, d1 := range midDelims {
+		for _, d2 := range midDelims {
+			conds = append(conds, column+" LIKE ?")
+			args = append(args, "%"+d1+clean+d2+"%")
+		}
+	}
+
+	clause := "(" + strings.Join(conds, " OR ") + ")"
+	return clause, args
+}
+
+func GetAlbumsByGenre(ctx context.Context, genre string, limit, offset int, sortBy string) ([]*Album, error) {
+	var albums []*Album
+	cleanGenre := NormalizeGenreQueryToken(genre)
+	if cleanGenre == "" {
+		return albums, nil
+	}
+
+	clauseDirect, argsDirect := buildExactGenreMatchClause("genre", cleanGenre)
+	clauseTrack, argsTrack := buildExactGenreMatchClause("t.genre", cleanGenre)
+
+	subQueryDirect := GetDB().WithContext(ctx).Table("album").Select("id").Where(clauseDirect, argsDirect...)
+	subQueryTrack := GetDB().WithContext(ctx).Table("album a").Select("a.id").
+		Joins("INNER JOIN track_album ta ON ta.album_id = a.id").
+		Joins("INNER JOIN track t ON t.id = ta.track_id").
+		Where(clauseTrack, argsTrack...)
+
+	db := GetDB().WithContext(ctx).Model(&Album{}).
+		Where("id IN (?) OR id IN (?)", subQueryDirect, subQueryTrack)
+
+	switch sortBy {
+	case "release_date":
+		db = db.Order("release_date DESC, id DESC")
+	case "name":
+		db = db.Order("name ASC, id DESC")
+	default:
+		db = db.Order("play_count DESC, id DESC")
+	}
+
+	if limit > 0 {
+		db = db.Limit(limit).Offset(offset)
+	}
+
+	err := db.Find(&albums).Error
+	if err != nil || len(albums) == 0 {
+		return albums, err
+	}
+
+	// 实时补全专辑封面 (包含 ObjectStorage 转化、Track 反向回填与动态 API 兜底)
+	PopulateAlbumsCoverArt(ctx, albums)
+
+	return albums, nil
+}
+
+// PopulateAlbumsPlayCount 批量补全专辑对象的真实播放量 (整合曲目累计与 track_play_record 听歌流水)
+func PopulateAlbumsPlayCount(ctx context.Context, albums []*Album) {
+	if len(albums) == 0 {
+		return
+	}
+
+	albumIDs := make([]int64, 0, len(albums))
+	albumMap := make(map[int64]*Album)
+
+	for _, a := range albums {
+		if a == nil || a.ID == 0 {
+			continue
+		}
+		albumIDs = append(albumIDs, a.ID)
+		albumMap[a.ID] = a
+	}
+
+	// 1. 从 track 表通过 track_album 累加曲目播放量
+	type trackStat struct {
+		AlbumID   int64 `gorm:"column:album_id"`
+		TrackPlay int64 `gorm:"column:track_play"`
+	}
+	var trackStats []trackStat
+	_ = GetDB().WithContext(ctx).Table("track_album ta").
+		Select("ta.album_id, SUM(t.play_count) as track_play").
+		Joins("INNER JOIN track t ON t.id = ta.track_id").
+		Where("ta.album_id IN (?)", albumIDs).
+		Group("ta.album_id").
+		Scan(&trackStats).Error
+
+	for _, stat := range trackStats {
+		if a, ok := albumMap[stat.AlbumID]; ok {
+			if stat.TrackPlay > a.PlayCount {
+				a.PlayCount = stat.TrackPlay
+			}
+		}
+	}
+
+	// 2. 从 track_play_records 听歌流水按 album_id 累加
+	type recordStatByID struct {
+		AlbumID int64 `gorm:"column:album_id"`
+		Cnt     int64 `gorm:"column:cnt"`
+	}
+	var recordStatsByID []recordStatByID
+	_ = GetDB().WithContext(ctx).Model(&TrackPlayRecord{}).
+		Select("album_id, COUNT(*) as cnt").
+		Where("album_id IN (?)", albumIDs).
+		Group("album_id").
+		Scan(&recordStatsByID).Error
+
+	for _, stat := range recordStatsByID {
+		if a, ok := albumMap[stat.AlbumID]; ok {
+			if stat.Cnt > a.PlayCount {
+				a.PlayCount = stat.Cnt
+			}
+		}
+	}
+}
+
+// GetAlbumsByGenreCount 根据流派英文标准名计算关联专辑总数
+func GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error) {
+	cleanGenre := NormalizeGenreQueryToken(genre)
+	if cleanGenre == "" {
+		return 0, nil
+	}
+
+	clauseDirect, argsDirect := buildExactGenreMatchClause("genre", cleanGenre)
+	clauseTrack, argsTrack := buildExactGenreMatchClause("t.genre", cleanGenre)
+
+	subQueryDirect := GetDB().WithContext(ctx).Table("album").Select("id").Where(clauseDirect, argsDirect...)
+	subQueryTrack := GetDB().WithContext(ctx).Table("album a").Select("a.id").
+		Joins("INNER JOIN track_album ta ON ta.album_id = a.id").
+		Joins("INNER JOIN track t ON t.id = ta.track_id").
+		Where(clauseTrack, argsTrack...)
+
+	var count int64
+	err := GetDB().WithContext(ctx).Model(&Album{}).
+		Where("id IN (?) OR id IN (?)", subQueryDirect, subQueryTrack).
+		Count(&count).Error
+	return count, err
+}
+
+// PopulateAlbumsCoverArt 批量对补齐专辑封面 URL (包含 ObjectStorage 转化、Track 反向回填与动态 API 兜底)
+func PopulateAlbumsCoverArt(ctx context.Context, albums []*Album) {
+	if len(albums) == 0 {
+		return
+	}
+
+	provider := objectstorage.Get()
+	missingCoverIDs := make([]int64, 0)
+	missingCoverMap := make(map[int64]*Album)
+
+	for _, a := range albums {
+		if a == nil {
+			continue
+		}
+		a.CoverArtURL = strings.TrimSpace(a.CoverArtURL)
+		a.CoverArtObjectKey = strings.TrimSpace(a.CoverArtObjectKey)
+
+		// 1. 如果已有 ObjectKey 但 CoverArtURL 为空，通过存储 Provider 转换
+		if a.CoverArtURL == "" && a.CoverArtObjectKey != "" && provider != nil {
+			a.CoverArtURL = provider.GetObjectCDNURL(a.CoverArtObjectKey)
+		}
+
+		// 2. 若仍为空，记录下来准备从 track 表反向回填
+		if a.CoverArtURL == "" && a.ID > 0 {
+			missingCoverIDs = append(missingCoverIDs, a.ID)
+			missingCoverMap[a.ID] = a
+		}
+	}
+
+	if len(missingCoverIDs) == 0 {
+		return
+	}
+
+	// 从 track + track_album 联表查询该专辑下首个有效的 cover_art_url 或 cover_art_object_key
+	type trackCoverStat struct {
+		AlbumID           int64  `gorm:"column:album_id"`
+		CoverArtURL       string `gorm:"column:cover_art_url"`
+		CoverArtObjectKey string `gorm:"column:cover_art_object_key"`
+	}
+	var trackCovers []trackCoverStat
+	_ = GetDB().WithContext(ctx).Table("track_album ta").
+		Select("ta.album_id, MIN(NULLIF(t.cover_art_url, '')) as cover_art_url, MIN(NULLIF(t.cover_art_object_key, '')) as cover_art_object_key").
+		Joins("INNER JOIN track t ON t.id = ta.track_id").
+		Where("ta.album_id IN (?)", missingCoverIDs).
+		Group("ta.album_id").
+		Scan(&trackCovers).Error
+
+	for _, tc := range trackCovers {
+		a, ok := missingCoverMap[tc.AlbumID]
+		if !ok || a == nil {
+			continue
+		}
+		url := strings.TrimSpace(tc.CoverArtURL)
+		objKey := strings.TrimSpace(tc.CoverArtObjectKey)
+
+		if url == "" && objKey != "" && provider != nil {
+			url = provider.GetObjectCDNURL(objKey)
+		}
+
+		if url != "" {
+			a.CoverArtURL = url
+			if a.CoverArtObjectKey == "" && objKey != "" {
+				a.CoverArtObjectKey = objKey
+			}
+			// 异步安全携程持久化回写至数据库，一劳永逸
+			albumID := a.ID
+			coverURL := a.CoverArtURL
+			coverObjKey := a.CoverArtObjectKey
+			telemetry.GoOnlySafe(ctx, func(asyncCtx context.Context) {
+				_ = GetDB().WithContext(asyncCtx).Model(&Album{}).Where("id = ?", albumID).Updates(map[string]interface{}{
+					"cover_art_url":        coverURL,
+					"cover_art_object_key": coverObjKey,
+				}).Error
+			})
+		}
+	}
+
+	// 3. 兜底防护：对于依然为空的专辑，给其构造标准的 /api/albums/:id/cover 动态路由 URL，确保绝不会出现空封面
+	for _, a := range missingCoverMap {
+		if a != nil && a.CoverArtURL == "" && a.ID > 0 {
+			a.CoverArtURL = fmt.Sprintf("/api/albums/%d/cover", a.ID)
+		}
+	}
+}
+
+// IncrementAlbumPlayCountTx 原子递增专辑播放量
+func IncrementAlbumPlayCountTx(tx *gorm.DB, albumID int64) error {
+	if tx == nil || albumID <= 0 {
+		return nil
+	}
+	return tx.Model(&Album{}).Where("id = ?", albumID).
+		Update("play_count", gorm.Expr("play_count + 1")).Error
+}
+
+// ReconcileAlbumPlayCountsTx 在事务中根据听歌流水和 track 播放数对全量或指定专辑的 play_count 进行纠偏校准
+func ReconcileAlbumPlayCountsTx(tx *gorm.DB, targetAlbumIDs ...int64) error {
+	if tx == nil {
+		return errors.New("tx is nil")
+	}
+
+	type albumStat struct {
+		AlbumID   int64 `gorm:"column:album_id"`
+		PlayCount int64 `gorm:"column:play_count"`
+	}
+
+	var stats []albumStat
+
+	// 1. 听歌流水按 album_id 统计
+	query1 := tx.Model(&TrackPlayRecord{}).
+		Select("album_id, COUNT(*) as play_count").
+		Where("album_id > 0")
+	if len(targetAlbumIDs) > 0 {
+		query1 = query1.Where("album_id IN (?)", targetAlbumIDs)
+	}
+	query1 = query1.Group("album_id")
+
+	if err := query1.Scan(&stats).Error; err != nil {
+		return err
+	}
+
+	albumMaxPlayMap := make(map[int64]int64)
+	for _, s := range stats {
+		if s.AlbumID > 0 {
+			albumMaxPlayMap[s.AlbumID] = s.PlayCount
+		}
+	}
+
+	// 2. 从 track_album 累加曲目 play_count
+	var trackStats []albumStat
+	query2 := tx.Table("track_album ta").
+		Select("ta.album_id, SUM(t.play_count) as play_count").
+		Joins("INNER JOIN track t ON t.id = ta.track_id").
+		Where("ta.album_id > 0")
+	if len(targetAlbumIDs) > 0 {
+		query2 = query2.Where("ta.album_id IN (?)", targetAlbumIDs)
+	}
+	query2 = query2.Group("ta.album_id")
+
+	if err := query2.Scan(&trackStats).Error; err != nil {
+		return err
+	}
+
+	for _, ts := range trackStats {
+		if ts.AlbumID > 0 {
+			if ts.PlayCount > albumMaxPlayMap[ts.AlbumID] {
+				albumMaxPlayMap[ts.AlbumID] = ts.PlayCount
+			}
+		}
+	}
+
+	// 3. 更新 album.play_count 物理列
+	for albumID, maxPlay := range albumMaxPlayMap {
+		if err := tx.Model(&Album{}).Where("id = ?", albumID).Update("play_count", maxPlay).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ReconcileAlbumPlayCounts 对全量或指定专辑执行播放对账
+func ReconcileAlbumPlayCounts(ctx context.Context, targetAlbumIDs ...int64) error {
+	return InTx(ctx, func(tx *gorm.DB) error {
+		return ReconcileAlbumPlayCountsTx(tx, targetAlbumIDs...)
+	})
+}
+
+

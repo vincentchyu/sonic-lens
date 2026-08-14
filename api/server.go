@@ -30,6 +30,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/websocket"
 	artistprofilelogic "github.com/vincentchyu/sonic-lens/internal/logic/artistprofile"
 	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
+	"github.com/vincentchyu/sonic-lens/internal/cache"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
 	musicbrainzlogic "github.com/vincentchyu/sonic-lens/internal/logic/musicbrainz"
@@ -184,6 +185,7 @@ func setupRouter(name string) *gin.Engine {
 
 	// Get track play counts with pagination
 	trackService := track.NewTrackService()
+	genreService := genre.NewGenreService()
 	musicbrainzService := musicbrainzlogic.NewService()
 	pendingAlbumService := pendingalbumlogic.NewService()
 	// AI 歌词解析服务
@@ -1542,17 +1544,43 @@ func setupRouter(name string) *gin.Engine {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 			keyword := c.Query("keyword")
+			genreParam := c.Query("genre")
+			if genreParam != "" {
+				if unescaped, err := url.QueryUnescape(genreParam); err == nil && unescaped != "" {
+					genreParam = unescaped
+				}
+				if strings.Contains(genreParam, "%20") || strings.Contains(genreParam, "%2B") {
+					if unescaped, err := url.QueryUnescape(genreParam); err == nil && unescaped != "" {
+						genreParam = unescaped
+					}
+				}
+				genreParam = strings.TrimSpace(genreParam)
+			}
 
 			if limit > 100 {
 				limit = 100
 			}
 
-			albums, err := trackService.GetAlbums(c.Request.Context(), limit, offset, keyword)
+			var albums []*model.Album
+			var total int64
+			var err error
+
+			if genreParam != "" {
+				albums, err = genreService.GetAlbumsByGenre(c.Request.Context(), genreParam, limit, offset, c.DefaultQuery("sort", "play_count"))
+				if err == nil {
+					total, _ = genreService.GetAlbumsByGenreCount(c.Request.Context(), genreParam)
+				}
+			} else {
+				albums, err = trackService.GetAlbums(c.Request.Context(), limit, offset, keyword)
+				if err == nil {
+					total, _ = trackService.GetAlbumsCount(c.Request.Context(), keyword)
+				}
+			}
+
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			total, _ := trackService.GetAlbumsCount(c.Request.Context(), keyword)
 
 			c.JSON(
 				http.StatusOK, gin.H{
@@ -1563,6 +1591,7 @@ func setupRouter(name string) *gin.Engine {
 				},
 			)
 		},
+
 	)
 
 	r.POST(
@@ -1634,15 +1663,17 @@ func setupRouter(name string) *gin.Engine {
 	)
 
 	// 获取热门流派数据（按播放次数和曲目数）
-	genreService := genre.NewGenreService()
 	r.GET(
-		"/api/dashboard/top-genres", redisCache(72*time.Hour), func(c *gin.Context) {
+		"/api/dashboard/top-genres", redisCache(5*time.Minute), func(c *gin.Context) {
 			ctx := c.Request.Context()
 
-			// 获取限制参数，默认10个
-			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-			if limit > 50 {
-				limit = 50 // 限制最大数量
+			// 获取限制参数，默认50个
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+			if limit <= 0 {
+				limit = 50
+			}
+			if limit > 100 {
+				limit = 100 // 限制最大数量
 			}
 
 			// 获取热门流派的详细信息
@@ -1656,6 +1687,131 @@ func setupRouter(name string) *gin.Engine {
 			c.JSON(http.StatusOK, genres)
 		},
 	)
+
+	// 根据流派英文标准名获取关联专辑列表
+	r.GET(
+		"/api/genres/:name/albums", redisCache(1*time.Minute), func(c *gin.Context) {
+			ctx := c.Request.Context()
+			genreName := c.Param("name")
+			if unescaped, err := url.PathUnescape(genreName); err == nil && unescaped != "" {
+				genreName = unescaped
+			} else if unescaped, err := url.QueryUnescape(genreName); err == nil && unescaped != "" {
+				genreName = unescaped
+			}
+			// 防御客户端或代理二次编码传输的字面量 %20 / %2B / %2F
+			if strings.Contains(genreName, "%20") || strings.Contains(genreName, "%2B") || strings.Contains(genreName, "%2F") {
+				if unescaped, err := url.QueryUnescape(genreName); err == nil && unescaped != "" {
+					genreName = unescaped
+				}
+			}
+			genreName = strings.TrimSpace(genreName)
+			if genreName == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "genre name is required"})
+				return
+			}
+
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			sortBy := c.DefaultQuery("sort", "play_count")
+
+			if limit > 100 {
+				limit = 100
+			}
+
+			albums, err := genreService.GetAlbumsByGenre(ctx, genreName, limit, offset, sortBy)
+			if err != nil {
+				log.Error(ctx, "Failed to get albums by genre", zap.String("genre", genreName), zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get albums by genre"})
+				return
+			}
+
+			total, err := genreService.GetAlbumsByGenreCount(ctx, genreName)
+			if err != nil {
+				log.Error(ctx, "Failed to get albums count by genre", zap.String("genre", genreName), zap.Error(err))
+			}
+
+			// 尝试补充流派中文名（若存在）
+			genreZh := ""
+			if g, _ := genreService.GetGenreByName(ctx, genreName); g != nil && g.NameZh != "" {
+				genreZh = g.NameZh
+			}
+
+			c.JSON(
+				http.StatusOK, gin.H{
+					"genre":    genreName,
+					"genre_zh": genreZh,
+					"albums":   albums,
+					"total":    total,
+					"limit":    limit,
+					"offset":   offset,
+				},
+			)
+		},
+	)
+
+	// 获取未匹配/待人工干预的未归因流派列表
+	r.GET(
+		"/api/genres/unmatched", func(c *gin.Context) {
+			unmatched := model.GetUnmatchedGenres()
+			c.JSON(http.StatusOK, gin.H{
+				"unmatched": unmatched,
+				"total":     len(unmatched),
+			})
+		},
+	)
+
+	// 人工干预：将未归因流派映射绑定到标准英文流派
+	r.POST(
+		"/api/genres/map", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			var req struct {
+				RawGenre      string `json:"raw_genre" binding:"required"`
+				TargetGenre   string `json:"target_genre" binding:"required"`
+				TargetGenreZh string `json:"target_genre_zh"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "参数无效，raw_genre 和 target_genre 为必填选"})
+				return
+			}
+
+			raw := strings.TrimSpace(req.RawGenre)
+			targetName := strings.TrimSpace(req.TargetGenre)
+			targetZh := strings.TrimSpace(req.TargetGenreZh)
+			_ = raw
+
+			// 在物理数据库以纯英文 Name 创建/补全 target_genre 记录
+			err := model.InTx(ctx, func(tx *gorm.DB) error {
+				var g model.Genre
+				if err := tx.Where("TRIM(name) = ?", targetName).FirstOrCreate(&g, model.Genre{
+					Name:   targetName,
+					NameZh: targetZh,
+				}).Error; err != nil {
+					return err
+				}
+				if targetZh != "" && g.NameZh == "" {
+					tx.Model(&g).Update("name_zh", targetZh)
+				}
+				return nil
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库流派更新失败: " + err.Error()})
+				return
+			}
+
+			// 刷新流派内存权威缓存
+			_ = cache.GetGenreCache().RefreshFromDB(ctx)
+
+			// 自动触发一次全量流派对账与 Dashboard 刷写
+			_ = model.ReconcileGenrePlayCounts(ctx)
+			_ = model.RefreshDashboardStats(ctx)
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "success",
+				"message": "流派人工映射干预成功，已自动完成重新对账与统计刷写",
+			})
+		},
+	)
+
 
 	// 获取未同步到Last.fm的播放记录（分页）
 	r.GET(
@@ -2433,6 +2589,54 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 			)
 		},
 	)
+
+	// 管理后台：播放统计与一致性对账 API
+	r.GET("/api/admin/stats/reconcile/status", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		var totalAlbums int64
+		var totalPlayRecords int64
+		_ = model.GetDB().WithContext(ctx).Model(&model.Album{}).Count(&totalAlbums).Error
+		_ = model.GetDB().WithContext(ctx).Model(&model.TrackPlayRecord{}).Count(&totalPlayRecords).Error
+		c.JSON(http.StatusOK, gin.H{
+			"status":             "ok",
+			"total_albums":       totalAlbums,
+			"total_play_records": totalPlayRecords,
+			"updated_at":         time.Now().Format(time.RFC3339),
+		})
+	})
+
+	r.POST("/api/admin/stats/reconcile", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		log.Info(ctx, "开始执行 Web 管理后台播放数据一致性对账与修复")
+
+		if err := model.ReconcileTrackPlayCounts(ctx); err != nil {
+			log.Error(ctx, "Web 管理后台单曲播放数对账失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "单曲播放数对账失败: " + err.Error()})
+			return
+		}
+		if err := model.ReconcileAlbumPlayCounts(ctx); err != nil {
+			log.Error(ctx, "Web 管理后台专辑播放数对账失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "专辑播放数对账失败: " + err.Error()})
+			return
+		}
+		if err := model.ReconcileGenrePlayCounts(ctx); err != nil {
+			log.Error(ctx, "Web 管理后台流派播放数对账失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "流派播放数对账失败: " + err.Error()})
+			return
+		}
+		if err := model.RefreshDashboardStats(ctx); err != nil {
+			log.Error(ctx, "Web 管理后台 Dashboard Stats 刷写失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Dashboard Stats 刷写失败: " + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "success",
+			"message":   "播放统计与一致性全量对账执行完成",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	})
+
 
 	// 流式获取歌词解析结果 (SSE)  old
 	r.GET(

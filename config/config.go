@@ -17,7 +17,6 @@ type Config struct {
 	Log           LogConfig           `yaml:"log"`
 	Database      DatabaseConfig      `yaml:"database"`
 	Dashboard     DashboardConfig     `yaml:"dashboard"`
-	PlayReplay    PlayReplayConfig    `yaml:"playReplay"`
 	HTTP          HTTPConfig          `yaml:"http"`
 	Bonjour       BonjourConfig       `yaml:"bonjour"`
 	Telemetry     TelemetryConfig     `yaml:"telemetry"`
@@ -59,8 +58,6 @@ type LrcAPIConfig struct {
 }
 
 type DatabaseConfig struct {
-	Type  string      `yaml:"type"` // 当前仅支持 "mysql"
-	Path  string      `yaml:"path"`
 	Mysql MysqlConfig `yaml:"mysql"`
 }
 
@@ -82,15 +79,6 @@ type DashboardConfig struct {
 	TopN                            int  `yaml:"topN"`
 	TrendDays                       int  `yaml:"trendDays"`
 	HourlyTrendDays                 int  `yaml:"hourlyTrendDays"`
-}
-
-type PlayReplayConfig struct {
-	Enabled         bool `yaml:"enabled"`
-	IntervalMinutes int  `yaml:"intervalMinutes"`
-	BatchSize       int  `yaml:"batchSize"`
-	OnlyUnapplied   bool `yaml:"onlyUnapplied"`
-	OnlyUnresolved  bool `yaml:"onlyUnresolved"`
-	RunOnStartup    bool `yaml:"runOnStartup"`
 }
 
 type MysqlConfig struct {

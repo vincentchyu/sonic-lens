@@ -258,6 +258,9 @@ func mergeAlbumFieldsAndRelationsTx(
 	if err := tx.Delete(&Album{}, source.ID).Error; err != nil {
 		return err
 	}
+	if err := ReconcileAlbumPlayCountsTx(tx, canonical.ID); err != nil {
+		return err
+	}
 
 	fields := buildAlbumMergeUpdates(&canonical.Album, &source.Album)
 	if len(fields) > 0 {
@@ -282,7 +285,7 @@ func buildAlbumMergeUpdates(canonical, source *Album) map[string]interface{} {
 		fields["release_date"] = source.ReleaseDate
 	}
 	if canonical.Genre == "" && source.Genre != "" {
-		fields["genre"] = source.Genre
+		fields["genre"] = NormalizeGenre(nil, source.Genre)
 	}
 	if canonical.Country == "" && source.Country != "" {
 		fields["country"] = source.Country
@@ -381,7 +384,7 @@ func moveAlbumReleaseLinksToCanonicalTx(tx *gorm.DB, canonicalAlbumID, sourceAlb
 		if err == nil {
 			continue
 		}
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 
@@ -475,8 +478,10 @@ func CleanupReleaseTypeSuffixes(params CleanupReleaseTypeSuffixesParams) (*Relea
 // listAlbumsWithReleaseTypeSuffix 扫描名称含 " - EP"/" - Single"/" - LP" 的专辑记录。
 func listAlbumsWithReleaseTypeSuffix(ctx context.Context, limit int) ([]Album, error) {
 	query := GetDB().WithContext(ctx).Model(&Album{}).
-		Where("name LIKE '% - EP' OR name LIKE '% - Single' OR name LIKE '% - LP'" +
-			" OR name LIKE '% - ep' OR name LIKE '% - single' OR name LIKE '% - lp'").
+		Where(
+			"name LIKE '% - EP' OR name LIKE '% - Single' OR name LIKE '% - LP'" +
+				" OR name LIKE '% - ep' OR name LIKE '% - single' OR name LIKE '% - lp'",
+		).
 		Order("id ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -502,47 +507,49 @@ func parseAlbumNameSuffix(name string) (cleanName string, releaseType string) {
 // 返回合并目标的 albumID（未合并则为 0）。
 func applyReleaseTypeSuffixCleanup(ctx context.Context, album *Album, cleanedName, rt string) (int64, error) {
 	var mergedIntoID int64
-	err := InTx(ctx, func(tx *gorm.DB) error {
-		// 查找是否已存在名称干净、同作者的专辑（需精确匹配 subtitle 与 release_date）
-		var existing Album
-		lookupErr := tx.Where(
-			"artist = ? AND name = ? AND COALESCE(name_subtitle, '') = ? AND COALESCE(release_date, '') = ?",
-			album.Artist, cleanedName,
-			normalizedAlbumSubtitle(album.NameSubtitle),
-			album.ReleaseDate,
-		).First(&existing).Error
+	err := InTx(
+		ctx, func(tx *gorm.DB) error {
+			// 查找是否已存在名称干净、同作者的专辑（需精确匹配 subtitle 与 release_date）
+			var existing Album
+			lookupErr := tx.Where(
+				"artist = ? AND name = ? AND COALESCE(name_subtitle, '') = ? AND COALESCE(release_date, '') = ?",
+				album.Artist, cleanedName,
+				normalizedAlbumSubtitle(album.NameSubtitle),
+				album.ReleaseDate,
+			).First(&existing).Error
 
-		if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("查找同名干净专辑失败: %w", lookupErr)
-		}
+			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("查找同名干净专辑失败: %w", lookupErr)
+			}
 
-		if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-			// 无同名专辑 -> 直接更新当前记录的 name 和 release_type
-			updates := map[string]interface{}{
-				"name":         cleanedName,
-				"release_type": rt,
+			if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				// 无同名专辑 -> 直接更新当前记录的 name 和 release_type
+				updates := map[string]interface{}{
+					"name":         cleanedName,
+					"release_type": rt,
+				}
+				if err := tx.Model(&Album{}).Where("id = ?", album.ID).Updates(updates).Error; err != nil {
+					return fmt.Errorf("更新专辑名称失败 album_id=%d: %w", album.ID, err)
+				}
+				return nil
 			}
-			if err := tx.Model(&Album{}).Where("id = ?", album.ID).Updates(updates).Error; err != nil {
-				return fmt.Errorf("更新专辑名称失败 album_id=%d: %w", album.ID, err)
+
+			// 已存在同名干净专辑 -> 合并
+			sourceCand := &duplicateAlbumCandidate{Album: *album}
+			canonicalCand := &duplicateAlbumCandidate{Album: existing}
+			if err := mergeAlbumFieldsAndRelationsTx(tx, canonicalCand, sourceCand); err != nil {
+				return fmt.Errorf("合并专辑失败 from=%d to=%d: %w", album.ID, existing.ID, err)
 			}
+			// 确保目标专辑写入 release_type
+			if existing.ReleaseType == "" {
+				if err := tx.Model(&Album{}).Where("id = ?", existing.ID).
+					Update("release_type", rt).Error; err != nil {
+					return fmt.Errorf("更新目标专辑 release_type 失败: %w", err)
+				}
+			}
+			mergedIntoID = existing.ID
 			return nil
-		}
-
-		// 已存在同名干净专辑 -> 合并
-		sourceCand := &duplicateAlbumCandidate{Album: *album}
-		canonicalCand := &duplicateAlbumCandidate{Album: existing}
-		if err := mergeAlbumFieldsAndRelationsTx(tx, canonicalCand, sourceCand); err != nil {
-			return fmt.Errorf("合并专辑失败 from=%d to=%d: %w", album.ID, existing.ID, err)
-		}
-		// 确保目标专辑写入 release_type
-		if existing.ReleaseType == "" {
-			if err := tx.Model(&Album{}).Where("id = ?", existing.ID).
-				Update("release_type", rt).Error; err != nil {
-				return fmt.Errorf("更新目标专辑 release_type 失败: %w", err)
-			}
-		}
-		mergedIntoID = existing.ID
-		return nil
-	})
+		},
+	)
 	return mergedIntoID, err
 }

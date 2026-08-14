@@ -41,8 +41,8 @@
 | 最近播放记录 | GET | `/api/recent-plays` | `limit` | 播放流水列表，新增 `cover_art_path` 便于客户端直接渲染封面 | 无 | `trackService.GetRecentPlayRecords` |
 | 周/月维度统计 | GET | `/api/track-play-counts/period` | `limit`, `offset`, `period`, `keyword` | 曲目统计列表 | 无 | `trackService.GetTrackPlayCountsByPeriod` |
 | 专辑详情（含曲目） | GET | `/api/albums/:id` | `:id` | `AlbumDetail` | Redis 2m | `trackService.GetAlbumDetail` -> `model.GetAlbumWithTracks` |
-| 专辑列表 | GET | `/api/albums` | `limit`, `offset`, `keyword` | `albums`, `total` | 无 | `trackService.GetAlbums` + `GetAlbumsCount` |
-| 曲目列表（按专辑排序） | GET | `/api/tracks` | `limit`, `offset`, `keyword` | `tracks`, `total` | 无 | `trackService.GetTracksOrderedByAlbum` + `Count` |
+| 专辑列表 | GET | `/api/albums` | `limit`, `offset`, `keyword`, `genre` | `albums`, `total` | 无 | `trackService.GetAlbums` / `genreService.GetAlbumsByGenre` |
+| 流派关联专辑 | GET | `/api/genres/:name/albums` | `:name` (英文流派名), `limit`, `offset`, `sort` | `genre`, `genre_zh`, `albums`, `total` | Redis 5m | `genreService.GetAlbumsByGenre` + `GetAlbumsByGenreCount` |
 | 资料库增量同步 | GET | `/api/library/sync` | `since_version` | `sync_version`, `albums[].has_insight`, `albums[].original_release_date`, `tracks`, `deleted_*_ids` | 无 | `trackService.GetLibrarySyncDelta` -> `model.GetLibrarySyncDelta` |
 | 人工解除专辑关联 | POST | `/api/track-album/unlink` | `track_id`, `album_id` | `status` | 无 | `trackService.DeleteTrackAlbumLink` |
 
@@ -60,7 +60,7 @@
 | 来源播放占比 | GET | `/api/dashboard/play-counts-by-source` | 无 | source->count | `GetPlayCountsBySource` |
 | 热门专辑 | GET | `/api/dashboard/top-albums` | `days`, `limit` | 专辑榜（含 `album_id`、封面字段） | `GetTopAlbumsByPlayCount` |
 | 热门曲目 | GET | `/api/dashboard/top-tracks` | `days`, `limit` | 曲目榜（基于 `track_rank_stat`，含 `track_id`、封面字段、`rank`） | `GetTopTracksByPlayCount` |
-| 热门流派 | GET | `/api/dashboard/top-genres` | `limit` | TopGenre 列表（含 `rank`） | `genreService.GetTopGenresWithDetails` |
+| 热门流派 | GET | `/api/dashboard/top-genres` | `limit` (默认 50，最大 100) | TopGenre 列表（含 `rank`） | `genreService.GetTopGenresWithDetails` |
 
 ## 2.5 AI 解析、异步任务与歌词
 
@@ -107,7 +107,7 @@
 | MB 候选搜索 | GET | `/api/pending-albums/work-items/:id/musicbrainz/candidates` | `:id` | candidates | `SearchPendingAlbumMBReleases` -> `core/musicbrainz` |
 | 绑定 MB 发行版 | POST | `/api/pending-albums/work-items/:id/musicbrainz/link` | `:id`, `release_mb_id`, `mbid` | `status` | `LinkPendingAlbumMBRelease` |
 | 深度维护执行 | POST | `/api/pending-albums/work-items/:id/deep-maintenance` | `:id` | `status`, `report` | `DeepMaintainPendingAlbumWorkItem` -> 事务编排 + Replay + 收藏补写 |
-| 手动维护执行 | POST | `/api/pending-albums/work-items/:id/manual-maintenance` | `:id`, `manual_album`, `manual_album.original_release_date`, `manual_tracks[]` | `status`, `report` | `ManualMaintainPendingAlbumWorkItem` -> 统一维护骨架 + Replay + 收藏补写 |
+| 手动维护执行 | POST | `/api/pending-albums/work-items/:id/manual-maintenance` | `:id`, `manual_album`（含 `album_subtitle`, `release_type`, `original_release_date`）, `manual_tracks[]` | `status`, `report` | `ManualMaintainPendingAlbumWorkItem` -> 统一维护骨架 + Replay + 收藏补写 |
 
 ## 2.7 MusicBrainz 维护（专辑级）
 

@@ -141,4 +141,13 @@ func TestGetEnglishGenre_Integration(t *testing.T) {
 			},
 		)
 	}
+
+	// 测试小写/规范流派动态缓存解析
+	canonical, ok := globalGenreCache.ResolveCanonicalGenre("progressive rock")
+	assert.True(t, ok)
+	assert.Equal(t, "Progressive Rock", canonical)
+
+	// 测试从 model 调用的 NormalizeGenre 挂载解耦
+	assert.Equal(t, "Progressive Rock", model.NormalizeGenre(nil, "progressive rock"))
+	assert.Equal(t, "Pop", model.NormalizeGenre(nil, "pop"))
 }

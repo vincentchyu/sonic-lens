@@ -102,3 +102,28 @@ func FormatChineseLyricsTranslation(lyrics string) string {
 
 	return builder.String()
 }
+
+// ToASCIISlug 将字符串转换为纯 ASCII 英文 Slug，绝不包含任何汉字或非法字符
+func ToASCIISlug(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "unknown"
+	}
+	var builder strings.Builder
+	for _, r := range trimmed {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			builder.WriteRune(r)
+		}
+	}
+	res := strings.ToLower(strings.TrimSpace(builder.String()))
+	if res == "" {
+		// 无 ASCII 字符时使用稳定 Hash 生成 Slug
+		var h uint32 = 2166136261
+		for _, b := range []byte(trimmed) {
+			h ^= uint32(b)
+			h *= 16777619
+		}
+		return fmt.Sprintf("slug-%x", h)
+	}
+	return res
+}

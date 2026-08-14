@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/vincentchyu/sonic-lens/common"
-	"github.com/vincentchyu/sonic-lens/config"
 )
 
 // ArtistProfile 维护艺术家轻量资料，供首页热门艺术家在响应层补充头像信息。
@@ -107,11 +106,11 @@ func NormalizeArtistProfileKey(raw string) string {
 }
 
 func ensureArtistProfileIndexes(ctx context.Context) error {
-	if config.ConfigObj.Database.Type != string(common.DatabaseTypeMySQL) {
+	db := GetDB().WithContext(ctx)
+	if !isMySQL(db) {
 		return nil
 	}
 
-	db := GetDB().WithContext(ctx)
 	migrator := db.Migrator()
 
 	if !migrator.HasIndex(&ArtistProfile{}, "uk_artist_profile_normalized_key") {

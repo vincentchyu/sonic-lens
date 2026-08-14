@@ -4,7 +4,7 @@ import SQLite3
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor LibraryIndexStore {
-    static let syncSchemaVersion = 8
+    static let syncSchemaVersion = 9
     private static let databaseFileName = "soniclens-library-index.sqlite"
     private static let appSupportDirectoryName = "SonicLens"
     private static let dataDirectoryName = "data"
@@ -62,6 +62,7 @@ actor LibraryIndexStore {
                 cover_art_object_key TEXT,
                 has_insight INTEGER NOT NULL DEFAULT 0,
                 play_count INTEGER NOT NULL DEFAULT 0,
+                genre TEXT,
                 created_at TEXT,
                 updated_at TEXT
             );
@@ -70,6 +71,7 @@ actor LibraryIndexStore {
         try ensureAlbumIndexColumns()
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_name ON album_index(name);")
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_artist ON album_index(artist);")
+        try execute("CREATE INDEX IF NOT EXISTS idx_album_index_genre ON album_index(genre);")
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_created_at ON album_index(created_at DESC, id DESC);")
         try execute("CREATE INDEX IF NOT EXISTS idx_album_index_updated_at ON album_index(updated_at);")
         try createFTS5Table(
@@ -341,12 +343,25 @@ actor LibraryIndexStore {
         return try countTracksUsingLIKE(filter: filter, keyword: trimmed)
     }
 
+    func fetchAlbumsByGenre(genre: String, limit: Int, offset: Int) throws -> [Album] {
+        let trimmed = genre.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let sql = """
+        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at, genre
+        FROM album_index
+        WHERE genre LIKE ?
+        ORDER BY play_count DESC, id DESC
+        LIMIT ? OFFSET ?;
+        """
+        return try fetchAlbums(sql: sql, binds: ["%\(trimmed)%"], limit: limit, offset: offset)
+    }
+
     private func upsertAlbums(_ albums: [Album]) throws {
         let sql = """
         INSERT INTO album_index(
-            id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
+            id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, genre, created_at, updated_at
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             name_subtitle = excluded.name_subtitle,
@@ -357,6 +372,7 @@ actor LibraryIndexStore {
             cover_art_object_key = excluded.cover_art_object_key,
             has_insight = excluded.has_insight,
             play_count = excluded.play_count,
+            genre = excluded.genre,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at;
         """
@@ -378,8 +394,9 @@ actor LibraryIndexStore {
             bindOptionalText(album.coverArtObjectKey, to: 8, in: statement)
             sqlite3_bind_int(statement, 9, album.hasInsight ? 1 : 0)
             sqlite3_bind_int64(statement, 10, Int64(album.playCount ?? 0))
-            bindOptionalText(album.createdAt, to: 11, in: statement)
-            bindOptionalText(album.updatedAt, to: 12, in: statement)
+            bindOptionalText(album.genre, to: 11, in: statement)
+            bindOptionalText(album.createdAt, to: 12, in: statement)
+            bindOptionalText(album.updatedAt, to: 13, in: statement)
             if sqlite3_step(statement) != SQLITE_DONE {
                 throw StoreError.executeStatement(sql)
             }
@@ -587,7 +604,7 @@ actor LibraryIndexStore {
 
     private func queryAlbumsUsingFTS(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let sql = """
-        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
+        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at, genre
         FROM album_index
         WHERE id IN (
             SELECT rowid FROM album_index_fts WHERE album_index_fts MATCH ?
@@ -601,7 +618,7 @@ actor LibraryIndexStore {
     private func queryAlbumsUsingLIKE(sort: LibrarySort, keyword: String, limit: Int, offset: Int) throws -> [Album] {
         let hasKeyword = !keyword.isEmpty
         let sql = """
-        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at
+        SELECT id, name, name_subtitle, artist, release_date, cover_art_url, cover_art_mime, cover_art_object_key, has_insight, play_count, created_at, updated_at, genre
         FROM album_index
         \(hasKeyword ? "WHERE name LIKE ? OR artist LIKE ?" : "")
         ORDER BY \(albumOrder(sort))

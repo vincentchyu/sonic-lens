@@ -47,6 +47,8 @@ type ManualPendingAlbumInput struct {
 // ManualPendingAlbumAlbumInput 描述手动维护时的专辑级元数据。
 type ManualPendingAlbumAlbumInput struct {
 	Name                string `json:"name"`
+	AlbumSubtitle       string `json:"album_subtitle"`
+	ReleaseType         string `json:"release_type"`
 	AlbumArtist         string `json:"album_artist"`
 	DisplayArtist       string `json:"display_artist"`
 	ReleaseDate         string `json:"release_date"`
@@ -75,6 +77,8 @@ type ManualPendingAlbumTrackInput struct {
 // PendingAlbumAlbumPreview 描述在预审中针对专辑元数据的对比。
 type PendingAlbumAlbumPreview struct {
 	Name                string `json:"name"`
+	AlbumSubtitle       string `json:"album_subtitle"`
+	ReleaseType         string `json:"release_type"`
 	AlbumArtist         string `json:"album_artist"`
 	DisplayArtist       string `json:"display_artist"`
 	ReleaseDate         string `json:"release_date"`
@@ -372,6 +376,8 @@ func (s *serviceImpl) PreviewPendingAlbumMBMaintenance(
 
 	albumPreview := PendingAlbumAlbumPreview{
 		Name:                material.AlbumCandidate.Name,
+		AlbumSubtitle:       material.AlbumCandidate.NameSubtitle,
+		ReleaseType:         material.AlbumCandidate.ReleaseType,
 		AlbumArtist:         material.AlbumCandidate.Artist,
 		DisplayArtist:       material.AlbumCandidate.Artist,
 		ReleaseDate:         material.AlbumCandidate.ReleaseDate,
@@ -388,6 +394,8 @@ func (s *serviceImpl) PreviewPendingAlbumMBMaintenance(
 	suggestedInput := ManualPendingAlbumInput{
 		ManualAlbum: ManualPendingAlbumAlbumInput{
 			Name:                albumPreview.Name,
+			AlbumSubtitle:       albumPreview.AlbumSubtitle,
+			ReleaseType:         albumPreview.ReleaseType,
 			AlbumArtist:         albumPreview.AlbumArtist,
 			DisplayArtist:       albumPreview.DisplayArtist,
 			ReleaseDate:         albumPreview.ReleaseDate,
@@ -620,17 +628,13 @@ func extractReleaseGenres(release musicbrainzws2.Release) string {
 	if len(release.Genres) == 0 {
 		return ""
 	}
-	genres := make([]string, 0, len(release.Genres))
 	for _, genre := range release.Genres {
 		if strings.TrimSpace(genre.Name) == "" {
 			continue
 		}
-		// 格式化为单词空格分割首字母大写标准
-		name := common.CapitalizeWords(genre.Name)
-		genres = append(genres, name)
+		return model.NormalizeGenre(nil, genre.Name)
 	}
-	// 只去取一个
-	return genres[0]
+	return ""
 }
 
 func (s *serviceImpl) DeepMaintainPendingAlbumWorkItem(
@@ -770,9 +774,13 @@ func (s *serviceImpl) resolveManualMaterial(
 		return nil, errors.New("work item detail is nil")
 	}
 
-	albumName := strings.TrimSpace(input.ManualAlbum.Name)
-	if albumName == "" {
+	rawAlbumName := strings.TrimSpace(input.ManualAlbum.Name)
+	if rawAlbumName == "" {
 		return nil, errors.New("manual_album.name is required")
+	}
+	albumName, parsedRT := common.ParseAlbumTitleAndReleaseType(rawAlbumName)
+	if albumName == "" {
+		albumName = rawAlbumName
 	}
 	albumArtist := strings.TrimSpace(input.ManualAlbum.AlbumArtist)
 	if albumArtist == "" {
@@ -780,6 +788,24 @@ func (s *serviceImpl) resolveManualMaterial(
 	}
 	if len(input.ManualTracks) == 0 {
 		return nil, errors.New("manual_tracks is required")
+	}
+
+	candidateSubtitle := strings.TrimSpace(input.ManualAlbum.AlbumSubtitle)
+	if candidateSubtitle == "" && detail.WorkItem != nil {
+		candidateSubtitle = strings.TrimSpace(detail.WorkItem.AlbumSubtitle)
+	}
+	if candidateSubtitle == "" {
+		_, sub := common.ParseAlbumTitleAndSubtitle(rawAlbumName)
+		candidateSubtitle = strings.TrimSpace(sub)
+	}
+
+	candidateReleaseType := strings.TrimSpace(input.ManualAlbum.ReleaseType)
+	if candidateReleaseType == "" {
+		candidateReleaseType = strings.TrimSpace(parsedRT)
+	}
+	if candidateReleaseType == "" && detail.WorkItem != nil {
+		_, itemRT := common.ParseAlbumTitleAndReleaseType(detail.WorkItem.Album)
+		candidateReleaseType = strings.TrimSpace(itemRT)
 	}
 
 	trackDrafts := make([]pendingAlbumTrackDraft, 0, len(input.ManualTracks))
@@ -877,11 +903,11 @@ func (s *serviceImpl) resolveManualMaterial(
 	}
 
 	totalDiscs, discInfos := buildAlbumDiscInfosFromTrackDrafts(trackDrafts)
-	_, rt := common.ParseAlbumTitleAndReleaseType(detail.WorkItem.Album)
 	return &pendingAlbumMaintenanceMaterial{
 		Mode: pendingAlbumMaintenanceModeManual,
 		AlbumCandidate: &model.Album{
 			Name:                albumName,
+			NameSubtitle:        candidateSubtitle,
 			Artist:              albumArtist,
 			ReleaseDate:         strings.TrimSpace(input.ManualAlbum.ReleaseDate),
 			OriginalReleaseDate: strings.TrimSpace(input.ManualAlbum.OriginalReleaseDate),
@@ -892,7 +918,7 @@ func (s *serviceImpl) resolveManualMaterial(
 			Barcode:             strings.TrimSpace(input.ManualAlbum.Barcode),
 			TotalDiscs:          totalDiscs,
 			DiscInfos:           discInfos,
-			ReleaseType:         rt,
+			ReleaseType:         candidateReleaseType,
 		},
 		TrackDrafts: trackDrafts,
 		ReleaseMB:   releaseMB,
@@ -978,6 +1004,17 @@ func (s *serviceImpl) performPendingAlbumMaintenance(
 
 	if err := applyPendingAlbumFrozenContext(ctx, detail, report, workItemID); err != nil {
 		return nil, err
+	}
+
+	if report.ResolvedAlbumID > 0 {
+		if reconcileErr := model.ReconcileAlbumPlayCounts(ctx, report.ResolvedAlbumID); reconcileErr != nil {
+			log.Warn(
+				ctx,
+				"待归因专辑维护后播放数对账失败",
+				zap.Int64("album_id", report.ResolvedAlbumID),
+				zap.Error(reconcileErr),
+			)
+		}
 	}
 
 	if err := model.UpdatePendingAlbumWorkItemProgress(
@@ -1133,6 +1170,14 @@ func applyPendingAlbumStructureTx(
 			}
 			if discInfos := strings.TrimSpace(material.AlbumCandidate.DiscInfos); discInfos != "" {
 				fields["disc_infos"] = discInfos
+			}
+			if nameSubtitle := strings.TrimSpace(material.AlbumCandidate.NameSubtitle); nameSubtitle != "" {
+				fields["name_subtitle"] = nameSubtitle
+			}
+			if releaseType := strings.TrimSpace(material.AlbumCandidate.ReleaseType); releaseType != "" {
+				fields["release_type"] = releaseType
+			} else {
+				fields["release_type"] = "album"
 			}
 			return fields
 		}(),
@@ -1376,15 +1421,29 @@ func (s *serviceImpl) PreviewAlbumMBMaintenance(
 	}
 	mbGenre := ""
 	if len(rel.Genres) > 0 {
-		mbGenre = rel.Genres[0].Name
+		mbGenre = model.NormalizeGenre(nil, rel.Genres[0].Name)
 	}
 	albumGenre := mbGenre
 	if albumGenre == "" {
 		albumGenre = albumDetail.Album.Genre
 	}
 
+	cleanedMBTitle, parsedMBRT := common.ParseAlbumTitleAndReleaseType(rel.Title)
+	if cleanedMBTitle == "" {
+		cleanedMBTitle = rel.Title
+	}
+	releaseType := albumDetail.Album.ReleaseType
+	if releaseType == "" {
+		releaseType = parsedMBRT
+	}
+	if releaseType == "" {
+		releaseType = "album"
+	}
+
 	albumPreview := PendingAlbumAlbumPreview{
-		Name:                rel.Title,
+		Name:                cleanedMBTitle,
+		AlbumSubtitle:       albumDetail.Album.NameSubtitle,
+		ReleaseType:         releaseType,
 		AlbumArtist:         albumDetail.Album.Artist,
 		DisplayArtist:       albumDetail.Album.Artist,
 		ReleaseDate:         releaseDate,
@@ -1503,6 +1562,8 @@ func (s *serviceImpl) PreviewAlbumMBMaintenance(
 		SuggestedInput: ManualPendingAlbumInput{
 			ManualAlbum: ManualPendingAlbumAlbumInput{
 				Name:                albumPreview.Name,
+				AlbumSubtitle:       albumPreview.AlbumSubtitle,
+				ReleaseType:         albumPreview.ReleaseType,
 				AlbumArtist:         albumPreview.AlbumArtist,
 				DisplayArtist:       albumPreview.DisplayArtist,
 				ReleaseDate:         albumPreview.ReleaseDate,
@@ -1535,6 +1596,27 @@ func (s *serviceImpl) ApplyAlbumMBMaintenance(
 	}
 
 	return model.InTx(ctx, func(tx *gorm.DB) error {
+		rawAlbumName := strings.TrimSpace(input.ManualAlbum.Name)
+		cleanedAlbumName, parsedRT := common.ParseAlbumTitleAndReleaseType(rawAlbumName)
+		if cleanedAlbumName == "" {
+			cleanedAlbumName = rawAlbumName
+		}
+		candidateReleaseType := strings.TrimSpace(input.ManualAlbum.ReleaseType)
+		if candidateReleaseType == "" {
+			candidateReleaseType = strings.TrimSpace(parsedRT)
+		}
+		if candidateReleaseType == "" && albumDetail.Album.ReleaseType != "" {
+			candidateReleaseType = albumDetail.Album.ReleaseType
+		}
+		if candidateReleaseType == "" {
+			candidateReleaseType = "album"
+		}
+
+		candidateSubtitle := strings.TrimSpace(input.ManualAlbum.AlbumSubtitle)
+		if candidateSubtitle == "" && albumDetail.Album.NameSubtitle != "" {
+			candidateSubtitle = albumDetail.Album.NameSubtitle
+		}
+
 		targetMBID := strings.TrimSpace(input.MBID)
 		if targetMBID == "" && albumDetail.ReleaseMB != nil {
 			targetMBID = strings.TrimSpace(albumDetail.ReleaseMB.MBID)
@@ -1566,7 +1648,7 @@ func (s *serviceImpl) ApplyAlbumMBMaintenance(
 					releaseMB = &model.ReleaseMB{
 						MBID:     targetMBID,
 						AlbumID:  albumID,
-						Name:     strings.TrimSpace(input.ManualAlbum.Name),
+						Name:     cleanedAlbumName,
 						JSONData: "{}",
 					}
 				}
@@ -1581,7 +1663,9 @@ func (s *serviceImpl) ApplyAlbumMBMaintenance(
 		}
 
 		fields := map[string]interface{}{
-			"name":                  strings.TrimSpace(input.ManualAlbum.Name),
+			"name":                  cleanedAlbumName,
+			"name_subtitle":         candidateSubtitle,
+			"release_type":          candidateReleaseType,
 			"artist":                strings.TrimSpace(input.ManualAlbum.AlbumArtist),
 			"genre":                 strings.TrimSpace(input.ManualAlbum.Genre),
 			"release_date":          strings.TrimSpace(input.ManualAlbum.ReleaseDate),
@@ -1672,6 +1756,10 @@ func (s *serviceImpl) ApplyAlbumMBMaintenance(
 				}
 				_ = tx.Create(&newTA).Error
 			}
+		}
+
+		if err := model.ReconcileAlbumPlayCountsTx(tx, albumID); err != nil {
+			log.Warn(ctx, "精选维护正式专辑后播放数对账失败", zap.Int64("album_id", albumID), zap.Error(err))
 		}
 
 		log.Info(ctx, "精选维护正式专辑落库成功", zap.Int64("album_id", albumID))

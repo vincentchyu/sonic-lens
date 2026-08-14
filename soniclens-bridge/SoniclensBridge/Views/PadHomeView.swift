@@ -58,8 +58,8 @@ struct PadHomeView: View {
                         ListeningProfileCard(
                             summaryText: hotPresentation.combinedSummaryText,
                             footnoteText: hotPresentation.profileFootnoteText,
-                            genres: Array(hotPresentation.genres.prefix(3)),
-                            sources: Array(hotPresentation.sources.prefix(3)),
+                            genres: hotPresentation.genres,
+                            sources: hotPresentation.sources,
                             accentKey: selectedAccent,
                             layoutStyle: .split
                         )

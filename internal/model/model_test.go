@@ -42,7 +42,6 @@ func newModelTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	prevConfig := *config.ConfigObj
 	prevMySQL := GlobalDBForMysql
 
-	config.ConfigObj.Database.Type = string(common.DatabaseTypeMySQL)
 	GlobalDBForMysql = db
 
 	t.Cleanup(

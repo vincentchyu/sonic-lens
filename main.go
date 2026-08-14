@@ -48,42 +48,10 @@ func main() {
 	flags.StringVarP(configFile, "config", "c", "config/config.yaml", "config file")
 	flags.BoolVarP(isMobile, "mobile", "m", false, "it a mobile")
 
-	// Add sync-records subcommand
-	rootCmd.AddCommand(newSyncRecordsCommand())
-
-	// Add memory-tool subcommand
-	rootCmd.AddCommand(newMemoryToolCommand())
-
-	// Add cleanup-duplicate-albums subcommand
-	rootCmd.AddCommand(newCleanupDuplicateAlbumsCommand())
-
-	// Add replay-track-play-records subcommand
-	rootCmd.AddCommand(newReplayTrackPlayRecordsCommand())
-
-	// Add cleanup-release-type-suffixes subcommand
-	rootCmd.AddCommand(newCleanupReleaseTypeSuffixesCommand())
+	// 注册子命令扩展入口（具体命令接入规范见 cmd/commands.go）
+	cmd.RegisterCommands(rootCmd)
 
 	cobra.CheckErr(rootCmd.Execute())
-}
-
-func newSyncRecordsCommand() *cobra.Command {
-	return cmd.NewSyncRecordsCommand()
-}
-
-func newMemoryToolCommand() *cobra.Command {
-	return cmd.NewMemoryToolCommand()
-}
-
-func newCleanupDuplicateAlbumsCommand() *cobra.Command {
-	return cmd.NewCleanupDuplicateAlbumsCommand()
-}
-
-func newReplayTrackPlayRecordsCommand() *cobra.Command {
-	return cmd.NewReplayTrackPlayRecordsCommand()
-}
-
-func newCleanupReleaseTypeSuffixesCommand() *cobra.Command {
-	return cmd.NewCleanupReleaseTypeSuffixesCommand()
 }
 
 func initServer() error {
@@ -102,7 +70,7 @@ func initServer() error {
 	// Initialize Musicbrainz
 	musicbrainz.InitClient()
 	// Initialize database
-	if err := model.InitDB(config.ConfigObj.Database.Path, dbLogger); err != nil {
+	if err := model.InitDB(dbLogger); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	lyrics.InitMxmClient(config.ConfigObj.Musixmatch.ApiKey)
@@ -122,11 +90,6 @@ func initServer() error {
 	telemetry.GoOnlySafe(
 		ctx, func(asyncCtx context.Context) {
 			d1sync.StartDashboardStatScheduler(asyncCtx)
-		},
-	)
-	telemetry.GoOnlySafe(
-		ctx, func(asyncCtx context.Context) {
-			d1sync.StartTrackPlayReplayScheduler(asyncCtx)
 		},
 	)
 

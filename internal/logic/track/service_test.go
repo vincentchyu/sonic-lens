@@ -50,7 +50,7 @@ func init() {
 	}
 
 	logger, _ := log.LogInit("../../../"+config.ConfigObj.Log.Path, config.ConfigObj.Log.Level, make(<-chan struct{}))
-	err := model.InitDB("../../../"+config.ConfigObj.Database.Path, logger)
+	err := model.InitDB(logger)
 	if err != nil {
 		panic(err)
 	}

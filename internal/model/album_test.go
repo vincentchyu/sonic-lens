@@ -49,12 +49,12 @@ func TestGetOrCreateAlbumTxPrefersCuratedAlbumWhenReleaseDateMissing(t *testing.
 
 	mock.ExpectExec(
 		regexp.QuoteMeta(
-			"UPDATE `album` SET `name`=?,`name_subtitle`=?,`artist`=?,`release_date`=?,`original_release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`release_type`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
+			"UPDATE `album` SET `name`=?,`name_subtitle`=?,`artist`=?,`release_date`=?,`original_release_date`=?,`genre`=?,`country`=?,`status`=?,`packaging`=?,`barcode`=?,`total_discs`=?,`disc_infos`=?,`sync_status`=?,`release_type`=?,`cover_art_url`=?,`cover_art_mime`=?,`cover_art_object_key`=?,`play_count`=?,`created_at`=?,`updated_at`=? WHERE `id` = ?",
 		),
 	).
 		WithArgs(
 			"Kind of Blue", "", "Miles Davis", "1959-08-17", "1959-08-17", "", "", "", "", "", 0, "", 3, "", "", "", "",
-			modelTestNow, modelTestNow, int64(21),
+			int64(0), modelTestNow, modelTestNow, int64(21),
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(
@@ -109,12 +109,12 @@ func TestGetOrCreateAlbumTxCreatesNewAlbumWhenIncomingReleaseDateDiffers(t *test
 
 	mock.ExpectExec(
 		regexp.QuoteMeta(
-			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`release_type`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`release_type`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`,`play_count`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		),
 	).
 		WithArgs(
 			"The Dark Side of the Moon", "", "Pink Floyd", "1973-03-24", "1973-03-01", "", "", "", "", "", 1, "", 0, "",
-			"", "", "",
+			"", "", "", int64(0),
 		).
 		WillReturnResult(sqlmock.NewResult(178, 1))
 	mock.ExpectExec(

@@ -82,3 +82,17 @@ func (m *MockGenreService) GetTopGenresByPlayCount(ctx context.Context, limit in
 	}
 	return result.([]*model.Genre), args.Error(1)
 }
+
+func (m *MockGenreService) GetAlbumsByGenre(ctx context.Context, genre string, limit, offset int, sortBy string) ([]*model.Album, error) {
+	args := m.Called(ctx, genre, limit, offset, sortBy)
+	result := args.Get(0)
+	if result == nil {
+		return nil, args.Error(1)
+	}
+	return result.([]*model.Album), args.Error(1)
+}
+
+func (m *MockGenreService) GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error) {
+	args := m.Called(ctx, genre)
+	return args.Get(0).(int64), args.Error(1)
+}

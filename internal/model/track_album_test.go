@@ -47,7 +47,8 @@ func newTrackAlbumTestDB(t *testing.T, name string) *gorm.DB {
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
 				sync_status INTEGER DEFAULT 0,
-				release_type TEXT
+				release_type TEXT,
+				play_count INTEGER DEFAULT 0
 			)
 		`,
 		).Error,

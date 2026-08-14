@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -11,13 +12,21 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
+	"github.com/vincentchyu/sonic-lens/internal/model"
 )
+
+func init() {
+	model.SetGenreCacheResolver(func(tag string) (string, string, bool) {
+		return globalGenreCache.ResolveCanonicalGenreDetail(tag)
+	})
+}
 
 // genreData 存储 GenreCache 的核心数据，用于原子替换 (COW)
 type genreData struct {
-	c2E        map[string]string // 中文 -> 英文
-	e2C        map[string]string // 英文 -> 中文
-	lastUpdate time.Time
+	c2E           map[string]string // 中文 -> 英文
+	e2C           map[string]string // 英文 -> 中文
+	e2cNormalized map[string]string // 小写英文 -> 认证的 Title Case 英文标准名
+	lastUpdate    time.Time
 }
 
 // GenreCache represents a cache for genre c2E
@@ -37,8 +46,9 @@ func NewGenreCache() *GenreCache {
 	}
 	// 初始化一个空数据对象，避免 Load() 返回 nil
 	gc.data.Store(&genreData{
-		c2E: make(map[string]string),
-		e2C: make(map[string]string),
+		c2E:           make(map[string]string),
+		e2C:           make(map[string]string),
+		e2cNormalized: make(map[string]string),
 	})
 	return gc
 }
@@ -62,20 +72,54 @@ func (gc *GenreCache) GetE2C(englishGenre string) (string, bool) {
 	return chineseGenre, exists
 }
 
-// Set updates the cache with a new genre mapping
-/*func (gc *GenreCache) Set(chineseGenre, englishGenre string) {
-	gc.muC2E.Lock()
-	defer gc.muC2E.Unlock()
+// ResolveCanonicalGenre 在已认证的物理表流派缓存中解析标准英文 Title Case 名：
+// 1. 若为中文，查 c2E 缓存；
+// 2. 若为英文，忽略大小写查 e2cNormalized 缓存（如 "folk" -> "Folk", "chinese rock" -> "Chinese Rock"）
+func (gc *GenreCache) ResolveCanonicalGenre(tag string) (string, bool) {
+	eng, _, ok := gc.ResolveCanonicalGenreDetail(tag)
+	return eng, ok
+}
 
-	gc.c2E[chineseGenre] = englishGenre
-}*/
+// ResolveCanonicalGenreDetail 在已认证的物理表流派缓存中解析标准英文 Title Case 名与对应中文名
+func (gc *GenreCache) ResolveCanonicalGenreDetail(tag string) (eng string, zh string, matched bool) {
+	d := gc.data.Load()
+	if d == nil {
+		return "", "", false
+	}
+	clean := strings.TrimSpace(tag)
+	if clean == "" {
+		return "", "", false
+	}
+
+	if common.IsExistsChineseSimplified(clean) {
+		simplified := common.ConversionSimplifiedFx(clean)
+		if english, ok := d.c2E[simplified]; ok && english != "" {
+			return english, simplified, true
+		}
+		return "", simplified, false
+	}
+
+	lower := strings.ToLower(clean)
+	if canonical, ok := d.e2cNormalized[lower]; ok && canonical != "" {
+		zhName := d.e2C[canonical]
+		return canonical, zhName, true
+	}
+
+	return "", "", false
+}
 
 // SetAll updates the cache with all genre mappings
 func (gc *GenreCache) SetAll(c2EMap, e2CMap map[string]string) {
+	gc.SetAllWithNormalized(c2EMap, e2CMap, make(map[string]string))
+}
+
+// SetAllWithNormalized updates the cache with all genre mappings and lower case index
+func (gc *GenreCache) SetAllWithNormalized(c2EMap, e2CMap, e2cNormMap map[string]string) {
 	newData := &genreData{
-		c2E:        c2EMap,
-		e2C:        e2CMap,
-		lastUpdate: time.Now(),
+		c2E:           c2EMap,
+		e2C:           e2CMap,
+		e2cNormalized: e2cNormMap,
+		lastUpdate:    time.Now(),
 	}
 	gc.data.Store(newData)
 
@@ -83,6 +127,7 @@ func (gc *GenreCache) SetAll(c2EMap, e2CMap map[string]string) {
 	log.Info(context.Background(), "Genre 映射缓存已原子更新",
 		zap.Int("c2e_count", len(c2EMap)),
 		zap.Int("e2c_count", len(e2CMap)),
+		zap.Int("e2c_norm_count", len(e2cNormMap)),
 		zap.Time("last_update", newData.lastUpdate))
 }
 
@@ -123,13 +168,21 @@ func (gc *GenreCache) RefreshFromDB(ctx context.Context) error {
 	}
 	c2e := make(map[string]string, len(genres))
 	e2c := make(map[string]string, len(genres))
+	e2cNormalized := make(map[string]string, len(genres))
 	for _, genreDB := range genres {
-		if genreDB.NameZh != "" {
-			c2e[genreDB.NameZh] = genreDB.Name
+		nameClean := strings.TrimSpace(genreDB.Name)
+		if nameClean == "" {
+			continue
 		}
-		e2c[genreDB.Name] = genreDB.NameZh
+		if genreDB.NameZh != "" {
+			zhClean := strings.TrimSpace(common.ConversionSimplifiedFx(genreDB.NameZh))
+			c2e[genreDB.NameZh] = nameClean
+			c2e[zhClean] = nameClean
+		}
+		e2c[nameClean] = genreDB.NameZh
+		e2cNormalized[strings.ToLower(nameClean)] = nameClean
 	}
-	gc.SetAll(c2e, e2c)
+	gc.SetAllWithNormalized(c2e, e2c, e2cNormalized)
 	log.Info(ctx, "从数据库刷新 Genre 成功", zap.Int("数量", len(genres)))
 	return nil
 }

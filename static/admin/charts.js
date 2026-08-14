@@ -1142,11 +1142,69 @@ function initStats() {
                         },
                     }),
                 });
+                loadUnmatchedGenres();
             })
             .catch((error) => {
                 console.error("获取流派数据失败:", error);
             });
     }
+
+    function loadUnmatchedGenres() {
+        fetch("/api/genres/unmatched")
+            .then(res => res.json())
+            .then(data => {
+                const list = data.unmatched || [];
+                const container = document.getElementById("unmatchedGenreCard");
+                const badge = document.getElementById("unmatchedGenreBadge");
+                const listEl = document.getElementById("unmatchedGenreList");
+                if (!container || !listEl) return;
+
+                if (list.length === 0) {
+                    container.style.display = "none";
+                    return;
+                }
+
+                container.style.display = "block";
+                badge.textContent = `${list.length} 项待处理`;
+
+                listEl.innerHTML = list.map(item => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px;">
+                        <div>
+                            <strong style="color: #f59e0b;">${item.raw_genre}</strong>
+                            <span style="opacity: 0.6; margin-left: 8px;">(${item.play_count} 次播放)</span>
+                        </div>
+                        <button onclick="openGenreMappingPrompt('${encodeURIComponent(item.raw_genre)}')" style="background: rgba(245,158,11,0.2); color: #f59e0b; border: 1px solid rgba(245,158,11,0.4); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">
+                            人工干预绑定 >
+                        </button>
+                    </div>
+                `).join("");
+            })
+            .catch(err => console.error("加载未匹配流派失败:", err));
+    }
+
+    window.openGenreMappingPrompt = function(encodedRaw) {
+        const rawGenre = decodeURIComponent(encodedRaw);
+        const targetGenre = prompt(`【人工干预流派映射】\n原始未归因文本: "${rawGenre}"\n\n请输入对应规范【英文标志 Name】(如 Rock, Alternative, Pop):`);
+        if (!targetGenre || !targetGenre.trim()) return;
+        const targetGenreZh = prompt(`请输入对应的【中文名称 NameZh】(可选):`) || "";
+
+        fetch("/api/genres/map", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                raw_genre: rawGenre.trim(),
+                target_genre: targetGenre.trim(),
+                target_genre_zh: targetGenreZh.trim()
+            })
+        })
+        .then(res => res.json())
+        .then(res => {
+            alert(res.message || "映射绑定成功！");
+            loadUnmatchedGenres();
+            if (typeof initGenreChart === "function") initGenreChart();
+        })
+        .catch(err => alert("绑定映射失败: " + err));
+    };
 
     let lastRecentPlaysSignature = "";
     let lastRankingSignature = "";

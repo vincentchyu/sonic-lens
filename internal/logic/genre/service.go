@@ -18,6 +18,8 @@ type GenreService interface {
 	GetGenreCount(ctx context.Context) (int64, error)
 	GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error)
 	GetTopGenresWithDetails(ctx context.Context, limit int) ([]*model.TopGenre, error)
+	GetAlbumsByGenre(ctx context.Context, genre string, limit, offset int, sortBy string) ([]*model.Album, error)
+	GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error)
 }
 
 // GenreServiceImpl 实现GenreService接口
@@ -77,3 +79,14 @@ func (s *GenreServiceImpl) GetTopGenresByPlayCount(ctx context.Context, limit in
 func (s *GenreServiceImpl) GetTopGenresWithDetails(ctx context.Context, limit int) ([]*model.TopGenre, error) {
 	return model.GetTopGenresWithDetails(ctx, limit)
 }
+
+// GetAlbumsByGenre 根据英文流派标准名检索关联专辑
+func (s *GenreServiceImpl) GetAlbumsByGenre(ctx context.Context, genre string, limit, offset int, sortBy string) ([]*model.Album, error) {
+	return model.GetAlbumsByGenre(ctx, genre, limit, offset, sortBy)
+}
+
+// GetAlbumsByGenreCount 根据英文流派标准名计算关联专辑数
+func (s *GenreServiceImpl) GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error) {
+	return model.GetAlbumsByGenreCount(ctx, genre)
+}
+

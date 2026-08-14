@@ -449,6 +449,10 @@ async function loadPendingAlbumList() {
         const detail = currentPendingAlbumWorkItemDetail || {};
         const workItem = detail.work_item || {};
         document.getElementById('pendingManualAlbumName').value = workItem.album || '';
+        const manualSubInput = document.getElementById('pendingManualAlbumSubtitle');
+        if (manualSubInput) manualSubInput.value = workItem.album_subtitle || '';
+        const manualRtInput = document.getElementById('pendingManualReleaseType');
+        if (manualRtInput) manualRtInput.value = '';
         document.getElementById('pendingManualAlbumArtist').value = workItem.album_artist || workItem.artist || '';
         document.getElementById('pendingManualDisplayArtist').value = workItem.artist || '';
         document.getElementById('pendingManualReleaseDate').value = '';
@@ -465,6 +469,8 @@ async function loadPendingAlbumList() {
 
     function buildPendingManualPayload() {
         const albumName = document.getElementById('pendingManualAlbumName').value.trim();
+        const albumSubtitle = (document.getElementById('pendingManualAlbumSubtitle')?.value || '').trim();
+        const releaseType = (document.getElementById('pendingManualReleaseType')?.value || '').trim();
         const albumArtist = document.getElementById('pendingManualAlbumArtist').value.trim();
         const displayArtist = document.getElementById('pendingManualDisplayArtist').value.trim();
         if (!albumName) {
@@ -510,6 +516,8 @@ async function loadPendingAlbumList() {
         return {
             manual_album: {
                 name: albumName,
+                album_subtitle: albumSubtitle,
+                release_type: releaseType,
                 album_artist: albumArtist,
                 display_artist: displayArtist,
                 release_date: document.getElementById('pendingManualReleaseDate').value.trim(),
@@ -874,6 +882,10 @@ async function loadPendingAlbumList() {
         if (!preview) return;
         const album = preview.album_preview || {};
         document.getElementById('pendingDiffAlbumName').value = album.name || '';
+        const diffSubInput = document.getElementById('pendingDiffAlbumSubtitle');
+        if (diffSubInput) diffSubInput.value = album.album_subtitle || '';
+        const diffRtInput = document.getElementById('pendingDiffReleaseType');
+        if (diffRtInput) diffRtInput.value = album.release_type || '';
         document.getElementById('pendingDiffAlbumArtist').value = album.album_artist || '';
         
         const mbGenre = album.genre || '';
@@ -975,6 +987,8 @@ async function loadPendingAlbumList() {
         const saveBtn = document.getElementById('pendingDiffSaveDraftBtn');
 
         const albumName = document.getElementById('pendingDiffAlbumName').value.trim();
+        const albumSubtitle = (document.getElementById('pendingDiffAlbumSubtitle')?.value || '').trim();
+        const releaseType = (document.getElementById('pendingDiffReleaseType')?.value || '').trim();
         const albumArtist = document.getElementById('pendingDiffAlbumArtist').value.trim();
         if (!albumName || !albumArtist) {
             alert('专辑名和专辑艺术家不能为空');
@@ -1013,6 +1027,8 @@ async function loadPendingAlbumList() {
             mbid: currentPendingDiffPreview.mbid || '',
             album_preview: {
                 name: albumName,
+                album_subtitle: albumSubtitle,
+                release_type: releaseType,
                 album_artist: albumArtist,
                 display_artist: albumArtist,
                 genre: document.getElementById('pendingDiffGenre').value.trim(),
@@ -1033,6 +1049,8 @@ async function loadPendingAlbumList() {
             suggested_input: {
                 manual_album: {
                     name: albumName,
+                    album_subtitle: albumSubtitle,
+                    release_type: releaseType,
                     album_artist: albumArtist,
                     display_artist: albumArtist,
                     genre: document.getElementById('pendingDiffGenre').value.trim(),
@@ -1084,6 +1102,8 @@ async function loadPendingAlbumList() {
         if ((!currentPendingAlbumWorkItemID && !currentContextAlbumID) || !currentPendingDiffPreview) return;
 
         const albumName = document.getElementById('pendingDiffAlbumName').value.trim();
+        const albumSubtitle = (document.getElementById('pendingDiffAlbumSubtitle')?.value || '').trim();
+        const releaseType = (document.getElementById('pendingDiffReleaseType')?.value || '').trim();
         const albumArtist = document.getElementById('pendingDiffAlbumArtist').value.trim();
         if (!albumName || !albumArtist) {
             alert('专辑名和专辑艺术家不能为空');
@@ -1121,6 +1141,8 @@ async function loadPendingAlbumList() {
             mbid: currentPendingDiffPreview?.mbid || '',
             manual_album: {
                 name: albumName,
+                album_subtitle: albumSubtitle,
+                release_type: releaseType,
                 album_artist: albumArtist,
                 display_artist: albumArtist,
                 release_date: document.getElementById('pendingDiffReleaseDate').value.trim(),

@@ -99,6 +99,14 @@
                                 <input id="pendingManualAlbumName" class="search-input" type="text" placeholder="专辑名">
                             </label>
                             <label style="display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-size: 0.82em; color: var(--text-primary);">副标题 / 版本说明</span>
+                                <input id="pendingManualAlbumSubtitle" class="search-input" type="text" placeholder="如 Remastered / Deluxe">
+                            </label>
+                            <label style="display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-size: 0.82em; color: var(--text-primary);">发行类型 (Release Type)</span>
+                                <input id="pendingManualReleaseType" class="search-input" type="text" placeholder="album / ep / single / lp">
+                            </label>
+                            <label style="display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-size: 0.82em; color: var(--text-primary);">专辑艺术家</span>
                                 <input id="pendingManualAlbumArtist" class="search-input" type="text" placeholder="专辑艺术家">
                             </label>
@@ -173,10 +181,18 @@
                     <span>专辑元数据预览与覆盖设置</span>
                     <span style="font-size: 0.8em; font-weight: normal; opacity: 0.7; color: var(--text-secondary);">可以直接在此修改即将写入专辑表的各个属性</span>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+                <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
                     <label style="display: flex; flex-direction: column; gap: 6px;">
                         <span style="font-size: 0.82em; color: var(--text-primary); font-weight: 600;">专辑名称</span>
                         <input id="pendingDiffAlbumName" class="search-input" type="text" placeholder="专辑名称">
+                    </label>
+                    <label style="display: flex; flex-direction: column; gap: 6px;">
+                        <span style="font-size: 0.82em; color: var(--text-primary); font-weight: 600;">副标题 / 版本说明</span>
+                        <input id="pendingDiffAlbumSubtitle" class="search-input" type="text" placeholder="如 Remastered / Deluxe">
+                    </label>
+                    <label style="display: flex; flex-direction: column; gap: 6px;">
+                        <span style="font-size: 0.82em; color: var(--text-primary); font-weight: 600;">发行类型</span>
+                        <input id="pendingDiffReleaseType" class="search-input" type="text" placeholder="album / ep / single / lp">
                     </label>
                     <label style="display: flex; flex-direction: column; gap: 6px;">
                         <span style="font-size: 0.82em; color: var(--text-primary); font-weight: 600;">专辑艺术家</span>

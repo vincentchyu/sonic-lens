@@ -13,10 +13,10 @@ func TestGetTopArtistsFromStatReturnsRawRows(t *testing.T) {
 	_, mock := newModelTestDB(t)
 
 	topArtistRows := sqlmock.NewRows(
-		[]string{"id", "period_days", "metric_type", "artist", "metric_value", "rank", "updated_at"},
+		[]string{"period_days", "metric_type", "artist", "metric_value", "rank", "updated_at"},
 	).
-		AddRow(1, 0, "plays", "Pink Floyd", 305, 1, modelTestNow).
-		AddRow(2, 0, "plays", "Radiohead", 266, 2, modelTestNow)
+		AddRow(0, "plays", "Pink Floyd", 305, 1, modelTestNow).
+		AddRow(0, "plays", "Radiohead", 266, 2, modelTestNow)
 	mock.ExpectQuery("SELECT .* FROM `top_artist_stat`").
 		WithArgs(0, "plays", 2).
 		WillReturnRows(topArtistRows)

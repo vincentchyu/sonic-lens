@@ -206,7 +206,10 @@ final class HomeViewModel: ObservableObject {
 
     private func fetchTopGenres(server: ServerConfig) async throws -> [TopGenre] {
         let client = APIClient(baseURL: server.baseURL)
-        return try await client.getJSON(path: APIPath.topGenres)
+        return try await client.getJSON(
+            path: APIPath.topGenres,
+            queryItems: [URLQueryItem(name: "limit", value: "50")]
+        )
     }
 
     private func fetchRanking(server: ServerConfig) async throws -> [TopTrack] {

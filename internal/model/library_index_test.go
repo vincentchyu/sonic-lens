@@ -23,8 +23,8 @@ func TestGetAlbumIndexRowsIncludesCoverFields(t *testing.T) {
 				"    WHERE ai.is_disabled = false\n" +
 				"      AND (ai.album_id = a.id OR ((ai.album_id = 0 OR ai.album_id IS NULL) AND ai.artist = a.artist AND ai.album = a.name))\n" +
 				") AS has_insight,\n" +
-				"COALESCE(SUM(t.play_count), 0) AS play_count,\n" +
-				"a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at FROM album AS a LEFT JOIN track AS t ON t.album = a.name AND t.artist = a.artist AND COALESCE(t.album_subtitle, '') = COALESCE(a.name_subtitle, '') GROUP BY a.id, a.name, a.name_subtitle, a.artist, a.release_date, a.original_release_date, a.cover_art_url, a.cover_art_mime, a.cover_art_object_key, a.created_at ORDER BY a.id ASC",
+				"a.play_count AS play_count,\n" +
+				"a.created_at, a.updated_at FROM album AS a ORDER BY a.id ASC",
 		),
 	).
 		WillReturnRows(
@@ -65,8 +65,8 @@ func TestGetAlbumIndexRowsByIDsIncludesCoverFields(t *testing.T) {
 				"    WHERE ai.is_disabled = false\n" +
 				"      AND (ai.album_id = a.id OR ((ai.album_id = 0 OR ai.album_id IS NULL) AND ai.artist = a.artist AND ai.album = a.name))\n" +
 				") AS has_insight,\n" +
-				"COALESCE(SUM(t.play_count), 0) AS play_count,\n" +
-				"a.created_at, MAX(COALESCE(t.updated_at, a.updated_at, a.created_at)) AS updated_at FROM album AS a LEFT JOIN track AS t ON t.album = a.name AND t.artist = a.artist AND COALESCE(t.album_subtitle, '') = COALESCE(a.name_subtitle, '') WHERE a.id IN (?) GROUP BY a.id, a.name, a.name_subtitle, a.artist, a.release_date, a.original_release_date, a.cover_art_url, a.cover_art_mime, a.cover_art_object_key, a.created_at ORDER BY a.id ASC",
+				"a.play_count AS play_count,\n" +
+				"a.created_at, a.updated_at FROM album AS a WHERE a.id IN (?) ORDER BY a.id ASC",
 		),
 	).
 		WithArgs(int64(77)).

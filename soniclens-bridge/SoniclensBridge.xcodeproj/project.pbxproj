@@ -33,6 +33,7 @@
 		21A96E43708C0DCAB3860F3E /* LongPosterPaginator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DA62012541F072296477DB /* LongPosterPaginator.swift */; };
 		21F8DE4E8A69DDEC4FA4BD18 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43181A2E6B98557579BBBD91 /* AppStore.swift */; };
 		22BE4E5C161217B910599A9C /* PlaybackBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 004D6378FD701E286C32ADF3 /* PlaybackBarView.swift */; };
+		23CA2B33E6AF6422C4A6268A /* GenreAlbumsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0277102B7F01B988C3F55649 /* GenreAlbumsSheet.swift */; };
 		23D4B05496D81A66BD9DD7D2 /* SharePosterViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C104571EDEE07E22E563C5C1 /* SharePosterViewFactory.swift */; };
 		27405095282DC70A2CCB9659 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0680F99F9446C9D23554280F /* HomeViewModel.swift */; };
 		27961124DA96048606C5F96F /* SharePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B36CC355D9E56DBD9FF1AF /* SharePreviewView.swift */; };
@@ -91,6 +92,7 @@
 		4CDCDFF6CF248397F187BB4F /* InsightAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F0B6A1E67D1325074F09D7 /* InsightAPI.swift */; };
 		4D7A6C6E29C589114186B51B /* NowPlayingPayloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08CA9F0E8CD64CD1F04DA812 /* NowPlayingPayloadStore.swift */; };
 		4DF5F7F92353B5C67862C8E7 /* PhoneHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5285A85D59EB8D92826CFD33 /* PhoneHomeView.swift */; };
+		4DF844F9AF765CD3ED220CDB /* GenreAlbumsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0277102B7F01B988C3F55649 /* GenreAlbumsSheet.swift */; };
 		4F312B40C91A746F0AB6687B /* RecentServerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 256AF2086D5C9B1DE1A6395A /* RecentServerStore.swift */; };
 		4F4D38EF184C79D8948B30A9 /* InsightRouteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15D2328B9E15DE706B932E1 /* InsightRouteModels.swift */; };
 		4F80EBEF0410B37E54CC16F1 /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DDB4881E9F435E801A2D1B /* LibraryModels.swift */; };
@@ -134,6 +136,7 @@
 		6FB6CAC98A339E080FCB7A82 /* PadAppLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2C39035D473CA17E95189F0 /* PadAppLayoutView.swift */; };
 		70285570AE8ACA4859158B8B /* InsightAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F0B6A1E67D1325074F09D7 /* InsightAPI.swift */; };
 		70D4BE129CE094387A850EDB /* SonicLensInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBAFB1C04FC674CC2B65B40 /* SonicLensInsightsView.swift */; };
+		720804DB0886CCEF09AB8310 /* GenreAlbumsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86648D8A9AE2384CAAE85BAA /* GenreAlbumsViewModel.swift */; };
 		740DF9DFE0BEAC8C32745CB2 /* PhoneRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870DF2F0F66AACA686D348F3 /* PhoneRootView.swift */; };
 		7565DDEFAB5AD5716C89A3A8 /* PhoneNowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71311915DAB28B66FC8AA26 /* PhoneNowPlayingView.swift */; };
 		773AFF02D6E67AB1EA3BA01B /* PhoneRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870DF2F0F66AACA686D348F3 /* PhoneRootView.swift */; };
@@ -159,6 +162,7 @@
 		84F018AFA7942427130C0F8C /* InsightRouteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15D2328B9E15DE706B932E1 /* InsightRouteModels.swift */; };
 		86FDA0E3BE7AE8649DA17E3D /* PadRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F68AA6A365DA7F594EA260FA /* PadRootView.swift */; };
 		899AC39B961AFAE1B7A3FB6F /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B07BABF61B211B60E61FB9E /* BonjourDiscovery.swift */; };
+		8A20E1A0F5F93252EB2F5CD5 /* GenreAlbumsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86648D8A9AE2384CAAE85BAA /* GenreAlbumsViewModel.swift */; };
 		8A7363A7038EE5250A9C6473 /* InsightDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0362CA3244A857F9B364CD22 /* InsightDetailView.swift */; };
 		8BC574BCBAFB7A901D6633C4 /* FavoriteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 339F1CB6F00D6A9422DFCA42 /* FavoriteModels.swift */; };
 		8C586369EA1F8BA1FB106E09 /* ShareRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5973765DBF52C95B0FD493 /* ShareRenderer.swift */; };
@@ -215,6 +219,7 @@
 		B0192F7BC2B3257D0C84CF50 /* LibrarySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38AFE3DB1739AAF314F56DAC /* LibrarySyncService.swift */; };
 		B064B56B57E1ED5FD29D9C19 /* InsightJobPhase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDD9BF545CF65A4E860511E /* InsightJobPhase.swift */; };
 		B096E49C377119EE8F1C03D2 /* InsightFeedbackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D6624AAE762F49BD611AE1 /* InsightFeedbackViews.swift */; };
+		B0B3DDCE1E69285DF8B589F5 /* GenreAlbumsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86648D8A9AE2384CAAE85BAA /* GenreAlbumsViewModel.swift */; };
 		B1CC9050C2F0192C4EA72E2E /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE6C922D8DF475CD234AAA26 /* PlayerView.swift */; };
 		B304C7079408B733E32FAD6D /* PhotoSaveCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF599DAE4909AC0E606E22F /* PhotoSaveCoordinator.swift */; };
 		B326832536F2C7A92CCB2DC7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BF4CB1E0FA47CF6F18BF57B1 /* Assets.xcassets */; };
@@ -270,6 +275,7 @@
 		E0E19E93632C48A6CF391A2C /* SharePosterViewFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C104571EDEE07E22E563C5C1 /* SharePosterViewFactory.swift */; };
 		E252C00F7B2E137D818D3488 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9447CC4E32C26C917C278B7E /* LibraryView.swift */; };
 		E32BA17FD9EBFC7355773493 /* InsightFeedbackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593CE3FAC5C239E81CA10C2D /* InsightFeedbackModels.swift */; };
+		E4F99B767AB400E451CDD67E /* GenreAlbumsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0277102B7F01B988C3F55649 /* GenreAlbumsSheet.swift */; };
 		E50C160BCC16A4BE489C8660 /* PhoneAppLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370E98A0D2B7E7BBC0BAC720 /* PhoneAppLayoutView.swift */; };
 		E8346AC82C2FA3237D5763EF /* SharePayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BAF7131F9FC77BCD596FD92 /* SharePayload.swift */; };
 		E901A2B313B6FC40318A1254 /* LongPosterPaginator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DA62012541F072296477DB /* LongPosterPaginator.swift */; };
@@ -328,6 +334,7 @@
 
 /* Begin PBXFileReference section */
 		004D6378FD701E286C32ADF3 /* PlaybackBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackBarView.swift; sourceTree = "<group>"; };
+		0277102B7F01B988C3F55649 /* GenreAlbumsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenreAlbumsSheet.swift; sourceTree = "<group>"; };
 		0362CA3244A857F9B364CD22 /* InsightDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightDetailView.swift; sourceTree = "<group>"; };
 		05451E472230B2AE06CAACE8 /* PlatformUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformUI.swift; sourceTree = "<group>"; };
 		0680F99F9446C9D23554280F /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
@@ -337,7 +344,7 @@
 		0E43F5A51A809E74A7258913 /* ShareTempFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareTempFileStore.swift; sourceTree = "<group>"; };
 		11484F7926C0D524D580806B /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
 		138431EA8C1F27F5F779891E /* LiveActivityArtworkSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityArtworkSupport.swift; sourceTree = "<group>"; };
-		1480A22597B3C5079F109AC3 /* SoniclensActivities.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SoniclensActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1480A22597B3C5079F109AC3 /* SoniclensActivities.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SoniclensActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		148B76A4CBE202211D3235B4 /* AppLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLayoutView.swift; sourceTree = "<group>"; };
 		19123FCD3EB5EBF7B95EB8E0 /* InsightJobLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightJobLiveActivityWidget.swift; sourceTree = "<group>"; };
 		250A48A089169AF6F24C35EA /* ResolvedArtworkResource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResolvedArtworkResource.swift; sourceTree = "<group>"; };
@@ -358,7 +365,7 @@
 		3B07BABF61B211B60E61FB9E /* BonjourDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourDiscovery.swift; sourceTree = "<group>"; };
 		3DDD9BF545CF65A4E860511E /* InsightJobPhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightJobPhase.swift; sourceTree = "<group>"; };
 		3F5AB615C27684FC5CF539EF /* InsightLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightLiveActivityManager.swift; sourceTree = "<group>"; };
-		4108CCA09E46FF6CFD3E1314 /* SoniclensBridgePhone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoniclensBridgePhone.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4108CCA09E46FF6CFD3E1314 /* SoniclensBridgePhone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SoniclensBridgePhone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		43181A2E6B98557579BBBD91 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		44ACDA58B4F1CCCECE1C02A1 /* Snapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshots.swift; sourceTree = "<group>"; };
 		44D0DA1E51B306353F308706 /* ToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastView.swift; sourceTree = "<group>"; };
@@ -385,6 +392,7 @@
 		80D6624AAE762F49BD611AE1 /* InsightFeedbackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightFeedbackViews.swift; sourceTree = "<group>"; };
 		823B6FC23CFC4555B0CE08CE /* SharePosterViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePosterViews.swift; sourceTree = "<group>"; };
 		84359863805EDD0032B06CB7 /* Decoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decoding.swift; sourceTree = "<group>"; };
+		86648D8A9AE2384CAAE85BAA /* GenreAlbumsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenreAlbumsViewModel.swift; sourceTree = "<group>"; };
 		8685337138C1440794462E7B /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
 		870DF2F0F66AACA686D348F3 /* PhoneRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneRootView.swift; sourceTree = "<group>"; };
 		8BAF7131F9FC77BCD596FD92 /* SharePayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePayload.swift; sourceTree = "<group>"; };
@@ -612,6 +620,7 @@
 			isa = PBXGroup;
 			children = (
 				BBBFCAD5691A19C887ED8D52 /* AlbumDetailViewModel.swift */,
+				86648D8A9AE2384CAAE85BAA /* GenreAlbumsViewModel.swift */,
 				B9D6EE5141125E69C9EE4D4E /* HomeHotModulePresentation.swift */,
 				0680F99F9446C9D23554280F /* HomeViewModel.swift */,
 				AB1FECDFC2861EFCD641AEA6 /* InsightFeedbackViewModel.swift */,
@@ -678,6 +687,7 @@
 				49B1BB3496A4AD79B2C5FBED /* ButtonStyles.swift */,
 				EAF9759C719BF61DA9A2FC3B /* ConnectionRecoveryViews.swift */,
 				55173802523FEC1D0C64C5B0 /* ConnectionView.swift */,
+				0277102B7F01B988C3F55649 /* GenreAlbumsSheet.swift */,
 				A709B612B16F85A3D0C163AA /* GlassStyles.swift */,
 				2C8FCD2E9C10D53C4EDAAA98 /* HomeHotModulesView.swift */,
 				F5A95BD7351834595CE51F6A /* HomeView.swift */,
@@ -830,7 +840,13 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					034B5C6481ED8DF1EE5E8FB3 = {
+						DevelopmentTeam = "";
+					};
 					6F6CD237FCCBDC9208E246C4 = {
+						DevelopmentTeam = "";
+					};
+					AACB91906E8E794EB6FA76AE = {
 						DevelopmentTeam = "";
 					};
 					F3B9AB24FBEC93F1A4059079 = {
@@ -914,6 +930,8 @@
 				483D533AB86AC155A123118E /* Endpoints.swift in Sources */,
 				EADCB4981081A30EA1EFCEF1 /* FavoriteActionStore.swift in Sources */,
 				5AE1D6FB639FAEEA7A07F3EA /* FavoriteModels.swift in Sources */,
+				23CA2B33E6AF6422C4A6268A /* GenreAlbumsSheet.swift in Sources */,
+				8A20E1A0F5F93252EB2F5CD5 /* GenreAlbumsViewModel.swift in Sources */,
 				5ED57C5CC72984A978B1AB61 /* GlassStyles.swift in Sources */,
 				A5189B4E89E1AF3A6A7AF05E /* HomeHotModulePresentation.swift in Sources */,
 				931E0ECFC427ABF142E2AC08 /* HomeHotModulesView.swift in Sources */,
@@ -1015,6 +1033,8 @@
 				64D8653E21C7B5713F0A9128 /* Endpoints.swift in Sources */,
 				370ED1A1D1C52AD3A4A5CE22 /* FavoriteActionStore.swift in Sources */,
 				5D443050BC71D50D85AE6303 /* FavoriteModels.swift in Sources */,
+				E4F99B767AB400E451CDD67E /* GenreAlbumsSheet.swift in Sources */,
+				720804DB0886CCEF09AB8310 /* GenreAlbumsViewModel.swift in Sources */,
 				A195834CE31352629C076362 /* GlassStyles.swift in Sources */,
 				9E909E3220AB7403352ED40F /* HomeHotModulePresentation.swift in Sources */,
 				4C1E5CC9C79B0F48066E1E23 /* HomeHotModulesView.swift in Sources */,
@@ -1113,6 +1133,8 @@
 				FAB9850AFE41265E921B3AB3 /* Endpoints.swift in Sources */,
 				2D7FF2F0834BD0DF6C75E9BC /* FavoriteActionStore.swift in Sources */,
 				8BC574BCBAFB7A901D6633C4 /* FavoriteModels.swift in Sources */,
+				4DF844F9AF765CD3ED220CDB /* GenreAlbumsSheet.swift in Sources */,
+				B0B3DDCE1E69285DF8B589F5 /* GenreAlbumsViewModel.swift in Sources */,
 				1CFDC3CFB95673AC6EC00436 /* GlassStyles.swift in Sources */,
 				DD7F2BBFFA4ADFFC17EA407C /* HomeHotModulePresentation.swift in Sources */,
 				11D1F0643369DBD8E60BC757 /* HomeHotModulesView.swift in Sources */,
@@ -1222,14 +1244,9 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = SoniclensActivities/SoniclensActivities.entitlements;
-				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = SoniclensActivities/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.phone.activities";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1244,10 +1261,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SoniclensBridge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.pad";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1261,13 +1275,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SoniclensBridge/SoniclensBridgePhone.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = SoniclensBridge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.phone";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1282,10 +1292,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SoniclensBridge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.pad";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1299,14 +1306,9 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = SoniclensActivities/SoniclensActivities.entitlements;
-				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = SoniclensActivities/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.phone.activities";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1320,10 +1322,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = "SoniclensBridge/Info-macOS.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.mac";
 				SDKROOT = macosx;
@@ -1336,13 +1335,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SoniclensBridge/SoniclensBridgePhone.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 76Y78RFMMU;
 				INFOPLIST_FILE = SoniclensBridge/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.phone";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1356,10 +1351,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = "SoniclensBridge/Info-macOS.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vincentchyu.soniclens-bridge.mac";
 				SDKROOT = macosx;

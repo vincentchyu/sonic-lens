@@ -324,9 +324,9 @@ router.get('/api/dashboard/top-genres', async (req, env) => {
         try {
             const db = env.DB;
             const url = new URL(req.url);
-            const limit = parseInt(url.searchParams.get("limit") || "10");
+            const limit = parseInt(url.searchParams.get("limit") || "50");
             let {results} = await db.prepare("SELECT genre_name as track_genre_name, track_genre_count, genre_name_zh, genre_count FROM top_genre_stat ORDER BY rank ASC LIMIT ?").bind(limit).all();
-            if (!results || results.length === 0) {
+            if (!results || results.length < limit) {
                 ({results} = await db.prepare("select tg.track_genre_name, tg.track_genre_count, g.name_zh as genre_name_zh, g.play_count as genre_count from (select genre as track_genre_name, sum(play_count) as track_genre_count from tracks where genre != '' group by genre order by track_genre_count desc limit ?) as tg left join genres as g on tg.track_genre_name = g.name").bind(limit).all());
             }
             return jsonResponse(results);

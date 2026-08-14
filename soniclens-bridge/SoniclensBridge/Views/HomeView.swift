@@ -5,6 +5,7 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @State private var selectedRecentTrack: Track?
     @State private var selectedAlbumID: Int64?
+    @State private var selectedGenreItem: HomeHotGenrePresentationItem?
     @State private var rankingSearchText: String = ""
 
     var body: some View {
@@ -12,6 +13,7 @@ struct HomeView: View {
             viewModel: viewModel,
             selectedRecentTrack: $selectedRecentTrack,
             selectedAlbumID: $selectedAlbumID,
+            selectedGenreItem: $selectedGenreItem,
             rankingSearchText: $rankingSearchText
         )
     }
@@ -22,8 +24,10 @@ struct HomeContentView: View {
     @ObservedObject var viewModel: HomeViewModel
     @Binding var selectedRecentTrack: Track?
     @Binding var selectedAlbumID: Int64?
+    @Binding var selectedGenreItem: HomeHotGenrePresentationItem?
     @Binding var rankingSearchText: String
     @State private var layoutModes = HomeLayoutModes()
+    @State private var activeListeningProfileDetailMode: ListeningProfileDetailMode? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -62,9 +66,15 @@ struct HomeContentView: View {
                                     trendSubtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
                                     summaryText: hotPresentation.combinedSummaryText,
                                     footnoteText: hotPresentation.profileFootnoteText,
-                                    genres: Array(hotPresentation.genres.prefix(3)),
-                                    sources: Array(hotPresentation.sources.prefix(3)),
-                                    accentKey: selectedAccent
+                                    genres: hotPresentation.genres,
+                                    sources: hotPresentation.sources,
+                                    accentKey: selectedAccent,
+                                    onSelectGenre: { item in
+                                        selectedGenreItem = item
+                                    },
+                                    onOpenDetailMode: { mode in
+                                        activeListeningProfileDetailMode = mode
+                                    }
                                 )
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                             } else {
@@ -82,10 +92,16 @@ struct HomeContentView: View {
                                     ListeningProfileCard(
                                         summaryText: hotPresentation.combinedSummaryText,
                                         footnoteText: hotPresentation.profileFootnoteText,
-                                        genres: Array(hotPresentation.genres.prefix(3)),
-                                        sources: Array(hotPresentation.sources.prefix(3)),
+                                        genres: hotPresentation.genres,
+                                        sources: hotPresentation.sources,
                                         accentKey: selectedAccent,
-                                        layoutStyle: .split
+                                        layoutStyle: .split,
+                                        onSelectGenre: { item in
+                                            selectedGenreItem = item
+                                        },
+                                        onOpenDetailMode: { mode in
+                                            activeListeningProfileDetailMode = mode
+                                        }
                                     )
                                 }
                             }
@@ -219,6 +235,28 @@ struct HomeContentView: View {
         }
         .navigationDestination(item: $selectedAlbumID) { albumID in
             albumDetailDestination(albumID: albumID)
+        }
+        .sheet(item: $selectedGenreItem) { genreItem in
+            GenreAlbumsSheet(
+                item: genreItem,
+                onSelectAlbum: { albumID in
+                    selectedAlbumID = albumID
+                }
+            )
+        }
+        .sheet(item: $activeListeningProfileDetailMode) { mode in
+            ListeningProfileDetailSheet(
+                mode: mode,
+                summaryText: viewModel.hotModulePresentation.combinedSummaryText,
+                footnoteText: viewModel.hotModulePresentation.profileFootnoteText,
+                genres: viewModel.hotModulePresentation.genres,
+                sources: viewModel.hotModulePresentation.sources,
+                accentKey: viewModel.hotModulePresentation.primaryAccentKey,
+                onSelectGenre: { genreItem in
+                    activeListeningProfileDetailMode = nil
+                    selectedGenreItem = genreItem
+                }
+            )
         }
     }
 }
@@ -599,6 +637,8 @@ private struct WideListeningInsightsSection: View {
     let genres: [HomeHotGenrePresentationItem]
     let sources: [HomeHotSourcePresentationItem]
     let accentKey: HomeHotAccentKey?
+    var onSelectGenre: ((HomeHotGenrePresentationItem) -> Void)? = nil
+    var onOpenDetailMode: ((ListeningProfileDetailMode) -> Void)? = nil
 
     var body: some View {
         GlassPanel(cornerRadius: 18, padding: 0) {
@@ -608,7 +648,9 @@ private struct WideListeningInsightsSection: View {
                     footnoteText: footnoteText,
                     genres: genres,
                     sources: sources,
-                    accentKey: accentKey
+                    accentKey: accentKey,
+                    onSelectGenre: onSelectGenre,
+                    onOpenDetailMode: onOpenDetailMode
                 )
                 .padding(18)
                 .frame(width: 380, alignment: .topLeading)

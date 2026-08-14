@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vincentchyu/sonic-lens/common"
-	"github.com/vincentchyu/sonic-lens/config"
 	"github.com/vincentchyu/sonic-lens/core/log"
 )
 
@@ -142,7 +141,7 @@ func normalizeTrackStorageMetadata(metadata *TrackMetadata) {
 
 	metadata.AlbumArtist = normalizeTrackStorageText(metadata.AlbumArtist)
 	metadata.AlbumSubtitle = normalizeTrackStorageText(metadata.AlbumSubtitle)
-	metadata.Genre = normalizeTrackStorageText(metadata.Genre)
+	metadata.Genre = NormalizeGenre(nil, metadata.Genre)
 	metadata.Composer = normalizeTrackStorageText(metadata.Composer)
 	metadata.ReleaseDate = strings.TrimSpace(metadata.ReleaseDate)
 	metadata.OriginalReleaseDate = strings.TrimSpace(metadata.OriginalReleaseDate)
@@ -165,7 +164,7 @@ func normalizeTrackForStorage(track *Track) {
 	track.AlbumSubtitle = normalizeTrackStorageText(track.AlbumSubtitle)
 	track.Track = normalizeTrackStorageText(track.Track)
 	track.AlbumArtist = normalizeTrackStorageText(track.AlbumArtist)
-	track.Genre = normalizeTrackStorageText(track.Genre)
+	track.Genre = NormalizeGenre(nil, track.Genre)
 	track.Composer = normalizeTrackStorageText(track.Composer)
 	track.ReleaseDate = strings.TrimSpace(track.ReleaseDate)
 	track.MusicBrainzID = strings.TrimSpace(track.MusicBrainzID)
@@ -493,12 +492,13 @@ func preferredPlaybackAlbumArtist(artist, albumArtist string) string {
 }
 
 func ensureGenreExistsTx(ctx context.Context, tx *gorm.DB, genreName string) error {
-	if genreName == "" {
+	cleanGenre := NormalizeGenre(tx, genreName)
+	if cleanGenre == "" {
 		return nil
 	}
 
 	var genre Genre
-	err := tx.Where("name = ?", genreName).First(&genre).Error
+	err := tx.Where("name = ?", cleanGenre).First(&genre).Error
 	if err == nil {
 		return nil
 	}
@@ -507,12 +507,12 @@ func ensureGenreExistsTx(ctx context.Context, tx *gorm.DB, genreName string) err
 	}
 
 	genre = Genre{
-		Name:      genreName,
+		Name:      cleanGenre,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 	if err := tx.Create(&genre).Error; err != nil {
-		log.Warn(ctx, "CreateGenre failed", zap.String("genre", genreName), zap.Error(err))
+		log.Warn(ctx, "CreateGenre failed", zap.String("genre", cleanGenre), zap.Error(err))
 	}
 	return nil
 }
@@ -537,7 +537,7 @@ func getOrCreatePlaybackAlbumTx(tx *gorm.DB, artist, albumName string, metadata 
 		Artist:              albumArtist,
 		ReleaseDate:         metadata.ReleaseDate,
 		OriginalReleaseDate: metadata.OriginalReleaseDate,
-		Genre:               metadata.Genre,
+		Genre:               NormalizeGenre(tx, metadata.Genre),
 	}
 	if err := getOrCreateAlbumTx(tx, album); err != nil {
 		return nil, err
@@ -1747,7 +1747,7 @@ func GetTracksByPeriod(ctx context.Context, limit int, offset int, period string
 	var rows []aggRow
 	db := GetDB().WithContext(ctx).Model(&TrackPlayRecord{}).Where("play_time >= ?", startTime)
 	if keyword != "" {
-		if config.ConfigObj.Database.Type == string(common.DatabaseTypeMySQL) {
+		if isMySQL(db) {
 			db = db.Where("MATCH(track, artist, album) AGAINST(? IN BOOLEAN MODE)", keyword)
 		} else {
 			kw := "%" + keyword + "%"
@@ -1898,4 +1898,69 @@ func GetTracksOrderedByAlbumCount(ctx context.Context, keyword string) (int64, e
 	}
 	err := db.Count(&count).Error
 	return count, err
+}
+
+// ReconcileTrackPlayCountsTx 在事务中根据听歌流水对全量或指定曲目的 play_count 进行纠偏校准
+func ReconcileTrackPlayCountsTx(tx *gorm.DB, targetTrackIDs ...int64) error {
+	if tx == nil {
+		return errors.New("tx is nil")
+	}
+
+	type trackStat struct {
+		TrackID   int64 `gorm:"column:resolved_track_id"`
+		PlayCount int64 `gorm:"column:play_count"`
+	}
+
+	var stats []trackStat
+	query := tx.Model(&TrackPlayRecord{}).
+		Select("resolved_track_id, COUNT(*) as play_count").
+		Where("resolved_track_id > 0")
+	if len(targetTrackIDs) > 0 {
+		query = query.Where("resolved_track_id IN (?)", targetTrackIDs)
+	}
+	query = query.Group("resolved_track_id")
+
+	if err := query.Scan(&stats).Error; err != nil {
+		return err
+	}
+
+	processedIDs := make(map[int64]bool)
+	for _, s := range stats {
+		if s.TrackID > 0 {
+			if err := tx.Model(&Track{}).Where("id = ?", s.TrackID).Update("play_count", s.PlayCount).Error; err != nil {
+				return err
+			}
+			processedIDs[s.TrackID] = true
+		}
+	}
+
+	// 2. 对账未出现的曲目 play_count 安全置 0
+	if len(targetTrackIDs) > 0 {
+		for _, tid := range targetTrackIDs {
+			if !processedIDs[tid] {
+				tx.Model(&Track{}).Where("id = ?", tid).Update("play_count", 0)
+			}
+		}
+	} else if len(processedIDs) > 0 {
+		var ids []int64
+		for id := range processedIDs {
+			ids = append(ids, id)
+		}
+		if err := tx.Where("id NOT IN (?) AND play_count != 0", ids).Model(&Track{}).Update("play_count", 0).Error; err != nil {
+			return err
+		}
+	} else {
+		if err := tx.Where("play_count != 0").Model(&Track{}).Update("play_count", 0).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ReconcileTrackPlayCounts 对全量或指定曲目执行播放对账
+func ReconcileTrackPlayCounts(ctx context.Context, targetTrackIDs ...int64) error {
+	return InTx(ctx, func(tx *gorm.DB) error {
+		return ReconcileTrackPlayCountsTx(tx, targetTrackIDs...)
+	})
 }

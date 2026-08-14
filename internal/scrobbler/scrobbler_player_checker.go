@@ -388,8 +388,17 @@ func (b *BasePlayerChecker) resolveArtwork(
 
 // handleTrackScrobble 处理曲目标记
 func (b *BasePlayerChecker) handleTrackScrobble(ctx context.Context, snapshot playingTrackSnapshot) {
-	result := b.trackService.HandleTrackPlaybackThreshold(ctx, snapshot.toPlaybackEventInput(b.source, b.now))
+	if b.scrobbledTracks[snapshot.trackKey] {
+		log.Warn(
+			ctx, string(b.source)+"检测到当前曲目已上报，跳过重复听歌标记",
+			zap.String("track", snapshot.playerInfo.GetTitle()),
+		)
+		return
+	}
+	// 立即先锁定防重标记，防止 HandleTrackPlaybackThreshold 长耗时期间下一次轮询并发触发
 	b.scrobbledTracks[snapshot.trackKey] = true
+
+	result := b.trackService.HandleTrackPlaybackThreshold(ctx, snapshot.toPlaybackEventInput(b.source, b.now))
 	b.pushCount.Add(1)
 	addTrackPlaybackEvent(
 		b.currentTrackSpan,

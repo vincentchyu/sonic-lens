@@ -223,6 +223,8 @@ struct ListeningProfileCard: View {
     let sources: [HomeHotSourcePresentationItem]
     let accentKey: HomeHotAccentKey?
     let layoutStyle: LayoutStyle
+    var onSelectGenre: ((HomeHotGenrePresentationItem) -> Void)? = nil
+    var onOpenDetailMode: ((ListeningProfileDetailMode) -> Void)? = nil
 
     var body: some View {
         GlassPanel(cornerRadius: 20, padding: 18) {
@@ -232,7 +234,9 @@ struct ListeningProfileCard: View {
                     footnoteText: footnoteText,
                     genres: genres,
                     sources: sources,
-                    accentKey: accentKey
+                    accentKey: accentKey,
+                    onSelectGenre: onSelectGenre,
+                    onOpenDetailMode: onOpenDetailMode
                 )
             } else {
                 VStack(alignment: .leading, spacing: 14) {
@@ -259,13 +263,13 @@ struct ListeningProfileCard: View {
         switch layoutStyle {
         case .split:
             HStack(alignment: .top, spacing: 12) {
-                ListeningProfileGenrePanel(items: Array(genres.prefix(3)), accentKey: accentKey)
-                ListeningProfileSourcePanel(items: Array(sources.prefix(3)), accentKey: accentKey)
+                ListeningProfileGenrePanel(items: Array(genres.prefix(3)), accentKey: accentKey, onSelectGenre: onSelectGenre, onOpenDetail: { onOpenDetailMode?(.genre) })
+                ListeningProfileSourcePanel(items: Array(sources.prefix(3)), accentKey: accentKey, onOpenDetail: { onOpenDetailMode?(.source) })
             }
         case .stacked:
             VStack(spacing: 12) {
-                ListeningProfileGenrePanel(items: Array(genres.prefix(3)), accentKey: accentKey)
-                ListeningProfileSourcePanel(items: Array(sources.prefix(3)), accentKey: accentKey)
+                ListeningProfileGenrePanel(items: Array(genres.prefix(3)), accentKey: accentKey, onSelectGenre: onSelectGenre, onOpenDetail: { onOpenDetailMode?(.genre) })
+                ListeningProfileSourcePanel(items: Array(sources.prefix(3)), accentKey: accentKey, onOpenDetail: { onOpenDetailMode?(.source) })
             }
         case .sidebarSummary:
             EmptyView()
@@ -424,54 +428,132 @@ enum ListeningProfileDetailMode: String, Identifiable {
 }
 
 struct ListeningProfileDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
     let mode: ListeningProfileDetailMode
     let summaryText: String
     let footnoteText: String
     let genres: [HomeHotGenrePresentationItem]
     let sources: [HomeHotSourcePresentationItem]
     let accentKey: HomeHotAccentKey?
+    var onSelectGenre: ((HomeHotGenrePresentationItem) -> Void)? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(mode.title)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(SonicTheme.textPrimary)
-                    Text(summaryText)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(SonicTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(footnoteText)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(SonicTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        //.padding(.top, 4)
-                }
-
-                switch mode {
-                case .genre:
-                    ListeningProfileDetailSection(
-                        title: "口味偏好完整数据",
-                        summary: "点按列表项可继续查看对应流派。",
-                        slices: genreSlices,
-                        accentKey: genres.first?.accentKey ?? accentKey,
-                        trailingText: { compactCount($0.count) }
+        ZStack {
+            AmbientBackgroundView(
+                gradient: LinearGradient(
+                    colors: [SonicTheme.background, SonicTheme.background],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                orbs: [
+                    AmbientOrb(
+                        color: (genres.first?.accentKey ?? accentKey ?? .tide).solidColor.opacity(0.32),
+                        size: 380,
+                        blur: 90,
+                        opacity: 0.65,
+                        offsetFrom: CGSize(width: -120, height: -160),
+                        offsetTo: CGSize(width: -40, height: -80),
+                        duration: 16
+                    ),
+                    AmbientOrb(
+                        color: (genres.first?.accentKey ?? accentKey ?? .tide).solidColor.opacity(0.18),
+                        size: 300,
+                        blur: 110,
+                        opacity: 0.50,
+                        offsetFrom: CGSize(width: 160, height: 120),
+                        offsetTo: CGSize(width: 80, height: 180),
+                        duration: 20
                     )
-                case .source:
-                    ListeningProfileDetailSection(
-                        title: "播放渠道完整数据",
-                        summary: "点按列表项可继续查看对应来源。",
-                        slices: sourceSlices,
-                        accentKey: sources.first?.accentKey ?? accentKey,
-                        trailingText: { "\(percentLabel($0.share)) · \(compactCount($0.count))" }
-                    )
-                }
+                ],
+                renderingStyle: .staticHome
+            )
 
+            VStack(spacing: 0) {
+                topHeaderControlBar
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(mode.title)
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundStyle(SonicTheme.textPrimary)
+                            Text(summaryText)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(SonicTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(footnoteText)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(SonicTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        switch mode {
+                        case .genre:
+                            ListeningProfileDetailSection(
+                                title: "口味偏好完整数据",
+                                summary: "点按列表项可继续查看对应流派及其精选专辑。",
+                                slices: genreSlices,
+                                accentKey: genres.first?.accentKey ?? accentKey,
+                                trailingText: { compactCount($0.count) },
+                                onItemTap: { slice in
+                                    if let target = genres.first(where: { $0.id == slice.id || $0.title == slice.title }) {
+                                        dismiss()
+                                        onSelectGenre?(target)
+                                    }
+                                }
+                            )
+                        case .source:
+                            ListeningProfileDetailSection(
+                                title: "播放渠道完整数据",
+                                summary: "查看所有关联播放渠道的累计量度分布。",
+                                slices: sourceSlices,
+                                accentKey: sources.first?.accentKey ?? accentKey,
+                                trailingText: { "\(percentLabel($0.share)) · \(compactCount($0.count))" }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 24)
+                }
             }
-            .padding(16)
         }
-        .background(SonicTheme.background)
+        .frame(
+            minWidth: 480, idealWidth: 540, maxWidth: 580,
+            minHeight: 460, idealHeight: 540, maxHeight: 620
+        )
+    }
+
+    private var topHeaderControlBar: some View {
+        HStack(alignment: .center) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(SonicTheme.textSecondary.opacity(0.85))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                Image(systemName: mode == .genre ? "sparkles" : "waveform.path")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(mode.title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle((genres.first?.accentKey ?? accentKey ?? .tide).solidColor)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill((genres.first?.accentKey ?? accentKey ?? .tide).solidColor.opacity(0.12))
+            )
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
     }
 
     private var genreSlices: [ProfileDonutSlice] {
@@ -510,6 +592,7 @@ private struct ListeningProfileDetailSection: View {
     let slices: [ProfileDonutSlice]
     let accentKey: HomeHotAccentKey?
     let trailingText: (ProfileDonutSlice) -> String
+    var onItemTap: ((ProfileDonutSlice) -> Void)? = nil
 
     var body: some View {
         GlassPanel(cornerRadius: 18, padding: 16) {
@@ -536,7 +619,8 @@ private struct ListeningProfileDetailSection: View {
                         ProfileLegendRow(
                             slice: slice,
                             trailingText: trailingText(slice),
-                            accentKey: accentKey
+                            accentKey: accentKey,
+                            onTap: onItemTap != nil ? { onItemTap?(slice) } : nil
                         )
                     }
                 }
@@ -551,6 +635,8 @@ struct ListeningProfileSummarySidebar: View {
     let genres: [HomeHotGenrePresentationItem]
     let sources: [HomeHotSourcePresentationItem]
     let accentKey: HomeHotAccentKey?
+    var onSelectGenre: ((HomeHotGenrePresentationItem) -> Void)? = nil
+    var onOpenDetailMode: ((ListeningProfileDetailMode) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -559,26 +645,22 @@ struct ListeningProfileSummarySidebar: View {
                 subtitle: summaryText,
                 accentKey: accentKey
             )
-            //Text(footnoteText)
-             //   .font(.system(size: 11, weight: .medium))
-             //   .foregroundStyle(SonicTheme.textSecondary)
-             //   .fixedSize(horizontal: false, vertical: true)
-                
 
             VStack(spacing: 10) {
                 ListeningProfileGenrePanel(
                     items: Array(genres.prefix(4)),
                     accentKey: accentKey,
-                    style: .compactSummary
+                    style: .compactSummary,
+                    onSelectGenre: onSelectGenre,
+                    onOpenDetail: { onOpenDetailMode?(.genre) }
                 )
                 ListeningProfileSourcePanel(
                     items: Array(sources.prefix(3)),
                     accentKey: accentKey,
-                    style: .compactSummary
+                    style: .compactSummary,
+                    onOpenDetail: { onOpenDetailMode?(.source) }
                 )
-            }.padding(.top,22)
-
-            
+            }.padding(.top, 22)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -645,12 +727,15 @@ private struct ListeningProfileGenrePanel: View {
     let items: [HomeHotGenrePresentationItem]
     let accentKey: HomeHotAccentKey?
     var style: Style = .full
+    var onSelectGenre: ((HomeHotGenrePresentationItem) -> Void)? = nil
+    var onOpenDetail: (() -> Void)? = nil
 
     var body: some View {
         ListeningProfilePanelShell(
             title: "口味流派",
             systemImage: "sparkles",
-            accentKey: accentKey ?? items.first?.accentKey
+            accentKey: accentKey ?? items.first?.accentKey,
+            onOpenDetail: onOpenDetail
         ) {
             if items.isEmpty {
                 HotModuleEmptyState(
@@ -668,13 +753,23 @@ private struct ListeningProfileGenrePanel: View {
                             centerSubtitle: items.first.map { "\(percentLabel(share(for: $0, in: items))) 偏好占比" } ?? "等待更多数据"
                         )
                         .frame(width: 130)
+                        .onTapGesture {
+                            if let first = items.first {
+                                onSelectGenre?(first)
+                            }
+                        }
 
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(genreSlices) { slice in
                                 ProfileLegendRow(
                                     slice: slice,
                                     trailingText: compactCount(slice.count),
-                                    accentKey: accentKey
+                                    accentKey: accentKey,
+                                    onTap: {
+                                        if let target = items.first(where: { $0.id == slice.id || $0.title == slice.title }) {
+                                            onSelectGenre?(target)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -691,12 +786,22 @@ private struct ListeningProfileGenrePanel: View {
                             lineWidth: 12
                         )
                         .frame(width: 96, height: 96)
+                        .onTapGesture {
+                            if let first = items.first {
+                                onSelectGenre?(first)
+                            }
+                        }
 
                         VStack(alignment: .leading, spacing: 7) {
                             ForEach(Array(genreSlices.prefix(3))) { slice in
                                 CompactProfileLegendRow(
                                     slice: slice,
-                                    trailingText: compactCount(slice.count)
+                                    trailingText: compactCount(slice.count),
+                                    onTap: {
+                                        if let target = items.first(where: { $0.id == slice.id || $0.title == slice.title }) {
+                                            onSelectGenre?(target)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -737,12 +842,14 @@ private struct ListeningProfileSourcePanel: View {
     let items: [HomeHotSourcePresentationItem]
     let accentKey: HomeHotAccentKey?
     var style: Style = .full
+    var onOpenDetail: (() -> Void)? = nil
 
     var body: some View {
         ListeningProfilePanelShell(
             title: "播放渠道",
             systemImage: "waveform.path",
-            accentKey: accentKey ?? items.first?.accentKey
+            accentKey: accentKey ?? items.first?.accentKey,
+            onOpenDetail: onOpenDetail
         ) {
             if items.isEmpty {
                 HotModuleEmptyState(
@@ -818,30 +925,50 @@ private struct ListeningProfilePanelShell<Content: View>: View {
     let title: String
     let systemImage: String
     let accentKey: HomeHotAccentKey?
+    var onOpenDetail: (() -> Void)? = nil
     let content: Content
 
     init(
         title: String,
         systemImage: String,
         accentKey: HomeHotAccentKey?,
+        onOpenDetail: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.systemImage = systemImage
         self.accentKey = accentKey
+        self.onOpenDetail = onOpenDetail
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(SonicTheme.textPrimary)
-            } icon: {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle((accentKey ?? .tide).solidColor)
+            HStack(alignment: .center) {
+                Label {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(SonicTheme.textPrimary)
+                } icon: {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle((accentKey ?? .tide).solidColor)
+                }
+
+                Spacer(minLength: 8)
+
+                if let onOpenDetail {
+                    Button(action: onOpenDetail) {
+                        HStack(spacing: 4) {
+                            Text("查看全部")
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(SonicTheme.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             content
@@ -1487,184 +1614,158 @@ private struct ProfileLegendRow: View {
     let slice: ProfileDonutSlice
     let trailingText: String
     let accentKey: HomeHotAccentKey?
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: slice.symbolName)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(slice.accentKey.solidColor)
-                .frame(width: 28, height: 28)
-                .background(slice.accentKey.tintedSurface(opacity: 0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        Button {
+            onTap?()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: slice.symbolName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(slice.accentKey.solidColor)
+                    .frame(width: 28, height: 28)
+                    .background(slice.accentKey.tintedSurface(opacity: 0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(slice.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(SonicTheme.textPrimary)
-                        .lineLimit(1)
-                    RankBadge(rank: slice.rank, accentKey: slice.accentKey)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(slice.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(SonicTheme.textPrimary)
+                            .lineLimit(1)
+                        RankBadge(rank: slice.rank, accentKey: slice.accentKey)
+                    }
+
+                    Capsule()
+                        .fill(SonicTheme.progressTrack)
+                        .frame(height: 5)
+                        .overlay(alignment: .leading) {
+                            Capsule()
+                                .fill(slice.accentKey.gradient)
+                                .frame(maxWidth: CGFloat(max(20.0, 104.0 * max(slice.share, 0.18))), maxHeight: 5)
+                        }
                 }
 
-                Capsule()
-                    .fill(SonicTheme.progressTrack)
-                    .frame(height: 5)
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(slice.accentKey.gradient)
-                            .frame(maxWidth: CGFloat(max(20.0, 104.0 * max(slice.share, 0.18))), maxHeight: 5)
-                    }
+                Spacer(minLength: 8)
+
+                Text(trailingText)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(SonicTheme.textPrimary)
+
+                if onTap != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(SonicTheme.textSecondary.opacity(0.6))
+                }
             }
-
-            Spacer(minLength: 8)
-
-            Text(trailingText)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(SonicTheme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(slice.accentKey.tintedSurface(opacity: 0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(slice.accentKey.tintedSurface(opacity: 0.08), lineWidth: 1)
+            )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(slice.accentKey.tintedSurface(opacity: 0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(slice.accentKey.tintedSurface(opacity: 0.08), lineWidth: 1)
-        )
+        .buttonStyle(.plain)
+        .disabled(onTap == nil)
     }
 }
 
 private struct CompactProfileLegendRow: View {
     let slice: ProfileDonutSlice
     let trailingText: String
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: slice.symbolName)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(slice.accentKey.solidColor)
-                .frame(width: 22, height: 22)
-                .background(
-                    slice.accentKey.tintedSurface(opacity: 0.08),
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                )
+        Button {
+            onTap?()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: slice.symbolName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(slice.accentKey.solidColor)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        slice.accentKey.tintedSurface(opacity: 0.08),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(slice.title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(SonicTheme.textPrimary)
-                        .lineLimit(1)
-                    RankBadge(rank: slice.rank, accentKey: slice.accentKey)
+                Text(slice.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SonicTheme.textPrimary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                Text(trailingText)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(SonicTheme.textSecondary)
+
+                if onTap != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(SonicTheme.textSecondary.opacity(0.5))
                 }
-
-                Capsule()
-                    .fill(SonicTheme.progressTrack)
-                    .frame(height: 4)
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(slice.accentKey.gradient)
-                            .frame(maxWidth: CGFloat(max(18.0, 72.0 * max(slice.share, 0.18))), maxHeight: 4)
-                    }
             }
-
-            Spacer(minLength: 6)
-
-            Text(trailingText)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(SonicTheme.textPrimary)
-                .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(slice.accentKey.tintedSurface(opacity: 0.04))
+            )
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(slice.accentKey.tintedSurface(opacity: 0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(slice.accentKey.tintedSurface(opacity: 0.08), lineWidth: 1)
-        )
+        .buttonStyle(.plain)
+        .disabled(onTap == nil)
     }
 }
 
-private struct RankBadge: View {
+struct RankBadge: View {
     enum Style {
-        case inline
+        case subtle
         case light
+        case prominent
+        case inline
         case artwork
     }
 
     let rank: Int
     let accentKey: HomeHotAccentKey
-    var style: Style = .inline
+    var style: Style = .subtle
 
     var body: some View {
-        Text(rankLabel(for: rank))
-            .font(.system(size: style == .artwork ? 8 : 10, weight: .bold, design: .rounded))
-            .foregroundStyle(foregroundColor)
-            .padding(.horizontal, horizontalPadding)
-            .padding(.vertical, verticalPadding)
-            .background(backgroundShape)
-            .overlay(borderShape)
-            .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: 2)
+        Text("#\(String(format: "%02d", rank))")
+            .font(.system(size: style == .prominent ? 11 : (style == .light || style == .inline ? 10 : 9), weight: .bold, design: .monospaced))
+            .foregroundStyle(textColor)
+            .padding(.horizontal, style == .prominent ? 8 : (style == .light || style == .artwork ? 6 : 5))
+            .padding(.vertical, style == .prominent ? 4 : 2)
+            .background(backgroundColor, in: Capsule())
     }
 
-    private var foregroundColor: Color {
+    private var textColor: Color {
         switch style {
-        case .light:
-            return .white.opacity(0.82)
-        case .inline:
+        case .subtle, .inline:
             return accentKey.solidColor
-        case .artwork:
+        case .light, .prominent, .artwork:
             return .white
         }
     }
 
-    private var horizontalPadding: CGFloat {
-        style == .artwork ? 5 : 0
-    }
-
-    private var verticalPadding: CGFloat {
-        style == .artwork ? 2 : 0
-    }
-
-    @ViewBuilder
-    private var backgroundShape: some View {
-        if style == .artwork {
-            Capsule(style: .continuous)
-                .fill(accentKey.solidColor.opacity(0.88))
-        }
-    }
-
-    @ViewBuilder
-    private var borderShape: some View {
-        if style == .artwork {
-            Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.14), lineWidth: 1)
-        }
-    }
-
-    private var shadowColor: Color {
+    private var backgroundColor: Color {
         switch style {
+        case .subtle, .inline:
+            return accentKey.tintedSurface(opacity: 0.12)
         case .light:
-            return .clear
-        case .inline:
-            return .clear
-        case .artwork:
-            return .clear
-        }
-    }
-
-    private var shadowRadius: CGFloat {
-        switch style {
-        case .artwork:
-            return 0
-        case .inline, .light:
-            return 0
+            return Color.white.opacity(0.20)
+        case .prominent, .artwork:
+            return accentKey.solidColor.opacity(0.88)
         }
     }
 }
+
+
 
 private struct ProfileDonutChart: View {
     let slices: [ProfileDonutSlice]
@@ -1715,19 +1816,46 @@ private struct ProfileDonutChart: View {
     }
 
     private var chartSegments: [ProfileDonutChartSegment] {
+        let maxDisplaySlices = 8
         let visibleSlices = slices.filter { $0.share > 0 }
+        let primarySlices = Array(visibleSlices.prefix(maxDisplaySlices))
         let total = max(visibleSlices.reduce(0.0) { $0 + $1.share }, 0.0001)
-        let gap = 0.012
+        let gap = primarySlices.count > 1 ? min(0.012, 0.06 / Double(primarySlices.count)) : 0.0
         var offset = 0.0
 
-        return visibleSlices.compactMap { slice in
+        var segments: [ProfileDonutChartSegment] = []
+        for slice in primarySlices {
             let normalizedShare = slice.share / total
+            guard normalizedShare > 0.005 else { continue }
             let segmentStart = offset + gap / 2
-            let segmentEnd = max(segmentStart + 0.01, offset + max(normalizedShare - gap, 0.01))
+            let segmentEnd = min(offset + max(normalizedShare - gap / 2, 0.008), 0.999)
             offset += normalizedShare
-            guard segmentStart < segmentEnd else { return nil }
-            return ProfileDonutChartSegment(slice: slice, start: segmentStart, end: min(segmentEnd, 0.999))
+            if segmentStart < segmentEnd {
+                segments.append(ProfileDonutChartSegment(slice: slice, start: segmentStart, end: segmentEnd))
+            }
         }
+
+        if visibleSlices.count > maxDisplaySlices && offset < 0.98 {
+            let remainingShare = max(1.0 - offset, 0.0)
+            if remainingShare > 0.02 {
+                let segmentStart = offset + gap / 2
+                let segmentEnd = min(offset + max(remainingShare - gap / 2, 0.008), 0.999)
+                if segmentStart < segmentEnd {
+                    let otherSlice = ProfileDonutSlice(
+                        id: "other_genres",
+                        title: "其他",
+                        count: 0,
+                        share: remainingShare,
+                        rank: maxDisplaySlices + 1,
+                        accentKey: .slate,
+                        symbolName: "ellipsis"
+                    )
+                    segments.append(ProfileDonutChartSegment(slice: otherSlice, start: segmentStart, end: segmentEnd))
+                }
+            }
+        }
+
+        return segments
     }
 }
 
@@ -1786,7 +1914,7 @@ struct HotModuleEmptyState: View {
     }
 }
 
-private extension HomeHotAccentKey {
+extension HomeHotAccentKey {
     var solidColor: Color {
         switch self {
         case .tide:

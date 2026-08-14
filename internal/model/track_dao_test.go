@@ -188,16 +188,17 @@ func TestGetOrCreateTrackByIdentityTxNormalizesCreatedTrackText(t *testing.T) {
 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `track` WHERE artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track = ? AND track_number = ? AND disc_number = ? ORDER BY `track`.`id` LIMIT ?")).
 		WithArgs("周杰伦", "范特西", "豪华版", "发如雪", int8(3), int8(1), 1).
-		WillReturnRows(sqlmock.NewRows(trackRowsColumns()))
+		WillReturnError(gorm.ErrRecordNotFound)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `track` WHERE artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track_number = ? AND disc_number = ? LIMIT ?")).
 		WithArgs("周杰伦", "范特西", "豪华版", int8(3), int8(1), 2).
 		WillReturnRows(sqlmock.NewRows(trackRowsColumns()))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `track` WHERE artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track = ? AND track_number = ? AND disc_number = ? ORDER BY `track`.`id` LIMIT ?")).
 		WithArgs("周杰伦", "范特西", "豪华版", "发如雪", int8(3), int8(1), 1).
-		WillReturnRows(sqlmock.NewRows(trackRowsColumns()))
+		WillReturnError(gorm.ErrRecordNotFound)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `track` WHERE artist = ? AND album = ? AND COALESCE(album_subtitle, '') = ? AND track_number = ? AND disc_number = ? LIMIT ?")).
 		WithArgs("周杰伦", "范特西", "豪华版", int8(3), int8(1), 2).
 		WillReturnRows(sqlmock.NewRows(trackRowsColumns()))
+
 	mock.ExpectExec(
 		regexp.QuoteMeta(
 			"INSERT INTO `track` (`artist`,`album`,`album_subtitle`,`track`,`play_count`,`is_apple_music_fav`,`is_last_fm_fav`,`version`,`album_artist`,`track_number`,`disc_number`,`duration`,`genre`,`composer`,`release_date`,`music_brainz_id`,`source`,`bundle_id`,`unique_id`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -225,6 +226,7 @@ func TestGetOrCreateTrackByIdentityTxNormalizesCreatedTrackText(t *testing.T) {
 			"uid-2",
 		).
 		WillReturnResult(sqlmock.NewResult(93, 1))
+
 	mock.ExpectExec(
 		regexp.QuoteMeta(
 			"INSERT INTO `library_change_log` (`entity_type`,`entity_id`,`operation`) VALUES (?,?,?)",
@@ -258,6 +260,7 @@ func TestGetOrCreateTrackByIdentityTxNormalizesCreatedTrackText(t *testing.T) {
 	require.Equal(t, "范特西", track.Album)
 	require.Equal(t, "豪华版", track.AlbumSubtitle)
 	require.Equal(t, "发如雪", track.Track)
+	require.Equal(t, "中国流行乐", track.Genre)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -395,11 +398,11 @@ func TestGetOrCreatePlaybackAlbumTxPrefersAlbumArtist(t *testing.T) {
 		)
 	mock.ExpectExec(
 		regexp.QuoteMeta(
-			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`release_type`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			"INSERT INTO `album` (`name`,`name_subtitle`,`artist`,`release_date`,`original_release_date`,`genre`,`country`,`status`,`packaging`,`barcode`,`total_discs`,`disc_infos`,`sync_status`,`release_type`,`cover_art_url`,`cover_art_mime`,`cover_art_object_key`,`play_count`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 		),
 	).
 		WithArgs(
-			"Compilation Album", "", "Various Artists", "2024-01-01", "", "", "", "", "", "", 1, "", 0, "", "", "", "",
+			"Compilation Album", "", "Various Artists", "2024-01-01", "", "", "", "", "", "", 1, "", 0, "", "", "", "", int64(0),
 		).
 		WillReturnResult(sqlmock.NewResult(401, 1))
 	mock.ExpectExec(

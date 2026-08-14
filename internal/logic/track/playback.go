@@ -357,6 +357,19 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		)
 	}
 
+	if isDup, dupErr := modelIsDuplicateTrackPlayRecord(ctx, record, 60*time.Second); dupErr == nil && isDup {
+		log.Warn(
+			ctx,
+			"HandleTrackPlaybackThreshold 阻断 60 秒内同源同曲目的重复听歌流水落库",
+			zap.String("artist", record.Artist),
+			zap.String("album", record.Album),
+			zap.String("track", record.Track),
+			zap.String("player_source", record.Source),
+			zap.Time("play_time", record.PlayTime),
+		)
+		return PlaybackThresholdResult{Scrobbled: record.Scrobbled}
+	}
+
 	if insertErr := modelInsertTrackPlayRecord(ctx, record); insertErr != nil {
 		log.Warn(ctx, "HandleTrackPlaybackThreshold insert play record err", zap.Error(insertErr))
 	} else if processErr := modelProcessTrackPlayRecord(ctx, record.ID, input.Metadata); processErr != nil {

@@ -11,7 +11,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/config"
 	corelog "github.com/vincentchyu/sonic-lens/core/log"
 	"github.com/vincentchyu/sonic-lens/internal/model"
@@ -100,6 +99,7 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
+				play_count INTEGER DEFAULT 0,
 				created_at DATETIME,
 				updated_at DATETIME
 			)
@@ -229,7 +229,6 @@ func newPendingAlbumServiceTestDB(t *testing.T, name string) *gorm.DB {
 	prevMySQL := model.GlobalDBForMysql
 	prevLogger := corelog.Logger
 
-	config.ConfigObj.Database.Type = string(common.DatabaseTypeSQLite)
 	model.GlobalDBForMysql = db
 	corelog.Logger = zap.NewNop()
 
@@ -803,4 +802,146 @@ func TestApplyAlbumMBMaintenanceUpdatesTrackAlbumMBRecordingID(t *testing.T) {
 	var updatedTrack model.Track
 	require.NoError(t, db.Where("id = ?", 6006).First(&updatedTrack).Error)
 	require.Equal(t, "b72e4585-c536-4a4f-969e-8067c4b5bb99", updatedTrack.MusicBrainzID)
+}
+
+func TestManualMaintainPendingAlbumWorkItemPreservesAlbumSubtitleAndReleaseType(t *testing.T) {
+	db := newPendingAlbumServiceTestDB(t, t.Name())
+	ctx := context.Background()
+	svc := NewService()
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(
+		t,
+		db.Create(&model.TrackPlayRecord{
+			ID:            101,
+			Artist:        "Dire Straits",
+			AlbumArtist:   "Dire Straits",
+			Album:         "Communiqué",
+			AlbumSubtitle: "Remastered",
+			Track:         "Once Upon a Time in the West",
+			TrackNumber:   1,
+			DiscNumber:    1,
+			Source:        "Apple Music",
+			PlayTime:      now,
+		}).Error,
+	)
+
+	groups, err := model.GetPendingAlbumGroups(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+
+	item, err := svc.CreateOrGetPendingAlbumWorkItem(ctx, groups[0].IdentityKey)
+	require.NoError(t, err)
+	require.Equal(t, "Remastered", item.AlbumSubtitle)
+
+	report, err := svc.ManualMaintainPendingAlbumWorkItem(
+		ctx,
+		item.ID,
+		ManualPendingAlbumInput{
+			ManualAlbum: ManualPendingAlbumAlbumInput{
+				Name:          "Communiqué",
+				AlbumSubtitle: "Remastered",
+				ReleaseType:   "album",
+				AlbumArtist:   "Dire Straits",
+				DisplayArtist: "Dire Straits",
+				ReleaseDate:   "2013-02-20",
+				Genre:         "Rock",
+			},
+			ManualTracks: []ManualPendingAlbumTrackInput{
+				{
+					DiscNumber:     1,
+					TrackNumber:    1,
+					Title:          "Once Upon a Time in the West",
+					Artist:         "Dire Straits",
+					Duration:       325,
+					EvidenceTitles: []string{"Once Upon a Time in the West"},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.CreatedTracks)
+
+	var album model.Album
+	require.NoError(t, db.Where("id = ?", report.ResolvedAlbumID).First(&album).Error)
+	require.Equal(t, "Communiqué", album.Name)
+	require.Equal(t, "Remastered", album.NameSubtitle)
+	require.Equal(t, "album", album.ReleaseType)
+	require.Equal(t, int64(1), album.PlayCount)
+
+	var track model.Track
+	require.NoError(t, db.Where("album = ? AND track_number = 1", "Communiqué").First(&track).Error)
+	require.Equal(t, "Remastered", track.AlbumSubtitle)
+
+	var playRecord model.TrackPlayRecord
+	require.NoError(t, db.Where("id = 101").First(&playRecord).Error)
+	require.Equal(t, "Remastered", playRecord.AlbumSubtitle)
+	require.Equal(t, "album", playRecord.ReleaseType)
+	require.Equal(t, album.ID, playRecord.AlbumID)
+}
+
+func TestManualMaintainPendingAlbumWorkItemInheritsSubtitleAndParsesSuffix(t *testing.T) {
+	db := newPendingAlbumServiceTestDB(t, t.Name())
+	ctx := context.Background()
+	svc := NewService()
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(
+		t,
+		db.Create(&model.TrackPlayRecord{
+			ID:            201,
+			Artist:        "Artist X",
+			AlbumArtist:   "Artist X",
+			Album:         "Flowers",
+			AlbumSubtitle: "Deluxe",
+			Track:         "Track A",
+			TrackNumber:   1,
+			DiscNumber:    1,
+			Source:        "Apple Music",
+			PlayTime:      now,
+		}).Error,
+	)
+
+	groups, err := model.GetPendingAlbumGroups(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+
+	item, err := svc.CreateOrGetPendingAlbumWorkItem(ctx, groups[0].IdentityKey)
+	require.NoError(t, err)
+
+	// 手动维护时输入了 "Flowers - EP"，且未显式传 AlbumSubtitle
+	report, err := svc.ManualMaintainPendingAlbumWorkItem(
+		ctx,
+		item.ID,
+		ManualPendingAlbumInput{
+			ManualAlbum: ManualPendingAlbumAlbumInput{
+				Name:          "Flowers - EP",
+				AlbumArtist:   "Artist X",
+				DisplayArtist: "Artist X",
+				ReleaseDate:   "2020-01-01",
+				Genre:         "Pop",
+			},
+			ManualTracks: []ManualPendingAlbumTrackInput{
+				{
+					DiscNumber:     1,
+					TrackNumber:    1,
+					Title:          "Track A",
+					Artist:         "Artist X",
+					Duration:       200,
+					EvidenceTitles: []string{"Track A"},
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	var album model.Album
+	require.NoError(t, db.Where("id = ?", report.ResolvedAlbumID).First(&album).Error)
+	require.Equal(t, "Flowers", album.Name)
+	require.Equal(t, "Deluxe", album.NameSubtitle)
+	require.Equal(t, "ep", album.ReleaseType)
+
+	var track model.Track
+	require.NoError(t, db.Where("album = ? AND track_number = 1", "Flowers").First(&track).Error)
+	require.Equal(t, "Deluxe", track.AlbumSubtitle)
 }

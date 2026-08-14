@@ -98,6 +98,7 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 				cover_art_url TEXT,
 				cover_art_mime TEXT,
 				cover_art_object_key TEXT,
+				play_count INTEGER DEFAULT 0,
 				created_at DATETIME,
 				updated_at DATETIME
 			)
@@ -202,7 +203,6 @@ func newTrackResolutionTestDB(t *testing.T, name string) *gorm.DB {
 	prevMySQL := GlobalDBForMysql
 	prevLogger := corelog.Logger
 
-	config.ConfigObj.Database.Type = string(common.DatabaseTypeSQLite)
 	GlobalDBForMysql = db
 	corelog.Logger = zap.NewNop()
 

@@ -50,7 +50,10 @@ final class APIClient {
     }
 
     func post<Body: Encodable>(path: String, body: Body, timeout: TimeInterval? = nil) async throws -> Data {
-        let url = baseURL.appendingPathComponent(path)
+        let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard let url = URL(string: normalizedPath, relativeTo: baseURL)?.absoluteURL else {
+            throw URLError(.badURL)
+        }
         var request = makeRequest(url: url, method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
@@ -90,7 +93,11 @@ final class APIClient {
     }
 
     private func buildURL(path: String, queryItems: [URLQueryItem]) -> URL? {
-        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard let fullURL = URL(string: normalizedPath, relativeTo: baseURL)?.absoluteURL else {
+            return nil
+        }
+        var components = URLComponents(url: fullURL, resolvingAgainstBaseURL: false)
         let encodedQuery = queryItems.compactMap { item -> String? in
             let encodedName = Self.encodeQueryComponent(item.name)
             guard let value = item.value else { return nil }
@@ -105,7 +112,7 @@ final class APIClient {
     }
 
     private func makeRequest(url: URL, method: String) -> URLRequest {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 10.0)
         request.httpMethod = method
         request.setValue(Self.terminalIdentifier, forHTTPHeaderField: Self.terminalHeaderField)
         return request

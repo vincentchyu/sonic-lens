@@ -1134,13 +1134,13 @@ func (c *D1Client) batchUpsertPlaySourceStats(ctx context.Context, rows []*model
 
 func (c *D1Client) upsertPlaySourceStatsBatch(ctx context.Context, rows []*model.PlaySourceStat) error {
 	placeholders := make([]string, len(rows))
-	args := make([]interface{}, 0, len(rows)*4)
+	args := make([]interface{}, 0, len(rows)*3)
 	for i, row := range rows {
-		placeholders[i] = "(?, ?, ?, ?)"
-		args = append(args, row.ID, row.Source, row.Count, row.UpdatedAt.Format(time.RFC3339))
+		placeholders[i] = "(?, ?, ?)"
+		args = append(args, row.Source, row.Count, row.UpdatedAt.Format(time.RFC3339))
 	}
 	query := fmt.Sprintf(
-		"INSERT OR REPLACE INTO play_source_stat (id, source, count, updated_at) VALUES %s",
+		"INSERT OR REPLACE INTO play_source_stat (source, count, updated_at) VALUES %s",
 		strings.Join(placeholders, ", "),
 	)
 	_, err := c.execWithRetry(ctx, query, args...)

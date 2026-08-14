@@ -56,6 +56,26 @@
                 <canvas id="sourceChart"></canvas>
             </div>
         </div>
+
+        <!-- 播放数据一致性与对账控制卡片 -->
+        <div class="stat-card">
+            <div class="module-trail"></div>
+            <div class="stat-header">
+                <div class="stat-title">播放统计一致性与对账</div>
+                <div class="stat-icon icon-2">⚡</div>
+            </div>
+            <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px;">
+                <div>
+                    <div style="font-size: 12px; color: #a0aec0;">唯一事实源与对账引擎</div>
+                    <div id="reconcileStatusText" style="font-size: 12px; color: #48bb78; margin-top: 6px;">状态：物理列对账就绪</div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button id="btnRunReconcile" class="btn btn-primary" onclick="triggerPlayStatsReconcile()" style="width: 100%; padding: 7px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; background: #3182ce; color: #fff; border: none; font-weight: 500;">
+                        🔄 播放量一致性全量对账
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 图表区域 -->
@@ -103,6 +123,19 @@
             </div>
             <div class="chart-container">
                 <canvas id="genreChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 待维护未匹配流派人工干预卡片 -->
+        <div class="chart-card" id="unmatchedGenreCard" style="display: none;">
+            <div class="module-trail"></div>
+            <div class="card-header">
+                <div class="card-title" style="color: #f59e0b; display: flex; align-items: center; gap: 6px;">
+                    ⚠️ 待人工干预未归因流派
+                </div>
+                <span id="unmatchedGenreBadge" class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 8px; border-radius: 12px; font-size: 11px;">0 项</span>
+            </div>
+            <div id="unmatchedGenreList" style="padding: 10px 0; max-height: 180px; overflow-y: auto;">
             </div>
         </div>
 
