@@ -60,7 +60,12 @@ SonicLens 核心架构蓝图、领域规则、开发规范与防坑记忆。AI A
 *详细 UI 布局、多碟规范与性能模式见 [soniclens-bridge/Docs/](file:///Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge/Docs/)*
 - **工程管理**：Xcode 工程由 `project.yml` 驱动，任何 Target/配置修改必须改 `project.yml` 并执行 `xcodegen generate`，严禁手改 `.xcodeproj`。
 - **平台隔离与材质**：macOS 专属代码与 AppKit 必须通过 `#if os(macOS)` 隔离；macOS 玻璃拟态效果必须由窗口级 `NSVisualEffectView` 长期承载，禁止在 SwiftUI 修饰链中裸用。
-- **资料库架构**：坚持“本地 SQLite (schema 7+) + FTS5 搜索 + `/api/library/sync` 增量同步 + WS 推送 + 详情页懒加载”；`LibraryViewModel` 单飞刷新，首页优先返回，禁止整页重载。
+- **资料库架构与轻量索引**：
+  - 坚持“本地 SQLite (schema 7+) + FTS5 搜索 + `/api/library/sync` 增量同步 + WS 推送 + 详情页懒加载”；`LibraryViewModel` 单飞刷新，首页优先返回，禁止整页重载。
+  - **轻量索引边界红线**：`track_index` / `LibraryIndexStore` 严格保持轻量（仅保留列表展示与 FTS5 搜索核心列：`artist`, `album`, `track`, `play_count`, `duration`, `track_number`, `disc_number`, 收藏态），严禁塞入非列表必需的重度字段（如歌词、深层归因元数据）。
+  - **详情页异步装载**：曲目详情页直接消费传入的完整实体/快照，仅异步并发加载歌词 (`/api/track-lyrics`) 与音眸 (`/api/track-insight`)，避免盲目重查曲库曲目实体。
+- **流水快照独立承载**：
+  - **流水表 (`TrackPlayRecord`) vs 曲库实体 (`Track`) 严格解耦**：最近播放（`RecentPlayRecord`）属于时序播放事实，自带播放发生时的快照元数据（`genre`, `duration`, `track_number`, `disc_number` 等）。对于从未加入曲库的歌曲，点击详情时必须完整承载流水自带的元数据；杜绝因曲库无实体而导致流派与元数据空白。
 - **状态与高频隔离**：`AppStore` 仅承载全局低频态（连接/配置）；高频播放态、收藏态收口到 `PlaybackStore` / `FavoriteStore`；密集列表/详情页禁止直接订阅高频广播。
 - **播放与网络契约**：
   - GET 请求 query 参数统一经由 `APIClient` 百分号编码（将 `+` 编码为 `%2B`），路径拼接严禁使用 `appendingPathComponent` 二次转义。

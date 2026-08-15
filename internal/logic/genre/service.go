@@ -10,16 +10,18 @@ import (
 type GenreService interface {
 	CreateGenre(ctx context.Context, genre *model.Genre) error
 	GetGenreByName(ctx context.Context, name string) (*model.Genre, error)
-	GetGenreByID(ctx context.Context, id uint) (*model.Genre, error)
+	GetGenreByID(ctx context.Context, id int64) (*model.Genre, error)
 	GetAllGenres(ctx context.Context, limit, offset int) ([]*model.Genre, error)
+	GetAllGenresWithFilter(ctx context.Context, keyword, sortBy string, limit, offset int) ([]*model.Genre, int64, error)
 	UpdateGenre(ctx context.Context, genre *model.Genre) error
-	DeleteGenre(ctx context.Context, id uint) error
+	DeleteGenre(ctx context.Context, id int64) error
 	IncrementGenrePlayCount(ctx context.Context, name string) error
 	GetGenreCount(ctx context.Context) (int64, error)
 	GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error)
 	GetTopGenresWithDetails(ctx context.Context, limit int) ([]*model.TopGenre, error)
 	GetAlbumsByGenre(ctx context.Context, genre string, limit, offset int, sortBy string) ([]*model.Album, error)
 	GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error)
+	ResolveGenreTest(ctx context.Context, rawTag string) (segment string, canonicalEng string, canonicalZh string, isMatched bool, normalized string)
 }
 
 // GenreServiceImpl 实现GenreService接口
@@ -41,7 +43,7 @@ func (s *GenreServiceImpl) GetGenreByName(ctx context.Context, name string) (*mo
 }
 
 // GetGenreByID 根据ID获取流派
-func (s *GenreServiceImpl) GetGenreByID(ctx context.Context, id uint) (*model.Genre, error) {
+func (s *GenreServiceImpl) GetGenreByID(ctx context.Context, id int64) (*model.Genre, error) {
 	return model.GetGenreByID(ctx, id)
 }
 
@@ -50,13 +52,18 @@ func (s *GenreServiceImpl) GetAllGenres(ctx context.Context, limit, offset int) 
 	return model.GetAllGenres(ctx, limit, offset)
 }
 
+// GetAllGenresWithFilter 支持关键词过滤与排序的流派分页获取
+func (s *GenreServiceImpl) GetAllGenresWithFilter(ctx context.Context, keyword, sortBy string, limit, offset int) ([]*model.Genre, int64, error) {
+	return model.GetAllGenresWithFilter(ctx, keyword, sortBy, limit, offset)
+}
+
 // UpdateGenre 更新流派
 func (s *GenreServiceImpl) UpdateGenre(ctx context.Context, genre *model.Genre) error {
 	return model.UpdateGenre(ctx, genre)
 }
 
 // DeleteGenre 删除流派
-func (s *GenreServiceImpl) DeleteGenre(ctx context.Context, id uint) error {
+func (s *GenreServiceImpl) DeleteGenre(ctx context.Context, id int64) error {
 	return model.DeleteGenre(ctx, id)
 }
 
@@ -88,5 +95,16 @@ func (s *GenreServiceImpl) GetAlbumsByGenre(ctx context.Context, genre string, l
 // GetAlbumsByGenreCount 根据英文流派标准名计算关联专辑数
 func (s *GenreServiceImpl) GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error) {
 	return model.GetAlbumsByGenreCount(ctx, genre)
+}
+
+// ResolveGenreTest 对流派进行沙盒解析测试，返回分段提取、权威英文名、规范中文名、是否命中权威缓存与整体归一化结果
+func (s *GenreServiceImpl) ResolveGenreTest(ctx context.Context, rawTag string) (segment string, canonicalEng string, canonicalZh string, isMatched bool, normalized string) {
+	segment = model.ExtractPrimaryGenreTag(rawTag)
+	if segment == "" {
+		return "", "", "", false, ""
+	}
+	isMatched, canonicalEng, canonicalZh = model.ResolveStrictGenreIdentity(nil, segment)
+	normalized = model.NormalizeGenre(nil, rawTag)
+	return segment, canonicalEng, canonicalZh, isMatched, normalized
 }
 

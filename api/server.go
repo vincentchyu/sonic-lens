@@ -1749,6 +1749,238 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	// 获取流派分页列表（支持关键字搜索与排序）
+	r.GET(
+		"/api/genres", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			keyword := strings.TrimSpace(c.Query("keyword"))
+			sort := strings.TrimSpace(c.DefaultQuery("sort", "play_count"))
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+			offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+			if limit <= 0 || limit > 500 {
+				limit = 50
+			}
+			if offset < 0 {
+				offset = 0
+			}
+
+			genres, total, err := genreService.GetAllGenresWithFilter(ctx, keyword, sort, limit, offset)
+			if err != nil {
+				log.Error(ctx, "Failed to get genres with filter", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取流派列表失败: " + err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"genres": genres,
+				"total":  total,
+				"limit":  limit,
+				"offset": offset,
+			})
+		},
+	)
+
+	// 新建流派
+	r.POST(
+		"/api/genres", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			var req struct {
+				Name   string `json:"name" binding:"required"`
+				NameZh string `json:"name_zh"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "参数无效，英文流派名(name)为必填项"})
+				return
+			}
+
+			nameClean := strings.TrimSpace(req.Name)
+			nameZhClean := strings.TrimSpace(req.NameZh)
+
+			if nameClean == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "英文流派名不能为空"})
+				return
+			}
+			if common.IsExistsChineseSimplified(nameClean) || strings.HasPrefix(nameClean, "cn-slug-") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "流派英文名不能包含中文字符或 cn-slug 前缀"})
+				return
+			}
+
+			// 检查是否已存在同名英文流派
+			existing, err := genreService.GetGenreByName(ctx, nameClean)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询流派失败: " + err.Error()})
+				return
+			}
+			if existing != nil {
+				c.JSON(http.StatusConflict, gin.H{"error": "已存在同名流派: " + existing.Name})
+				return
+			}
+
+			newGenre := &model.Genre{
+				Name:   nameClean,
+				NameZh: nameZhClean,
+			}
+			if err := genreService.CreateGenre(ctx, newGenre); err != nil {
+				log.Error(ctx, "Failed to create genre", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "创建流派失败: " + err.Error()})
+				return
+			}
+
+			// 刷新流派内存权威缓存
+			_ = cache.GetGenreCache().RefreshFromDB(ctx)
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "success",
+				"message": "创建流派成功",
+				"genre":   newGenre,
+			})
+		},
+	)
+
+	// 修改流派
+	r.PUT(
+		"/api/genres/:id", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			idParam := c.Param("id")
+			id, err := strconv.ParseInt(idParam, 10, 64)
+			if err != nil || id <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的流派 ID"})
+				return
+			}
+
+			var req struct {
+				Name   string `json:"name"`
+				NameZh string `json:"name_zh"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+				return
+			}
+
+			target, err := genreService.GetGenreByID(ctx, id)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取流派失败: " + err.Error()})
+				return
+			}
+			if target == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的流派记录"})
+				return
+			}
+
+			nameClean := strings.TrimSpace(req.Name)
+			if nameClean != "" && nameClean != target.Name {
+				if common.IsExistsChineseSimplified(nameClean) || strings.HasPrefix(nameClean, "cn-slug-") {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "流派英文名不能包含中文字符或 cn-slug 前缀"})
+					return
+				}
+				target.Name = nameClean
+			}
+			target.NameZh = strings.TrimSpace(req.NameZh)
+
+			if err := genreService.UpdateGenre(ctx, target); err != nil {
+				log.Error(ctx, "Failed to update genre", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新流派失败: " + err.Error()})
+				return
+			}
+
+			// 刷新流派内存权威缓存
+			_ = cache.GetGenreCache().RefreshFromDB(ctx)
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "success",
+				"message": "更新流派成功",
+				"genre":   target,
+			})
+		},
+	)
+
+	// 删除流派
+	r.DELETE(
+		"/api/genres/:id", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			idParam := c.Param("id")
+			id, err := strconv.ParseInt(idParam, 10, 64)
+			if err != nil || id <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的流派 ID"})
+				return
+			}
+
+			target, err := genreService.GetGenreByID(ctx, id)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询流派失败: " + err.Error()})
+				return
+			}
+			if target == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "流派不存在或已被删除"})
+				return
+			}
+
+			if err := genreService.DeleteGenre(ctx, id); err != nil {
+				log.Error(ctx, "Failed to delete genre", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "删除流派失败: " + err.Error()})
+				return
+			}
+
+			// 刷新流派内存权威缓存
+			_ = cache.GetGenreCache().RefreshFromDB(ctx)
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "success",
+				"message": "流派已删除",
+			})
+		},
+	)
+
+	// 一键全量流派对账与缓存刷新
+	r.POST(
+		"/api/genres/reconcile", func(c *gin.Context) {
+			ctx := c.Request.Context()
+
+			// 1. 刷新流派权威缓存
+			_ = cache.GetGenreCache().RefreshFromDB(ctx)
+
+			// 2. 执行全量流水对账
+			if err := model.ReconcileGenrePlayCounts(ctx); err != nil {
+				log.Error(ctx, "全量流派对账失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "流派对账失败: " + err.Error()})
+				return
+			}
+
+			// 3. 刷新 Dashboard 统计缓存
+			_ = model.RefreshDashboardStats(ctx)
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "success",
+				"message": "全量流派对账完成，已重新聚合播放量并刷新统计",
+			})
+		},
+	)
+
+	// 流派归因解析沙盒测试
+	r.POST(
+		"/api/genres/resolve-test", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			var req struct {
+				RawGenre string `json:"raw_genre" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "参数无效，raw_genre 为必填项"})
+				return
+			}
+
+			segment, canonicalEng, canonicalZh, isMatched, normalized := genreService.ResolveGenreTest(ctx, req.RawGenre)
+
+			c.JSON(http.StatusOK, gin.H{
+				"raw_genre":     req.RawGenre,
+				"segment":       segment,
+				"canonical_eng": canonicalEng,
+				"canonical_zh":  canonicalZh,
+				"is_matched":    isMatched,
+				"normalized":    normalized,
+			})
+		},
+	)
+
 	// 获取未匹配/待人工干预的未归因流派列表
 	r.GET(
 		"/api/genres/unmatched", func(c *gin.Context) {

@@ -29,13 +29,23 @@ struct TrackDetailView: View {
         #endif
     }
 
+    private var effectivePlayCount: Int {
+        if let local = viewModel.localLibraryTrack, local.playCount > 0 {
+            return local.playCount
+        }
+        if track.playCount > 0 {
+            return track.playCount
+        }
+        return 1
+    }
+
     var body: some View {
         ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: isPhoneLayout ? 16 : 20) {
                     TrackDetailHeader(
                         track: track,
-                        playCount: track.playCount,
+                        playCount: effectivePlayCount,
                         artworkURL: viewModel.resolvedArtworkURL,
                         isFavorite: isCurrentTrackFavorite,
                         layout: isPhoneLayout ? .phone : .regular
@@ -252,7 +262,7 @@ struct TrackDetailView: View {
                 InfoRow(title: "曲目", value: track.track, compact: isPhoneLayout)
                 InfoRow(title: "艺术家", value: track.artist, compact: isPhoneLayout)
                 InfoRow(title: "专辑", value: track.album, compact: isPhoneLayout)
-                InfoRow(title: "播放次数", value: "\(track.playCount)", compact: isPhoneLayout)
+                InfoRow(title: "播放次数", value: "\(effectivePlayCount)", compact: isPhoneLayout)
                 if let duration = track.duration {
                     InfoRow(title: "时长", value: formatDuration(duration), compact: isPhoneLayout)
                 }
@@ -580,6 +590,9 @@ struct TrackDetailHeader: View {
                         if let duration = track.duration {
                             DetailMetaChip(title: "时长", value: formatDuration(duration))
                         }
+                        if let genre = track.genre, !genre.isEmpty {
+                            DetailMetaChip(title: "流派", value: genre)
+                        }
                     }
                 }
                 Spacer()
@@ -617,6 +630,9 @@ struct TrackDetailHeader: View {
                         DetailMetaChip(title: "播放次数", value: "\(playCount)")
                         if let duration = track.duration {
                             DetailMetaChip(title: "时长", value: formatDuration(duration))
+                        }
+                        if let genre = track.genre, !genre.isEmpty {
+                            DetailMetaChip(title: "流派", value: genre)
                         }
                     }
                 }

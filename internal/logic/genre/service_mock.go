@@ -27,7 +27,7 @@ func (m *MockGenreService) GetGenreByName(ctx context.Context, name string) (*mo
 	return result.(*model.Genre), args.Error(1)
 }
 
-func (m *MockGenreService) GetGenreByID(ctx context.Context, id uint) (*model.Genre, error) {
+func (m *MockGenreService) GetGenreByID(ctx context.Context, id int64) (*model.Genre, error) {
 	args := m.Called(ctx, id)
 	result := args.Get(0)
 	if result == nil {
@@ -45,12 +45,21 @@ func (m *MockGenreService) GetAllGenres(ctx context.Context, limit, offset int) 
 	return result.([]*model.Genre), args.Error(1)
 }
 
+func (m *MockGenreService) GetAllGenresWithFilter(ctx context.Context, keyword, sortBy string, limit, offset int) ([]*model.Genre, int64, error) {
+	args := m.Called(ctx, keyword, sortBy, limit, offset)
+	result := args.Get(0)
+	if result == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return result.([]*model.Genre), args.Get(1).(int64), args.Error(2)
+}
+
 func (m *MockGenreService) UpdateGenre(ctx context.Context, genre *model.Genre) error {
 	args := m.Called(ctx, genre)
 	return args.Error(0)
 }
 
-func (m *MockGenreService) DeleteGenre(ctx context.Context, id uint) error {
+func (m *MockGenreService) DeleteGenre(ctx context.Context, id int64) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
@@ -95,4 +104,9 @@ func (m *MockGenreService) GetAlbumsByGenre(ctx context.Context, genre string, l
 func (m *MockGenreService) GetAlbumsByGenreCount(ctx context.Context, genre string) (int64, error) {
 	args := m.Called(ctx, genre)
 	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockGenreService) ResolveGenreTest(ctx context.Context, rawTag string) (segment string, canonicalEng string, canonicalZh string, isMatched bool, normalized string) {
+	args := m.Called(ctx, rawTag)
+	return args.String(0), args.String(1), args.String(2), args.Bool(3), args.String(4)
 }

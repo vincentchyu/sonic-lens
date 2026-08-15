@@ -621,4 +621,41 @@
         </div>
     </div>
 </div>
+
+<!-- 流派新增/编辑模态框 -->
+<div id="genreModal" class="custom-modal">
+    <div class="modal-content" style="max-width: 480px; padding: 24px; border-radius: 16px;">
+        <div class="module-trail"></div>
+        <div class="modal-header" style="margin-bottom: 18px;">
+            <h3 id="genreModalTitle">维护流派</h3>
+            <span class="close" onclick="hideModal('genreModal')">&times;</span>
+        </div>
+        <form id="genreForm" onsubmit="event.preventDefault(); submitGenreForm();">
+            <input type="hidden" id="genreFormId" value="">
+            <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+                <div>
+                    <label for="genreFormName" style="display: block; font-size: 0.88em; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">英文标准名 (Name) <span style="color: #e53e3e;">*</span></label>
+                    <input type="text" id="genreFormName" required placeholder="如 Rock, Indie Pop, Jazz"
+                        style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); font-size: 0.95em; outline: none;">
+                    <div style="font-size: 0.78em; color: var(--text-secondary); margin-top: 4px;">全站唯一身份标识，禁止填中文或 cn-slug</div>
+                </div>
+                <div>
+                    <label for="genreFormNameZh" style="display: block; font-size: 0.88em; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">规范中文译名 (NameZh)</label>
+                    <input type="text" id="genreFormNameZh" placeholder="如 摇滚, 独立流行, 爵士"
+                        style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary); font-size: 0.95em; outline: none;">
+                    <div style="font-size: 0.78em; color: var(--text-secondary); margin-top: 4px;">用于前台 UI 展示与中文检索归一化</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="action-btn"
+                        style="padding: 9px 18px; background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px; cursor: pointer;"
+                        onclick="hideModal('genreModal')">取消
+                </button>
+                <button type="submit" id="genreFormSubmitBtn" class="action-btn"
+                        style="padding: 9px 20px; background: var(--primary-color); color: white; border-radius: 8px; font-weight: 600; cursor: pointer;">保存
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 {{ end }}

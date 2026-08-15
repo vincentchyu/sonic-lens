@@ -1514,16 +1514,7 @@ struct RecentPlaysSection: View {
     @ViewBuilder
     private func recentPlayRow(item: RecentPlayRecord, rank: Int, isLast: Bool) -> some View {
         Button {
-            onTrackTap(Track(
-                id: 0,
-                artist: item.artist,
-                album: item.album,
-                track: item.track,
-                playCount: 0,
-                trackNumber: nil,
-                discNumber: nil,
-                duration: nil
-            ))
+            onTrackTap(item.bridgeTrack)
         } label: {
             HStack(alignment: .center, spacing: 14) {
                 RecentPlayArtworkView(

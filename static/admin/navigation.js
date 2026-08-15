@@ -5,7 +5,8 @@
         const sections = [
             '.stats-container', '.charts-container', '.rankings-container',
             '#unscrobbledContainer', '#insightListContainer', '#insightJobListContainer',
-            '#albumListContainer', '#artistListContainer', '#pendingAlbumListContainer', '#trackListContainer'
+            '#albumListContainer', '#artistListContainer', '#pendingAlbumListContainer', '#trackListContainer',
+            '#genreListContainer'
         ];
         
         sections.forEach(selector => {
@@ -45,7 +46,7 @@
             a.classList.remove('active');
         });
 
-        const librarySections = new Set(['albumList', 'artistList', 'pendingAlbumList', 'trackList']);
+        const librarySections = new Set(['albumList', 'artistList', 'pendingAlbumList', 'trackList', 'genreList']);
         const details = document.getElementById('libraryMenuDetails');
         if (details) {
             details.open = librarySections.has(sectionId);
@@ -76,6 +77,7 @@
             }
             if (sectionId === 'pendingAlbumList') loadPendingAlbumList();
             if (sectionId === 'trackList') loadTrackList();
+            if (sectionId === 'genreList' && typeof loadGenreList === 'function') loadGenreList();
             if (sectionId === 'insightList') loadInsightList();
             if (sectionId === 'insightJobList') {
                 updateInsightJobTabLayout();
@@ -100,6 +102,7 @@
                     'artistListTab': 'artistList',
                     'pendingAlbumListTab': 'pendingAlbumList',
                     'trackListTab': 'trackList',
+                    'genreListTab': 'genreList',
                     'insightListTab': 'insightList',
                     'insightJobListTab': 'insightJobList',
                     'unscrobbledTab': 'unscrobbled'

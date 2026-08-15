@@ -109,6 +109,62 @@ xcodebuild \
 
 - iPhone 中文九宫格搜索输入在组合态下仍可能卡顿；此前实验性修复已回滚，后续处理需优先保证搜索框尺寸与布局不回归。
 
+## 客户端日志与沙盒调试指南
+
+### 1. 日志机制
+Bridge 客户端采用 Apple 统一日志系统（`os.Logger` / OSLog），日志不落裸文本文件，而是由 macOS / iOS `logd` 统一收集：
+- **子系统标识**：`subsystem: "com.vincentchyu.soniclens-bridge"`
+- **核心分类 (Category)**：
+  - `APIClient`：HTTP 请求路径、入参、响应状态码与解码错误
+  - `WebSocket`：正在播放状态推送、握手与心跳
+  - `LibrarySync`：增量同步版本、变更条数与耗时
+  - `TrackDetailViewModel` / `AlbumDetailViewModel`：详情装载与封面解析
+  - `InsightLiveActivity`：灵动岛状态推进
+
+### 2. 日志查看方法
+
+#### 方法 A：macOS 控制台 App (GUI，最推荐)
+1. 启动控制台：`open -a Console`
+2. 选择当前设备，点击顶部 **“开始流式传输”**；
+3. 搜索栏输入过滤：`subsystem:com.vincentchyu.soniclens-bridge` 或进程 `SoniclensBridgeMac`。
+
+#### 方法 B：终端命令行实时流式传输 (CLI)
+```bash
+# 查看所有 Debug/Info/Error 日志
+log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge"' --level debug
+
+# 仅查看 API 网络请求与响应
+log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge" and category == "APIClient"' --level debug
+
+# 仅查看 WebSocket 实时消息
+log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge" and category == "WebSocket"' --level debug
+```
+
+#### 方法 C：历史日志查看与导出
+```bash
+# 查看最近 1 小时的日志
+log show --predicate 'subsystem == "com.vincentchyu.soniclens-bridge"' --last 1h
+
+# 导出为日志文件
+log show --predicate 'subsystem == "com.vincentchyu.soniclens-bridge"' --last 1h > ~/Desktop/soniclens_client.log
+```
+
+### 3. 本地数据与 SQLite 数据库路径
+
+由于 macOS 端开发运行未强制开启 App Sandbox 隔离，本地资料库与缓存文件直接保存在用户主目录下的 `Application Support`：
+
+- **macOS 本地资料库主目录**：
+  `~/Library/Application Support/SonicLens/`
+- **本地 SQLite 资料库索引文件**：
+  `~/Library/Application Support/SonicLens/data/db/soniclens-library-index.sqlite`
+- **快速在 Finder 中打开**：
+  ```bash
+  open ~/Library/Application\ Support/SonicLens/
+  ```
+- *注：若后续开启 App Sandbox 发布，沙盒路径将映射至 `~/Library/Containers/com.vincentchyu.soniclens-bridge.mac/Data/Library/Application Support/SonicLens/`。*
+
+---
+
 ## 常见问题
 
 - Bonjour 发现失败：
@@ -118,3 +174,4 @@ xcodebuild \
 - API 请求失败：
   - 确认连接页端口与服务端端口一致。
   - 检查 `/health` 是否返回 `{"status":"ok"}`。
+  - 运行 `log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge" and category == "APIClient"'` 查看请求明细与返回错误。

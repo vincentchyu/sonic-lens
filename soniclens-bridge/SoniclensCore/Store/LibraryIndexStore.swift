@@ -356,6 +356,62 @@ actor LibraryIndexStore {
         return try fetchAlbums(sql: sql, binds: ["%\(trimmed)%"], limit: limit, offset: offset)
     }
 
+    func findTrack(artist: String, album: String, track: String, trackNumber: Int? = nil, discNumber: Int? = nil) throws -> Track? {
+        try openIfNeeded()
+        let hasPosition = trackNumber != nil || discNumber != nil
+        let sql: String
+        if hasPosition {
+            sql = """
+            SELECT id, artist, album, track, play_count, track_number, disc_number, duration,
+                   is_apple_music_fav, is_last_fm_fav, created_at, updated_at
+            FROM track_index
+            WHERE artist = ? AND album = ? AND track = ?
+              AND track_number = COALESCE(?, track_number)
+              AND disc_number = COALESCE(?, disc_number)
+            LIMIT 1;
+            """
+        } else {
+            sql = """
+            SELECT id, artist, album, track, play_count, track_number, disc_number, duration,
+                   is_apple_music_fav, is_last_fm_fav, created_at, updated_at
+            FROM track_index
+            WHERE artist = ? AND album = ? AND track = ?
+            LIMIT 1;
+            """
+        }
+        guard let statement = try prepare(sql) else {
+            throw StoreError.prepareStatement(sql)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        bindText(artist, to: 1, in: statement)
+        bindText(album, to: 2, in: statement)
+        bindText(track, to: 3, in: statement)
+        if hasPosition {
+            bindOptionalInt(trackNumber, to: 4, in: statement)
+            bindOptionalInt(discNumber, to: 5, in: statement)
+        }
+
+        if sqlite3_step(statement) == SQLITE_ROW {
+            return Track(
+                id: sqlite3_column_int64(statement, 0),
+                artist: string(at: 1, in: statement),
+                album: string(at: 2, in: statement),
+                track: string(at: 3, in: statement),
+                playCount: Int(sqlite3_column_int(statement, 4)),
+                trackNumber: optionalInt(at: 5, in: statement),
+                discNumber: optionalInt(at: 6, in: statement),
+                duration: optionalInt64(at: 7, in: statement),
+                genre: nil,
+                isAppleMusicFav: sqlite3_column_int(statement, 8) != 0,
+                isLastFmFav: sqlite3_column_int(statement, 9) != 0,
+                createdAt: optionalString(at: 10, in: statement),
+                updatedAt: optionalString(at: 11, in: statement)
+            )
+        }
+        return nil
+    }
+
     private func upsertAlbums(_ albums: [Album]) throws {
         let sql = """
         INSERT INTO album_index(

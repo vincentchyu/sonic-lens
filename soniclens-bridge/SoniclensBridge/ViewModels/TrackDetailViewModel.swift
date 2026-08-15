@@ -30,7 +30,9 @@ final class TrackDetailViewModel: ObservableObject {
     @Published var selectedAIModel: String = ""
     @Published var isModelPickerPresented: Bool = false
     @Published var generationStatusMessage: String?
+    @Published var localLibraryTrack: Track?
 
+    private let indexStore = LibraryIndexStore()
     private let artworkResolveService = ArtworkResolveService.shared
     private var artworkRequestKey: String = ""
     private static var aiPlatformCache: [String: [AIPlatformOption]] = [:]
@@ -128,6 +130,18 @@ final class TrackDetailViewModel: ObservableObject {
         } else {
             insights = []
             selectedInsightIndex = 0
+        }
+
+        if let local = try? await indexStore.findTrack(
+            artist: artist,
+            album: album ?? "",
+            track: track,
+            trackNumber: trackNumber,
+            discNumber: discNumber
+        ) {
+            self.localLibraryTrack = local
+        } else {
+            self.localLibraryTrack = nil
         }
 
         isLoading = false

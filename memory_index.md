@@ -1,5 +1,15 @@
 # 记忆索引
 
+## 2026-08-15
+
+- **日期**: 2026-08-15
+    - **聚合摘要**: 【当日聚合】客户端曲目详情流派/播放数解耦、流水快照独立承载、轻量索引保持精炼与客户端日志/沙盒调试文档化。聚合了 4 项核心演进与治理：
+        1. 补齐 `RecentPlayRecord` 流水字段解析与 `bridgeTrack`，实现未入库试听曲目进入详情时流派/时长/曲序 100% 完整展示；
+        2. 彻底移除曲目详情页盲目请求 `GET /api/track` 导致的解码报错，引入本地 SQLite 毫秒级匹配并保底 1 次播放事实，消除 `播放次数 0`；
+        3. 回退索引表及同步协议中的 `genre` 列，坚守 `track_index` 极简轻量边界，并将 UI 流派统一收口至顶部 Header 胶囊；
+        4. 在客户端指南中补充 Apple `os.Logger` 统一日志系统、`log stream` 命令语法、`Console.app` 过滤及 macOS 沙盒 SQLite 路径文档。
+    - **聚合链接**: [客户端曲目详情流派/播放数解耦、流水快照承载与客户端日志调试文档特性清单](memory/2026-08-15/client_logging_and_recent_play_detail_manifest.md)
+
 ## 2026-08-14
 
 - **日期**: 2026-08-14
@@ -9,6 +19,7 @@
         3. 根治客户端 URL 二次转义（`%2520`）、服务端未防御解码直接拼入 SQL 与本地 SQLite `genre` 漏存缺陷，实现防御性反转义与真实 HTTP 路由单测覆盖；
         4. 隔离宿主进程与公网依赖至 `//go:build integration` 标签，封装 `internal/testutil` 内存测试库（SQLite 内存库 + sqlmock）并沉淀专属单测 Skill，实现全项目默认 `go test -count=1 ./...` 100% 独立秒级通过。
     - **聚合链接**: [2026-08-14 每日架构演进与特性聚合清单](memory/2026-08-14/daily_aggregation_manifest.md)
+        - [Web 后台流派全生命周期管理 (CRUD) 与缓存归因调试器特性清单](memory/2026-08-14/admin_genre_management_and_resolver_manifest.md)
         - [冗余 CMD 工具、无效补数据定时器、遗留配置与历史迁移代码清理特性清单](memory/2026-08-14/legacy_cmd_and_schedulers_cleanup_manifest.md)
         - [流派权威源收口至 GenreCache 与防污染重构特性清单](memory/2026-08-14/genre_cache_authority_refactor_manifest.md)
         - [热门流派关联专辑 0 匹配与 URL 编码穿透/SQLite 字段缺失修复特性清单](memory/2026-08-14/genre_url_escaping_and_sqlite_index_fix_manifest.md)

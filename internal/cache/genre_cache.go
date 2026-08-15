@@ -80,7 +80,8 @@ func (gc *GenreCache) ResolveCanonicalGenre(tag string) (string, bool) {
 	return eng, ok
 }
 
-// ResolveCanonicalGenreDetail 在已认证的物理表流派缓存中解析标准英文 Title Case 名与对应中文名
+// ResolveCanonicalGenreDetail 在已认证的物理表流派缓存中解析标准英文 Title Case 名与对应中文名：
+// 统一应用 GenreCustomFit 与 NormalizeChineseGenre，彻底拉齐全站流派匹配能力
 func (gc *GenreCache) ResolveCanonicalGenreDetail(tag string) (eng string, zh string, matched bool) {
 	d := gc.data.Load()
 	if d == nil {
@@ -91,14 +92,25 @@ func (gc *GenreCache) ResolveCanonicalGenreDetail(tag string) (eng string, zh st
 		return "", "", false
 	}
 
+	// 1. 前置应用人工干预与特定平台差异适配 (如 "Rock & Roll" -> "Rock", "韓國流行樂" -> "韩语流行乐")
+	clean = common.GenreCustomFit(clean)
+
+	// 2. 若包含中文：支持直接匹配及去末尾“乐”字规范化匹配 (如 "爵士乐" -> "爵士" -> "Jazz")
 	if common.IsExistsChineseSimplified(clean) {
 		simplified := common.ConversionSimplifiedFx(clean)
 		if english, ok := d.c2E[simplified]; ok && english != "" {
 			return english, simplified, true
 		}
+
+		normalizedZh := common.NormalizeChineseGenre(simplified)
+		if english, ok := d.c2E[normalizedZh]; ok && english != "" {
+			return english, normalizedZh, true
+		}
+
 		return "", simplified, false
 	}
 
+	// 3. 若为纯英文：忽略大小写匹配 Title Case 标准名
 	lower := strings.ToLower(clean)
 	if canonical, ok := d.e2cNormalized[lower]; ok && canonical != "" {
 		zhName := d.e2C[canonical]
@@ -178,6 +190,8 @@ func (gc *GenreCache) RefreshFromDB(ctx context.Context) error {
 			zhClean := strings.TrimSpace(common.ConversionSimplifiedFx(genreDB.NameZh))
 			c2e[genreDB.NameZh] = nameClean
 			c2e[zhClean] = nameClean
+			c2e[common.NormalizeChineseGenre(zhClean)] = nameClean
+			c2e[common.GenreCustomFit(zhClean)] = nameClean
 		}
 		e2c[nameClean] = genreDB.NameZh
 		e2cNormalized[strings.ToLower(nameClean)] = nameClean
@@ -250,24 +264,10 @@ func GetGenreCache() *GenreCache {
 	return globalGenreCache
 }
 
-// GetEnglishGenre 从缓存中获取中文风格对应的英文名称
+// GetEnglishGenre 从缓存中获取风格对应的英文标准名（全量收口至 ResolveCanonicalGenre 统一抽象）
 func GetEnglishGenre(genre string) string {
-	ctx := context.Background()
-	if ok := common.IsExistsChineseSimplified(genre); ok {
-		normalized := common.NormalizeChineseGenre(genre)
-		if english, ok := globalGenreCache.GetC2E(normalized); ok {
-			return english
-		}
-		log.Debug(ctx, "数据库中未找到对应的中文 Genre 映射", zap.String("genre", genre), zap.String("normalized", normalized))
-		return genre
+	if eng, ok := globalGenreCache.ResolveCanonicalGenre(genre); ok && eng != "" {
+		return eng
 	}
-
-	// 说明是纯英文
-	if e2cGenre, ok := globalGenreCache.GetE2C(genre); ok {
-		log.Debug(ctx, "Genre 命中英文缓存", zap.String("genre", genre), zap.String("对应中文", e2cGenre))
-		return genre
-	}
-
-	log.Debug(ctx, "数据库中未找到该英文 Genre", zap.String("genre", genre))
 	return genre
 }

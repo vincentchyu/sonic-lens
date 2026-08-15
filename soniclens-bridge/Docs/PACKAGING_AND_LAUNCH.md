@@ -357,3 +357,43 @@ xcrun simctl launch "iPad Air 5" com.vincentchyu.soniclens-bridge.pad
 2. 真机连接 Xcode
 3. 选择 `SoniclensBridgePad`
 4. `Product -> Run`
+
+## 7. 客户端运行日志与沙盒数据查看
+
+### 7.1 日志系统机制
+客户端使用 Apple 统一日志系统（`os.Logger` / OSLog），日志由系统集中调度写入，不产生磁盘碎文本文件：
+- **Subsystem**: `com.vincentchyu.soniclens-bridge`
+- **主要 Category**:
+  - `APIClient`: HTTP 接口请求、响应、状态码与 JSON 解码
+  - `WebSocket`: 播放器实时状态与广播
+  - `LibrarySync`: SQLite 索引增量同步
+  - `TrackDetailViewModel` / `AlbumDetailViewModel`: 详情与封面装载
+  - `InsightLiveActivity`: 灵动岛进度同步
+
+### 7.2 日志实时流式查看 (log stream)
+```bash
+# 实时捕获客户端全部 Debug/Info 日志
+log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge"' --level debug
+
+# 仅捕获 APIClient 网络调用
+log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge" and category == "APIClient"' --level debug
+
+# 仅捕获 WebSocket 推送
+log stream --predicate 'subsystem == "com.vincentchyu.soniclens-bridge" and category == "WebSocket"' --level debug
+```
+
+### 7.3 控制台 GUI (Console.app)
+1. 打开控制台：`open -a Console`
+2. 选择当前设备并点击 **“开始流式传输”**
+3. 搜索栏输入：`subsystem:com.vincentchyu.soniclens-bridge` 或 `process:SoniclensBridgeMac`
+
+### 7.4 macOS 本地数据目录与 SQLite
+当前 macOS 开发目标（`SoniclensBridgeMac`）未开启 App Sandbox 强制隔离，数据直接写入用户主目录的 `Application Support`：
+- **本地资料库主目录**：
+  `~/Library/Application Support/SonicLens/`
+- **本地资料库 SQLite 索引路径**：
+  `~/Library/Application Support/SonicLens/data/db/soniclens-library-index.sqlite`
+- **在 Finder 中打开**：
+  ```bash
+  open ~/Library/Application\ Support/SonicLens/
+  ```

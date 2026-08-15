@@ -13,5 +13,5 @@ func (m BaseWrapper) ConversionSimplified(target string) string {
 }
 
 func (m BaseWrapper) GetGenre(genre string) string {
-	return cache.GetEnglishGenre(common.GenreCustomFit(genre))
+	return cache.GetEnglishGenre(genre)
 }

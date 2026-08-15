@@ -38,3 +38,39 @@ func TestMockGenreService_GetTopGenresWithDetails(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
+func TestMockGenreService_GetAllGenresWithFilter(t *testing.T) {
+	mockService := new(MockGenreService)
+	ctx := context.Background()
+
+	expectedGenres := []*model.Genre{
+		{ID: 1, Name: "Rock", NameZh: "摇滚", PlayCount: 500},
+		{ID: 2, Name: "Pop", NameZh: "流行", PlayCount: 300},
+	}
+
+	mockService.On("GetAllGenresWithFilter", ctx, "Rock", "play_count DESC", 10, 0).Return(expectedGenres, int64(2), nil)
+
+	genres, total, err := mockService.GetAllGenresWithFilter(ctx, "Rock", "play_count DESC", 10, 0)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, genres, 2)
+	assert.Equal(t, "Rock", genres[0].Name)
+
+	mockService.AssertExpectations(t)
+}
+
+func TestMockGenreService_ResolveGenreTest(t *testing.T) {
+	mockService := new(MockGenreService)
+	ctx := context.Background()
+
+	mockService.On("ResolveGenreTest", ctx, "Pop / Rock").Return("Pop", "Pop", "流行", true, "Pop")
+
+	segment, eng, zh, matched, norm := mockService.ResolveGenreTest(ctx, "Pop / Rock")
+	assert.Equal(t, "Pop", segment)
+	assert.Equal(t, "Pop", eng)
+	assert.Equal(t, "流行", zh)
+	assert.True(t, matched)
+	assert.Equal(t, "Pop", norm)
+
+	mockService.AssertExpectations(t)
+}
+

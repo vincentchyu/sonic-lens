@@ -43,6 +43,12 @@
 | 专辑详情（含曲目） | GET | `/api/albums/:id` | `:id` | `AlbumDetail` | Redis 2m | `trackService.GetAlbumDetail` -> `model.GetAlbumWithTracks` |
 | 专辑列表 | GET | `/api/albums` | `limit`, `offset`, `keyword`, `genre` | `albums`, `total` | 无 | `trackService.GetAlbums` / `genreService.GetAlbumsByGenre` |
 | 流派关联专辑 | GET | `/api/genres/:name/albums` | `:name` (英文流派名), `limit`, `offset`, `sort` | `genre`, `genre_zh`, `albums`, `total` | Redis 5m | `genreService.GetAlbumsByGenre` + `GetAlbumsByGenreCount` |
+| 流派权威列表（分页/检索） | GET | `/api/genres` | `limit`, `offset`, `keyword`, `sort` | `genres[]`, `total`, `limit`, `offset` | 无 | `genreService.GetAllGenresWithFilter` |
+| 新建流派 | POST | `/api/genres` | `name` (必填且非中文), `name_zh` | `status`, `message`, `genre` | 无 | `genreService.CreateGenre` + `GenreCache.RefreshFromDB` |
+| 修改流派 | PUT | `/api/genres/:id` | `:id`, `name`, `name_zh` | `status`, `message`, `genre` | 无 | `genreService.UpdateGenre` + `GenreCache.RefreshFromDB` |
+| 删除流派 | DELETE | `/api/genres/:id` | `:id` | `status`, `message` | 无 | `genreService.DeleteGenre` + `GenreCache.RefreshFromDB` |
+| 全量流派对账与重算 | POST | `/api/genres/reconcile` | 无 | `status`, `message` | 无 | `model.ReconcileGenrePlayCounts` + `GenreCache.RefreshFromDB` |
+| 流派归因沙盒测试 | POST | `/api/genres/resolve-test` | `raw_genre` | `segment`, `canonical_eng`, `canonical_zh`, `is_matched`, `normalized` | 无 | `genreService.ResolveGenreTest` |
 | 资料库增量同步 | GET | `/api/library/sync` | `since_version` | `sync_version`, `albums[].has_insight`, `albums[].original_release_date`, `tracks`, `deleted_*_ids` | 无 | `trackService.GetLibrarySyncDelta` -> `model.GetLibrarySyncDelta` |
 | 人工解除专辑关联 | POST | `/api/track-album/unlink` | `track_id`, `album_id` | `status` | 无 | `trackService.DeleteTrackAlbumLink` |
 

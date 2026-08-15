@@ -132,6 +132,11 @@ struct RecentPlayRecord: Codable, Identifiable {
     let album: String
     let albumSubtitle: String?
     let track: String
+    let genre: String?
+    let duration: Int64?
+    let trackNumber: Int?
+    let discNumber: Int?
+    let resolvedTrackID: Int64?
     let playTime: String
     let coverArtPath: String?
 
@@ -141,6 +146,11 @@ struct RecentPlayRecord: Codable, Identifiable {
         case album
         case albumSubtitle = "album_subtitle"
         case track
+        case genre
+        case duration
+        case trackNumber = "track_number"
+        case discNumber = "disc_number"
+        case resolvedTrackID = "resolved_track_id"
         case playTime = "play_time"
         case coverArtPath = "cover_art_path"
     }
@@ -149,6 +159,20 @@ struct RecentPlayRecord: Codable, Identifiable {
         let subtitle = albumSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !subtitle.isEmpty else { return album }
         return "\(album) (\(subtitle))"
+    }
+
+    var bridgeTrack: Track {
+        Track(
+            id: resolvedTrackID ?? 0,
+            artist: artist,
+            album: album,
+            track: track,
+            playCount: 1,
+            trackNumber: trackNumber,
+            discNumber: discNumber,
+            duration: duration,
+            genre: genre
+        )
     }
 }
 

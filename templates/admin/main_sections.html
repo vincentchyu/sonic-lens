@@ -327,6 +327,97 @@
         </div>
     </div>
 
+    <!-- 流派管理与归因调试容器 -->
+    <div id="genreListContainer" style="display: none">
+        <!-- 1. 流派归因与缓存解析沙盒 (Resolver Inspector) -->
+        <div class="chart-card" style="margin-bottom: 20px;">
+            <div class="module-trail"></div>
+            <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2rem;">⚡</span>
+                    <div>
+                        <div class="card-title" style="margin-bottom: 0;">流派缓存归因调试器 (Resolver Sandbox)</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">实时验证 GenreCache 归一化、首 Segment 提取、繁简清洗与双向权威归因</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="padding: 12px 0 6px 0;">
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative; flex: 1; min-width: 260px;">
+                        <input type="text" id="genreTestInput" placeholder="输入任意原始流派文本（如 '中國流行樂; Pop'、'indie rock'、'Math Rock'）..." 
+                            style="width: 100%; padding: 8px 14px 8px 36px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.95em; outline: none; transition: border-color 0.2s;">
+                        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🧪</span>
+                    </div>
+                    <button id="btnTestGenreResolve" class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em; border-radius: 10px; font-weight: 600;">
+                        即时解析测试
+                    </button>
+                </div>
+
+                <!-- 实时调试结果展示区 -->
+                <div id="genreTestResultArea" style="margin-top: 14px; padding: 14px; border-radius: 12px; background: rgba(0,0,0,0.15); border: 1px dashed var(--border-color); display: none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                        <div style="font-weight: 600; font-size: 0.9em; color: var(--text-primary);">解析链路与归因结果：</div>
+                        <div id="genreTestMatchBadge" class="queue-chip queue-chip-completed">已认证匹配</div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-size: 0.85em;">
+                        <div>
+                            <span style="color: var(--text-secondary);">提取分段 (Segment):</span>
+                            <div id="genreTestSegment" style="font-weight: 700; color: var(--text-primary); margin-top: 2px;">-</div>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-secondary);">权威英文名 (Name):</span>
+                            <div id="genreTestCanonicalEng" style="font-weight: 700; color: #63b3ed; margin-top: 2px;">-</div>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-secondary);">规范中文名 (NameZh):</span>
+                            <div id="genreTestCanonicalZh" style="font-weight: 700; color: #68d391; margin-top: 2px;">-</div>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-secondary);">最终归一化 (Normalized):</span>
+                            <div id="genreTestNormalized" style="font-weight: 700; color: #f6ad55; margin-top: 2px;">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 流派权威库管理表格 (Genre Directory Table) -->
+        <div class="chart-card">
+            <div class="module-trail"></div>
+            <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <div class="card-title">流派权威库</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">全站唯一流派标准源（支持中英文双向检索、维护译名与播放量对账）</div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative;">
+                        <input type="text" id="genreSearchInput" placeholder="搜索英文名或中文译名..." 
+                            style="padding: 6px 12px 6px 32px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9em; width: 210px; outline: none;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <select id="genreSortSelect" class="time-filter" style="min-width: 120px; outline: none;">
+                        <option value="play_count">播放量降序</option>
+                        <option value="name_asc">英文名 A-Z</option>
+                        <option value="updated_at_desc">最近更新</option>
+                        <option value="created_at_desc">最近添加</option>
+                    </select>
+                    <button id="btnOpenCreateGenreModal" class="time-filter" style="background: rgba(var(--primary-rgb), 0.2); border-color: var(--primary-color); color: var(--primary-color); font-weight: 600;">+ 新增流派</button>
+                    <button id="btnReconcileGenres" class="time-filter" title="全量重新计算流派播放流水并清洗脏数据">🔄 流派对账</button>
+                    <button id="refreshGenreListBtn" class="time-filter">刷新</button>
+                </div>
+            </div>
+            <div id="genreListContent" class="list-view-content">
+                <div class="loading">加载中...</div>
+            </div>
+            <div id="genrePagination" class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px">
+                <button id="genrePrevPage" class="time-filter" disabled>上一页</button>
+                <span id="genrePageInfo" style="margin: 0 15px; line-height: 36px"></span>
+                <button id="genreNextPage" class="time-filter">下一页</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 未上报记录容器 -->
     <div id="unscrobbledContainer" style="display: none">
         <div class="chart-card">

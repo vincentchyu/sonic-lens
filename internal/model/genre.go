@@ -81,7 +81,7 @@ func GetGenreByName(ctx context.Context, name string) (*Genre, error) {
 }
 
 // GetGenreByID retrieves a genre by ID
-func GetGenreByID(ctx context.Context, id uint) (*Genre, error) {
+func GetGenreByID(ctx context.Context, id int64) (*Genre, error) {
 	var genre Genre
 	err := GetDB().WithContext(ctx).Where("id = ?", id).First(&genre).Error
 	if err != nil {
@@ -100,13 +100,53 @@ func GetAllGenres(ctx context.Context, limit, offset int) ([]*Genre, error) {
 	return genres, nil
 }
 
+// GetAllGenresWithFilter retrieves genres with keyword search, sorting, and pagination, returning list and total count
+func GetAllGenresWithFilter(ctx context.Context, keyword, sortBy string, limit, offset int) ([]*Genre, int64, error) {
+	query := GetDB().WithContext(ctx).Model(&Genre{})
+
+	cleanKeyword := strings.TrimSpace(keyword)
+	if cleanKeyword != "" {
+		likePat := "%" + cleanKeyword + "%"
+		query = query.Where("name LIKE ? OR name_zh LIKE ?", likePat, likePat)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	orderClause := "play_count DESC, id ASC"
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "name", "name_asc":
+		orderClause = "name ASC"
+	case "name_desc":
+		orderClause = "name DESC"
+	case "play_count_asc":
+		orderClause = "play_count ASC, id ASC"
+	case "created_at_desc", "created_at":
+		orderClause = "created_at DESC"
+	case "updated_at_desc", "updated_at":
+		orderClause = "updated_at DESC"
+	}
+
+	var genres []*Genre
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	if err := query.Order(orderClause).Find(&genres).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return genres, total, nil
+}
+
 // UpdateGenre updates a genre
 func UpdateGenre(ctx context.Context, genre *Genre) error {
 	return GetDB().WithContext(ctx).Save(genre).Error
 }
 
 // DeleteGenre deletes a genre
-func DeleteGenre(ctx context.Context, id uint) error {
+func DeleteGenre(ctx context.Context, id int64) error {
 	return GetDB().WithContext(ctx).Delete(&Genre{}, id).Error
 }
 
@@ -202,13 +242,23 @@ func setUnmatchedGenres(items []UnmatchedGenreItem) {
 	globalUnmatchedGenres = items
 }
 
-// ExtractPrimaryGenreTag 提取多段流派字符串的首个 Segment（如 Alternative Rock,Electronic... -> Alternative Rock）
+// ExtractPrimaryGenreTag 提取多段流派字符串的首个 Segment（支持逗号、分号、竖线、顿号及带空格的 ' / ' 分隔；严禁拆分 Cantopop/HK-Pop, Pop/Rock, Singer/Songwriter 等复合流派）
 func ExtractPrimaryGenreTag(raw string) string {
 	clean := strings.TrimSpace(raw)
 	if clean == "" {
 		return ""
 	}
-	replacer := strings.NewReplacer("/", ",", ";", ",", "|", ",")
+
+	// 仅将明确的多流派列表分隔符（逗号、分号、竖线、顿号、带空格的斜杠）规整为逗号
+	// 注意：保留紧凑词内单斜杠 '/'，如 "Cantopop/HK-Pop", "Pop/Rock", "Singer/Songwriter"
+	replacer := strings.NewReplacer(
+		" / ", ",",
+		";", ",",
+		"；", ",",
+		"|", ",",
+		"、", ",",
+		"，", ",",
+	)
 	normalized := replacer.Replace(clean)
 	parts := strings.Split(normalized, ",")
 	for _, p := range parts {
@@ -225,8 +275,8 @@ func extractPrimaryGenreTag(raw string) string {
 }
 
 // NormalizeGenre 对任意传入的原始流派文本进行防脏提取与权威认证规范化：
-// 1. 自动提取首个 Segment（剥离多流派拼接，如 "chinese rock;alternative rock" -> "chinese rock"）
-// 2. 调用 ResolveGenreIdentity（优先匹配 GenreCache 与 DB 物理权威规范名）
+// 1. 自动提取首个 Segment（剥离多流派拼接）
+// 2. 调用 ResolveGenreIdentity（优先匹配权威流派规范名）
 // 3. 若未命中标准英文流派，且为中文标签，自动繁转简为规范简体中文（如 "中國流行樂" -> "中国流行乐"）
 // 4. 若为纯英文文本，自动进行 common.CapitalizeWords 规范化为 Title Case（如 "folk" -> "Folk"）
 func NormalizeGenre(tx *gorm.DB, raw string) string {
@@ -279,82 +329,113 @@ type genreAccumulator struct {
 	PlayCount int64
 }
 
-// ResolveGenreIdentity 智能解析流派身份，以 GenreCache 及数据库认证流派为唯一标准：
-// - 优先尝试从动态认证的流派缓存中解析（已从数据库物理表全量刷新的 GenreCache）
-// - 缓存未命中且 tx != nil 时，查数据库物理表已有合法英文 Name 记录
-// - 若包含未认证中文，返回 (name: "", nameZh: simplified)，绝不捏造 cn-slug 伪流派
-// - 若为未认证英文，返回 (name: CapitalizeWords(clean), nameZh: "") 用于单曲/专辑元数据展示，但不视为认证流派
+// ResolveGenreIdentity 智能解析流派身份，直接基于 ResolveStrictGenreIdentity 权威底座：
+// - 若命中权威认证流派，返回 (canonicalEng, canonicalZh)；
+// - 若为未认证中文，返回 ("", simplified)；
+// - 若为未认证英文，返回 (CapitalizeWords(clean), "") 用于曲目/专辑展示，绝不捏造伪流派入库。
 func ResolveGenreIdentity(tx *gorm.DB, tag string) (name string, nameZh string) {
 	clean := strings.TrimSpace(tag)
 	if clean == "" {
 		return "", ""
 	}
 
-	// 0. 优先尝试从动态认证的流派缓存中解析
-	if canonicalEng, canonicalZh, ok := getGenreFromCache(clean); ok && canonicalEng != "" {
-		return canonicalEng, canonicalZh
+	matched, eng, zh := ResolveStrictGenreIdentity(tx, clean)
+	if matched {
+		return eng, zh
 	}
 
-	// 1. 若包含中文：仅查询数据库已认证的标准英文记录
+	// 未匹配时：中文返回规范简体，英文返回 Title Case 形式用于展示
 	if common.IsExistsChineseSimplified(clean) {
-		simplified := common.ConversionSimplifiedFx(clean)
-		nameZh = simplified
-
-		if tx != nil {
-			var existing Genre
-			if err := tx.Where("TRIM(name_zh) = ?", simplified).First(&existing).Error; err == nil && existing.Name != "" && !common.IsExistsChineseSimplified(existing.Name) && !strings.HasPrefix(existing.Name, "cn-slug-") {
-				return existing.Name, simplified
-			}
+		if zh != "" {
+			return "", zh
 		}
-
-		// 未认证的中文标签，返回空英文名，严禁自动生成 cn-slug 污染物理表
-		return "", nameZh
+		return "", common.ConversionSimplifiedFx(clean)
 	}
 
-	// 2. 本身是英文标志：查数据库已有认证记录
-	if tx != nil {
-		var existing Genre
-		if err := tx.Where("TRIM(name) = ? OR LOWER(name) = LOWER(?)", clean, clean).First(&existing).Error; err == nil && existing.Name != "" && !common.IsExistsChineseSimplified(existing.Name) && !strings.HasPrefix(existing.Name, "cn-slug-") {
-			return existing.Name, existing.NameZh
-		}
-	}
-
-	// 3. 兜底情况返回 CapitalizeWords 规范化的 Title Case 名称，但未入库不视作认证流派
-	return common.CapitalizeWords(clean), nameZh
+	return common.CapitalizeWords(clean), ""
 }
 
 // ResolveStrictGenreIdentity 严格解析流派身份，判断是否能精准归因到已知标准权威 Name
 func ResolveStrictGenreIdentity(tx *gorm.DB, tag string) (matched bool, eng string, zh string) {
+	ctx := context.Background()
+	if tx != nil && tx.Statement != nil && tx.Statement.Context != nil {
+		ctx = tx.Statement.Context
+	}
+
 	clean := strings.TrimSpace(tag)
 	if clean == "" {
+		log.Info(ctx, "流派严格解析输入为空")
 		return false, "", ""
 	}
 
-	// 0. 优先查权威流派缓存
+	log.Info(ctx, "开始严格解析流派身份", zap.String("tag", tag), zap.String("clean", clean))
+
+	// 0. 优先查权威流派缓存 (getGenreFromCache 内部已全量承载 GenreCustomFit、繁简转换与 NormalizeChineseGenre)
 	if canonicalEng, canonicalZh, ok := getGenreFromCache(clean); ok && canonicalEng != "" {
+		log.Info(
+			ctx, "步骤0: 流派命中动态权威缓存 (GenreCache)",
+			zap.String("tag", clean),
+			zap.String("canonical_eng", canonicalEng),
+			zap.String("canonical_zh", canonicalZh),
+		)
 		return true, canonicalEng, canonicalZh
 	}
+	log.Info(ctx, "步骤0: 流派权威缓存未命中，继续排查数据库", zap.String("tag", clean))
 
-	// 1. 若包含中文：查数据库已认证的记录
-	if common.IsExistsChineseSimplified(clean) {
-		simplified := common.ConversionSimplifiedFx(clean)
+	// 1. 仅在未命中缓存且提供了事务/连接 tx 时，查数据库已认证的记录作为兜底
+	fit := common.GenreCustomFit(clean)
+	if common.IsExistsChineseSimplified(fit) {
+		simplified := common.ConversionSimplifiedFx(fit)
+		normalizedZh := common.NormalizeChineseGenre(simplified)
 		zh = simplified
+		log.Info(
+			ctx, "步骤1: 检测为中文流派标签，查库兜底",
+			zap.String("tag", clean),
+			zap.String("simplified", simplified),
+			zap.String("normalized_zh", normalizedZh),
+		)
+
 		if tx != nil {
 			var existing Genre
-			if err := tx.Where("TRIM(name_zh) = ?", simplified).First(&existing).Error; err == nil && existing.Name != "" && !common.IsExistsChineseSimplified(existing.Name) && !strings.HasPrefix(existing.Name, "cn-slug-") {
+			if err := tx.Where(
+				"TRIM(name_zh) = ? OR TRIM(name_zh) = ?", simplified, normalizedZh,
+			).First(&existing).Error; err == nil && existing.Name != "" && !common.IsExistsChineseSimplified(existing.Name) && !strings.HasPrefix(
+				existing.Name, "cn-slug-",
+			) {
+				log.Info(
+					ctx, "步骤1: 中文标签命中数据库已认证记录",
+					zap.String("simplified", simplified),
+					zap.String("name", existing.Name),
+					zap.Int64("id", existing.ID),
+				)
 				return true, existing.Name, simplified
 			}
 		}
+		log.Info(ctx, "步骤1: 中文标签在数据库中未找到认证英文名，判定为未归因", zap.String("simplified", simplified))
 		return false, "", zh
 	}
 
 	// 2. 本身是英文标志：查数据库已有合法英文记录
+	log.Info(ctx, "步骤2: 检测为纯英文流派标签，查询数据库记录", zap.String("tag", clean))
 	if tx != nil {
 		var existing Genre
-		if err := tx.Where("TRIM(name) = ? OR LOWER(name) = LOWER(?)", clean, clean).First(&existing).Error; err == nil && existing.Name != "" && !common.IsExistsChineseSimplified(existing.Name) && !strings.HasPrefix(existing.Name, "cn-slug-") {
+		if err := tx.Where(
+			"TRIM(name) = ? OR LOWER(name) = LOWER(?)", fit, fit,
+		).First(&existing).Error; err == nil && existing.Name != "" && !common.IsExistsChineseSimplified(existing.Name) && !strings.HasPrefix(
+			existing.Name, "cn-slug-",
+		) {
+			log.Info(
+				ctx, "步骤2: 英文标签命中数据库已认证记录",
+				zap.String("tag", clean),
+				zap.String("name", existing.Name),
+				zap.String("name_zh", existing.NameZh),
+				zap.Int64("id", existing.ID),
+			)
 			return true, existing.Name, existing.NameZh
 		}
 	}
+
+	log.Info(ctx, "步骤2: 英文标签在数据库中未匹配到认证记录，判定为未归因", zap.String("tag", clean))
 	return false, clean, ""
 }
 
@@ -369,7 +450,9 @@ func ReconcileGenrePlayCountsTx(tx *gorm.DB) error {
 	if err := tx.Find(&allGenres).Error; err == nil {
 		for _, g := range allGenres {
 			// 若物理表中存在多段组合、中文 name 或 cn-slug- 伪流派，重置其 play_count 为 0
-			if strings.Contains(g.Name, ",") || strings.Contains(g.Name, "/") || common.IsExistsChineseSimplified(g.Name) || strings.HasPrefix(g.Name, "cn-slug-") {
+			if strings.Contains(g.Name, ",") || strings.Contains(
+				g.Name, "/",
+			) || common.IsExistsChineseSimplified(g.Name) || strings.HasPrefix(g.Name, "cn-slug-") {
 				tx.Model(&g).Update("play_count", 0)
 				continue
 			}
@@ -433,10 +516,12 @@ func ReconcileGenrePlayCountsTx(tx *gorm.DB) error {
 	// 保存未匹配的流派供前端人工干预展示
 	var unmatchedItems []UnmatchedGenreItem
 	for raw, cnt := range unmatchedMap {
-		unmatchedItems = append(unmatchedItems, UnmatchedGenreItem{
-			RawGenre:  raw,
-			PlayCount: cnt,
-		})
+		unmatchedItems = append(
+			unmatchedItems, UnmatchedGenreItem{
+				RawGenre:  raw,
+				PlayCount: cnt,
+			},
+		)
 	}
 	setUnmatchedGenres(unmatchedItems)
 
@@ -489,7 +574,9 @@ func ReconcileGenrePlayCountsTx(tx *gorm.DB) error {
 		for id := range processedIDs {
 			ids = append(ids, id)
 		}
-		if err := tx.Where("id NOT IN (?) AND play_count != 0", ids).Model(&Genre{}).Update("play_count", 0).Error; err != nil {
+		if err := tx.Where("id NOT IN (?) AND play_count != 0", ids).Model(&Genre{}).Update(
+			"play_count", 0,
+		).Error; err != nil {
 			return err
 		}
 	} else {
@@ -502,11 +589,12 @@ func ReconcileGenrePlayCountsTx(tx *gorm.DB) error {
 
 // ReconcileGenrePlayCounts 对流派播放量进行全量对账
 func ReconcileGenrePlayCounts(ctx context.Context) error {
-	return InTx(ctx, func(tx *gorm.DB) error {
-		return ReconcileGenrePlayCountsTx(tx)
-	})
+	return InTx(
+		ctx, func(tx *gorm.DB) error {
+			return ReconcileGenrePlayCountsTx(tx)
+		},
+	)
 }
-
 
 /*// GetGenreCache returns the global genre cache instance
 func GetGenreCache() *cache.GenreCache {
