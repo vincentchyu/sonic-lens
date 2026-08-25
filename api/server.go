@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"html/template"
-	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
@@ -28,9 +26,9 @@ import (
 	coreredis "github.com/vincentchyu/sonic-lens/core/redis"
 	"github.com/vincentchyu/sonic-lens/core/telemetry"
 	"github.com/vincentchyu/sonic-lens/core/websocket"
+	"github.com/vincentchyu/sonic-lens/internal/cache"
 	artistprofilelogic "github.com/vincentchyu/sonic-lens/internal/logic/artistprofile"
 	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
-	"github.com/vincentchyu/sonic-lens/internal/cache"
 	"github.com/vincentchyu/sonic-lens/internal/logic/genre"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
 	musicbrainzlogic "github.com/vincentchyu/sonic-lens/internal/logic/musicbrainz"
@@ -636,19 +634,15 @@ func setupRouter(name string) *gin.Engine {
 				limit = 200
 			}
 			filter := c.Query("filter")
-			groups, err := pendingAlbumService.GetPendingAlbumGroups(c.Request.Context(), limit)
+			groups, err := pendingAlbumService.GetPendingAlbumGroupsWithOptions(
+				c.Request.Context(), model.PendingAlbumGroupQueryOptions{
+					Limit:  limit,
+					Filter: filter,
+				},
+			)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
-			}
-			if filter == "uncreated" {
-				var filtered []*model.PendingAlbumGroup
-				for _, g := range groups {
-					if g.OpenWorkItemID == 0 {
-						filtered = append(filtered, g)
-					}
-				}
-				groups = filtered
 			}
 			c.JSON(http.StatusOK, gin.H{"groups": groups})
 		},
@@ -1566,7 +1560,9 @@ func setupRouter(name string) *gin.Engine {
 			var err error
 
 			if genreParam != "" {
-				albums, err = genreService.GetAlbumsByGenre(c.Request.Context(), genreParam, limit, offset, c.DefaultQuery("sort", "play_count"))
+				albums, err = genreService.GetAlbumsByGenre(
+					c.Request.Context(), genreParam, limit, offset, c.DefaultQuery("sort", "play_count"),
+				)
 				if err == nil {
 					total, _ = genreService.GetAlbumsByGenreCount(c.Request.Context(), genreParam)
 				}
@@ -1591,7 +1587,6 @@ func setupRouter(name string) *gin.Engine {
 				},
 			)
 		},
-
 	)
 
 	r.POST(
@@ -1699,7 +1694,9 @@ func setupRouter(name string) *gin.Engine {
 				genreName = unescaped
 			}
 			// 防御客户端或代理二次编码传输的字面量 %20 / %2B / %2F
-			if strings.Contains(genreName, "%20") || strings.Contains(genreName, "%2B") || strings.Contains(genreName, "%2F") {
+			if strings.Contains(genreName, "%20") || strings.Contains(genreName, "%2B") || strings.Contains(
+				genreName, "%2F",
+			) {
 				if unescaped, err := url.QueryUnescape(genreName); err == nil && unescaped != "" {
 					genreName = unescaped
 				}
@@ -1771,12 +1768,14 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			c.JSON(http.StatusOK, gin.H{
-				"genres": genres,
-				"total":  total,
-				"limit":  limit,
-				"offset": offset,
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"genres": genres,
+					"total":  total,
+					"limit":  limit,
+					"offset": offset,
+				},
+			)
 		},
 	)
 
@@ -1829,11 +1828,13 @@ func setupRouter(name string) *gin.Engine {
 			// 刷新流派内存权威缓存
 			_ = cache.GetGenreCache().RefreshFromDB(ctx)
 
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "success",
-				"message": "创建流派成功",
-				"genre":   newGenre,
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "创建流派成功",
+					"genre":   newGenre,
+				},
+			)
 		},
 	)
 
@@ -1886,11 +1887,13 @@ func setupRouter(name string) *gin.Engine {
 			// 刷新流派内存权威缓存
 			_ = cache.GetGenreCache().RefreshFromDB(ctx)
 
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "success",
-				"message": "更新流派成功",
-				"genre":   target,
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "更新流派成功",
+					"genre":   target,
+				},
+			)
 		},
 	)
 
@@ -1924,10 +1927,12 @@ func setupRouter(name string) *gin.Engine {
 			// 刷新流派内存权威缓存
 			_ = cache.GetGenreCache().RefreshFromDB(ctx)
 
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "success",
-				"message": "流派已删除",
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "流派已删除",
+				},
+			)
 		},
 	)
 
@@ -1949,10 +1954,12 @@ func setupRouter(name string) *gin.Engine {
 			// 3. 刷新 Dashboard 统计缓存
 			_ = model.RefreshDashboardStats(ctx)
 
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "success",
-				"message": "全量流派对账完成，已重新聚合播放量并刷新统计",
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "全量流派对账完成，已重新聚合播放量并刷新统计",
+				},
+			)
 		},
 	)
 
@@ -1968,16 +1975,20 @@ func setupRouter(name string) *gin.Engine {
 				return
 			}
 
-			segment, canonicalEng, canonicalZh, isMatched, normalized := genreService.ResolveGenreTest(ctx, req.RawGenre)
+			segment, canonicalEng, canonicalZh, isMatched, normalized := genreService.ResolveGenreTest(
+				ctx, req.RawGenre,
+			)
 
-			c.JSON(http.StatusOK, gin.H{
-				"raw_genre":     req.RawGenre,
-				"segment":       segment,
-				"canonical_eng": canonicalEng,
-				"canonical_zh":  canonicalZh,
-				"is_matched":    isMatched,
-				"normalized":    normalized,
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"raw_genre":     req.RawGenre,
+					"segment":       segment,
+					"canonical_eng": canonicalEng,
+					"canonical_zh":  canonicalZh,
+					"is_matched":    isMatched,
+					"normalized":    normalized,
+				},
+			)
 		},
 	)
 
@@ -1985,10 +1996,12 @@ func setupRouter(name string) *gin.Engine {
 	r.GET(
 		"/api/genres/unmatched", func(c *gin.Context) {
 			unmatched := model.GetUnmatchedGenres()
-			c.JSON(http.StatusOK, gin.H{
-				"unmatched": unmatched,
-				"total":     len(unmatched),
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"unmatched": unmatched,
+					"total":     len(unmatched),
+				},
+			)
 		},
 	)
 
@@ -2012,19 +2025,23 @@ func setupRouter(name string) *gin.Engine {
 			_ = raw
 
 			// 在物理数据库以纯英文 Name 创建/补全 target_genre 记录
-			err := model.InTx(ctx, func(tx *gorm.DB) error {
-				var g model.Genre
-				if err := tx.Where("TRIM(name) = ?", targetName).FirstOrCreate(&g, model.Genre{
-					Name:   targetName,
-					NameZh: targetZh,
-				}).Error; err != nil {
-					return err
-				}
-				if targetZh != "" && g.NameZh == "" {
-					tx.Model(&g).Update("name_zh", targetZh)
-				}
-				return nil
-			})
+			err := model.InTx(
+				ctx, func(tx *gorm.DB) error {
+					var g model.Genre
+					if err := tx.Where("TRIM(name) = ?", targetName).FirstOrCreate(
+						&g, model.Genre{
+							Name:   targetName,
+							NameZh: targetZh,
+						},
+					).Error; err != nil {
+						return err
+					}
+					if targetZh != "" && g.NameZh == "" {
+						tx.Model(&g).Update("name_zh", targetZh)
+					}
+					return nil
+				},
+			)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库流派更新失败: " + err.Error()})
 				return
@@ -2037,13 +2054,14 @@ func setupRouter(name string) *gin.Engine {
 			_ = model.ReconcileGenrePlayCounts(ctx)
 			_ = model.RefreshDashboardStats(ctx)
 
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "success",
-				"message": "流派人工映射干预成功，已自动完成重新对账与统计刷写",
-			})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "流派人工映射干预成功，已自动完成重新对账与统计刷写",
+				},
+			)
 		},
 	)
-
 
 	// 获取未同步到Last.fm的播放记录（分页）
 	r.GET(
@@ -2707,223 +2725,92 @@ func registerAIRoutes(r gin.IRoutes, insightService aiRouteService) {
 		},
 	)
 
-	// 获取 / 生成某首歌的歌词解析结果 old
+	// POST /api/track-insight 已废弃，音眸分析创建统一收口到 POST /api/insight-jobs
 	r.POST(
 		"/api/track-insight", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(
-					http.StatusServiceUnavailable, gin.H{
-						"error": "AI 歌词解析服务未正确初始化，请检查 OPENAI_API_KEY 等配置",
-					},
-				)
-				return
-			}
-
-			var req struct {
-				Artist      string `json:"artist"`
-				Album       string `json:"album"`
-				Track       string `json:"track"`
-				TrackNumber int8   `json:"track_number"`
-				DiscNumber  int8   `json:"disc_number"`
-				Provider    string `json:"provider"`
-				Model       string `json:"model"`
-				ModelType   string `json:"modelType"`
-			}
-			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
-				return
-			}
-
-			ctx := c.Request.Context()
-			insights, cached, err := insightService.GetOrCreateTrackInsight(
-				ctx, req.Artist, req.Album, req.Track, req.TrackNumber, req.DiscNumber, true, req.Provider, req.Model,
-				req.ModelType,
-			)
-			if err != nil {
-				log.Error(
-					ctx, "获取或生成歌词解析失败",
-					zap.String("artist", req.Artist),
-					zap.String("album", req.Album),
-					zap.String("track", req.Track),
-					zap.Error(err),
-				)
-				status := http.StatusInternalServerError
-				if isAISelectionBadRequest(err) {
-					status = http.StatusBadRequest
-				}
-				c.JSON(status, gin.H{"error": err.Error()})
-				return
-			}
-
 			c.JSON(
-				http.StatusOK, gin.H{
-					"insights":               insights,
-					"cached":                 cached,
-					"recommended_insight_id": recommendedTrackInsightModelID(insights),
+				http.StatusGone, gin.H{
+					"code":  "DEPRECATED_USE_INSIGHT_JOBS",
+					"error": "该接口已废弃，音眸分析创建已统一升级为 POST /api/insight-jobs 异步任务机制",
 				},
 			)
 		},
 	)
 
-	// 获取 / 生成某张专辑的聚合解析结果  old
+	// POST /api/album-insight 已废弃，专辑音眸分析创建统一收口到 POST /api/insight-jobs
 	r.POST(
 		"/api/album-insight", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(
-					http.StatusServiceUnavailable, gin.H{
-						"error": "AI 专辑解析服务未正确初始化，请检查模型配置",
-					},
-				)
-				return
-			}
-
-			var req struct {
-				AlbumID   int64  `json:"album_id"`
-				Provider  string `json:"provider"`
-				Model     string `json:"model"`
-				ModelType string `json:"modelType"`
-			}
-			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
-				return
-			}
-			if req.AlbumID <= 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的专辑 ID"})
-				return
-			}
-
-			ctx := c.Request.Context()
-			insights, cached, err := insightService.GetOrCreateAlbumInsight(
-				ctx, req.AlbumID, true, req.Provider, req.Model, req.ModelType,
-			)
-			if err != nil {
-				log.Error(
-					ctx, "获取或生成专辑解析失败",
-					zap.Int64("album_id", req.AlbumID),
-					zap.Error(err),
-				)
-				status := http.StatusInternalServerError
-				if isAISelectionBadRequest(err) {
-					status = http.StatusBadRequest
-				}
-				c.JSON(status, gin.H{"error": err.Error()})
-				return
-			}
-
 			c.JSON(
-				http.StatusOK, gin.H{
-					"insights": sanitizeAlbumInsightsForClient(
-						insights, shouldHideAlbumInsightDebugData(c),
-					),
-					"cached":                 cached,
-					"recommended_insight_id": recommendedAlbumInsightID(insights),
+				http.StatusGone, gin.H{
+					"code":  "DEPRECATED_USE_INSIGHT_JOBS",
+					"error": "该接口已废弃，专辑音眸分析创建已统一升级为 POST /api/insight-jobs 异步任务机制",
 				},
 			)
 		},
 	)
 
 	// 管理后台：播放统计与一致性对账 API
-	r.GET("/api/admin/stats/reconcile/status", func(c *gin.Context) {
-		ctx := c.Request.Context()
-		var totalAlbums int64
-		var totalPlayRecords int64
-		_ = model.GetDB().WithContext(ctx).Model(&model.Album{}).Count(&totalAlbums).Error
-		_ = model.GetDB().WithContext(ctx).Model(&model.TrackPlayRecord{}).Count(&totalPlayRecords).Error
-		c.JSON(http.StatusOK, gin.H{
-			"status":             "ok",
-			"total_albums":       totalAlbums,
-			"total_play_records": totalPlayRecords,
-			"updated_at":         time.Now().Format(time.RFC3339),
-		})
-	})
+	r.GET(
+		"/api/admin/stats/reconcile/status", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			var totalAlbums int64
+			var totalPlayRecords int64
+			_ = model.GetDB().WithContext(ctx).Model(&model.Album{}).Count(&totalAlbums).Error
+			_ = model.GetDB().WithContext(ctx).Model(&model.TrackPlayRecord{}).Count(&totalPlayRecords).Error
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":             "ok",
+					"total_albums":       totalAlbums,
+					"total_play_records": totalPlayRecords,
+					"updated_at":         time.Now().Format(time.RFC3339),
+				},
+			)
+		},
+	)
 
-	r.POST("/api/admin/stats/reconcile", func(c *gin.Context) {
-		ctx := c.Request.Context()
-		log.Info(ctx, "开始执行 Web 管理后台播放数据一致性对账与修复")
+	r.POST(
+		"/api/admin/stats/reconcile", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			log.Info(ctx, "开始执行 Web 管理后台播放数据一致性对账与修复")
 
-		if err := model.ReconcileTrackPlayCounts(ctx); err != nil {
-			log.Error(ctx, "Web 管理后台单曲播放数对账失败", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "单曲播放数对账失败: " + err.Error()})
-			return
-		}
-		if err := model.ReconcileAlbumPlayCounts(ctx); err != nil {
-			log.Error(ctx, "Web 管理后台专辑播放数对账失败", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "专辑播放数对账失败: " + err.Error()})
-			return
-		}
-		if err := model.ReconcileGenrePlayCounts(ctx); err != nil {
-			log.Error(ctx, "Web 管理后台流派播放数对账失败", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "流派播放数对账失败: " + err.Error()})
-			return
-		}
-		if err := model.RefreshDashboardStats(ctx); err != nil {
-			log.Error(ctx, "Web 管理后台 Dashboard Stats 刷写失败", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Dashboard Stats 刷写失败: " + err.Error()})
-			return
-		}
+			if err := model.ReconcileTrackPlayCounts(ctx); err != nil {
+				log.Error(ctx, "Web 管理后台单曲播放数对账失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "单曲播放数对账失败: " + err.Error()})
+				return
+			}
+			if err := model.ReconcileAlbumPlayCounts(ctx); err != nil {
+				log.Error(ctx, "Web 管理后台专辑播放数对账失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "专辑播放数对账失败: " + err.Error()})
+				return
+			}
+			if err := model.ReconcileGenrePlayCounts(ctx); err != nil {
+				log.Error(ctx, "Web 管理后台流派播放数对账失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "流派播放数对账失败: " + err.Error()})
+				return
+			}
+			if err := model.RefreshDashboardStats(ctx); err != nil {
+				log.Error(ctx, "Web 管理后台 Dashboard Stats 刷写失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Dashboard Stats 刷写失败: " + err.Error()})
+				return
+			}
 
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "success",
-			"message":   "播放统计与一致性全量对账执行完成",
-			"timestamp": time.Now().Format(time.RFC3339),
-		})
-	})
+			c.JSON(
+				http.StatusOK, gin.H{
+					"status":    "success",
+					"message":   "播放统计与一致性全量对账执行完成",
+					"timestamp": time.Now().Format(time.RFC3339),
+				},
+			)
+		},
+	)
 
-
-	// 流式获取歌词解析结果 (SSE)  old
+	// GET /api/track-insight-stream (SSE) 已废弃，统一升级为 POST /api/insight-jobs 异步任务机制与 WebSocket
 	r.GET(
 		"/api/track-insight-stream", func(c *gin.Context) {
-			if insightService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 服务未初始化"})
-				return
-			}
-
-			artist := c.Query("artist")
-			album := c.Query("album")
-			track := c.Query("track")
-			trackNumber := parseInt8Query(c, "trackNumber")
-			discNumber := parseInt8Query(c, "discNumber")
-			force, _ := strconv.ParseBool(c.DefaultQuery("force", "false"))
-			provider := c.Query("provider")
-			modelName := c.Query("model")
-			modelType := c.Query("modelType")
-
-			if artist == "" || track == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "参数不足"})
-				return
-			}
-
-			ch, _, err := insightService.GetOrCreateInsightStream(
-				c.Request.Context(), artist, album, track, trackNumber, discNumber, force, provider, modelName,
-				modelType,
-			)
-			if err != nil {
-				status := http.StatusInternalServerError
-				if isAISelectionBadRequest(err) {
-					status = http.StatusBadRequest
-				}
-				c.JSON(status, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.Header("Content-Type", "text/event-stream")
-			c.Header("Cache-Control", "no-cache")
-			c.Header("Connection", "keep-alive")
-			c.Header("Transfer-Encoding", "chunked")
-			c.Header("X-Accel-Buffering", "no")
-
-			c.Stream(
-				func(w io.Writer) bool {
-					if chunk, ok := <-ch; ok {
-						c.Render(
-							-1, sse.Event{
-								Event: "message",
-								Data:  chunk,
-							},
-						)
-						return true
-					}
-					return false
+			c.JSON(
+				http.StatusGone, gin.H{
+					"code":  "DEPRECATED_USE_INSIGHT_JOBS",
+					"error": "该接口已废弃，流式解析已统一升级为 POST /api/insight-jobs 异步任务机制与 WebSocket 实时通道",
 				},
 			)
 		},

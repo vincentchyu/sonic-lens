@@ -945,3 +945,57 @@ func TestManualMaintainPendingAlbumWorkItemInheritsSubtitleAndParsesSuffix(t *te
 	require.NoError(t, db.Where("album = ? AND track_number = 1", "Flowers").First(&track).Error)
 	require.Equal(t, "Deluxe", track.AlbumSubtitle)
 }
+
+func TestServiceGetPendingAlbumGroupsWithOptions(t *testing.T) {
+	db := newPendingAlbumServiceTestDB(t, "service_pending_album_options")
+	svc := NewService()
+	ctx := context.Background()
+
+	now := time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
+	require.NoError(
+		t,
+		db.Create(&model.TrackPlayRecord{
+			ID:          1,
+			Artist:      "ArtistA",
+			AlbumArtist: "ArtistA",
+			Album:       "AlbumA",
+			Track:       "Track1",
+			PlayTime:    now,
+		}).Error,
+	)
+	require.NoError(
+		t,
+		db.Create(&model.TrackPlayRecord{
+			ID:          2,
+			Artist:      "ArtistB",
+			AlbumArtist: "ArtistB",
+			Album:       "AlbumB",
+			Track:       "Track2",
+			PlayTime:    now.Add(-time.Hour),
+		}).Error,
+	)
+
+	// 给 AlbumA 建立工单
+	_, err := svc.CreateOrGetPendingAlbumWorkItem(ctx, "artista||albuma||")
+	require.NoError(t, err)
+
+	// 查未建单
+	uncreated, err := svc.GetPendingAlbumGroupsWithOptions(ctx, model.PendingAlbumGroupQueryOptions{
+		Filter: "uncreated",
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	require.Len(t, uncreated, 1)
+	require.Equal(t, "AlbumB", uncreated[0].Album)
+	require.Equal(t, int64(0), uncreated[0].OpenWorkItemID)
+
+	// 查已建单
+	created, err := svc.GetPendingAlbumGroupsWithOptions(ctx, model.PendingAlbumGroupQueryOptions{
+		Filter: "created",
+		Limit:  10,
+	})
+	require.NoError(t, err)
+	require.Len(t, created, 1)
+	require.Equal(t, "AlbumA", created[0].Album)
+	require.Greater(t, created[0].OpenWorkItemID, int64(0))
+}

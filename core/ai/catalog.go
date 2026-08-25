@@ -358,12 +358,6 @@ func fallbackModelCatalog(factory providerFactory, err error) ([]ModelOption, bo
 	if factory == nil || err == nil {
 		return nil, false
 	}
-	if factory.Platform() != common.AIModelPlatformGemini {
-		return nil, false
-	}
-	if !isGeminiModelCatalogUnavailableError(err) {
-		return nil, false
-	}
 
 	defaultModel := strings.TrimSpace(factory.DefaultModel())
 	if defaultModel == "" {

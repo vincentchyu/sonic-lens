@@ -138,9 +138,16 @@ func sameInt64SliceSet(a, b []int64) bool {
 	return slices.Equal(left, right)
 }
 
+// PendingAlbumGroupQueryOptions 定义待归因专辑分组的查询与过滤条件。
+type PendingAlbumGroupQueryOptions struct {
+	Limit  int    // 最大返回条数，0 表示不限制
+	Filter string // 过滤模式：""/"all"（全部），"uncreated"（仅未建单），"created"（仅已建单）
+}
+
 func listPendingAlbumPlayRecords(ctx context.Context) ([]*TrackPlayRecord, error) {
 	var records []*TrackPlayRecord
 	err := GetDB().WithContext(ctx).
+		Select("id, artist, album_artist, album, album_subtitle, track, source, play_time, genre, release_type").
 		Where("library_applied = ?", false).
 		Order("play_time DESC, id DESC").
 		Find(&records).Error
@@ -150,6 +157,7 @@ func listPendingAlbumPlayRecords(ctx context.Context) ([]*TrackPlayRecord, error
 func listPendingAlbumFavoriteEvents(ctx context.Context) ([]*TrackFavoriteEvent, error) {
 	var events []*TrackFavoriteEvent
 	err := GetDB().WithContext(ctx).
+		Select("id, artist, album_artist, album, album_subtitle, track, source, created_at").
 		Where("applied = ?", false).
 		Where(
 			"resolution_status IN ?", []string{
@@ -211,8 +219,8 @@ func getOpenPendingAlbumWorkItemsByKeys(ctx context.Context, keys []string) (map
 	return results, nil
 }
 
-// GetPendingAlbumGroups 获取按专辑维度聚合的待归因上下文列表。
-func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup, error) {
+// GetPendingAlbumGroupsWithOptions 按指定过滤与分页选项获取待归因专辑分组列表。
+func GetPendingAlbumGroupsWithOptions(ctx context.Context, opts PendingAlbumGroupQueryOptions) ([]*PendingAlbumGroup, error) {
 	playRecords, err := listPendingAlbumPlayRecords(ctx)
 	if err != nil {
 		return nil, err
@@ -294,6 +302,23 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 		if len(group.PlayRecordIDs) == 0 && len(group.FavoriteEventIDs) == 0 {
 			continue
 		}
+		if item := openItems[key]; item != nil {
+			group.OpenWorkItemID = item.ID
+			group.OpenWorkItemStatus = item.Status
+		}
+
+		// 根据 Filter 进行精准前置过滤
+		switch opts.Filter {
+		case "uncreated":
+			if group.OpenWorkItemID > 0 {
+				continue
+			}
+		case "created":
+			if group.OpenWorkItemID == 0 {
+				continue
+			}
+		}
+
 		for source := range sourceSets[key] {
 			group.Sources = append(group.Sources, source)
 		}
@@ -302,28 +327,18 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 			group.TrackNames = append(group.TrackNames, title)
 		}
 		slices.Sort(group.TrackNames)
-		if item := openItems[key]; item != nil {
-			group.OpenWorkItemID = item.ID
-			group.OpenWorkItemStatus = item.Status
-		}
+
 		results = append(results, group)
 	}
 
-	/*slices.SortFunc(
-		results, func(a, b *PendingAlbumGroup) int {
-			switch {
-			case a.LatestPlayTime.After(b.LatestPlayTime):
-				return -1
-			case a.LatestPlayTime.Before(b.LatestPlayTime):
-				return 1
-			default:
-				return strings.Compare(a.IdentityKey, b.IdentityKey)
-			}
-		},
-	)*/
-
 	slices.SortFunc(
 		results, func(a, b *PendingAlbumGroup) int {
+			if len(a.FavoriteEventIDs) != len(b.FavoriteEventIDs) {
+				if len(a.FavoriteEventIDs) > len(b.FavoriteEventIDs) {
+					return -1
+				}
+				return 1
+			}
 			if len(a.PlayRecordIDs) != len(b.PlayRecordIDs) {
 				if len(a.PlayRecordIDs) > len(b.PlayRecordIDs) {
 					return -1
@@ -341,10 +356,15 @@ func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup
 		},
 	)
 
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	if opts.Limit > 0 && len(results) > opts.Limit {
+		results = results[:opts.Limit]
 	}
 	return results, nil
+}
+
+// GetPendingAlbumGroups 获取按专辑维度聚合的待归因上下文列表。
+func GetPendingAlbumGroups(ctx context.Context, limit int) ([]*PendingAlbumGroup, error) {
+	return GetPendingAlbumGroupsWithOptions(ctx, PendingAlbumGroupQueryOptions{Limit: limit})
 }
 
 // ListPendingAlbumWorkItems 返回分页的工作项列表。
@@ -447,7 +467,7 @@ func UpdatePendingAlbumWorkItemSelection(ctx context.Context, workItemID, releas
 		).Error
 }
 
-// SavePendingAlbumWorkItemStagingDraft 保存工作项的预审草稿并推入 staged 状态。
+// SavePendingAlbumWorkItemStagingDraft 保存工作项的预审草稿并推进到 staged 状态。
 func SavePendingAlbumWorkItemStagingDraft(ctx context.Context, workItemID, releaseMBID int64, mbid, draftJSON string) error {
 	var item PendingAlbumWorkItem
 	if err := GetDB().WithContext(ctx).First(&item, workItemID).Error; err != nil {

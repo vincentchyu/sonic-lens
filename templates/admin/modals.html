@@ -193,6 +193,8 @@
                     <label style="display: flex; flex-direction: column; gap: 6px;">
                         <span style="font-size: 0.82em; color: var(--text-primary); font-weight: 600;">发行类型</span>
                         <input id="pendingDiffReleaseType" class="search-input" type="text" placeholder="album / ep / single / lp">
+                        <div id="pendingDiffReleaseTypeHint"
+                             style="font-size: 0.75em; color: var(--text-secondary); opacity: 0.85; min-height: 16px;"></div>
                     </label>
                     <label style="display: flex; flex-direction: column; gap: 6px;">
                         <span style="font-size: 0.82em; color: var(--text-primary); font-weight: 600;">专辑艺术家</span>
@@ -438,8 +440,8 @@
                         onclick="showModelPicker(null, 'nowPlaying')">重新分析
                 </button>
                 <button id="nowPlaying-aiShareBtn" class="action-btn"
-                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
-                        onclick="shareInsight('nowPlaying')">分享图片
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);">
+                    分享图片
                 </button>
                 <div id="nowPlaying-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
                     <button class="action-btn"
@@ -502,8 +504,8 @@
                         onclick="showModelPicker(null, 'list')">重新分析
                 </button>
                 <button id="list-aiShareBtn" class="action-btn"
-                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
-                        onclick="shareInsight('list')">分享图片
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);">
+                    分享图片
                 </button>
                 <div id="list-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
                     <button class="action-btn"
@@ -566,8 +568,8 @@
                         onclick="showModelPicker(null, 'details')">重新分析
                 </button>
                 <button id="details-aiShareBtn" class="action-btn"
-                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);"
-                        onclick="shareInsight('details')">分享图片
+                        style="flex: 1; padding: 8px 15px; border-radius: 20px; font-weight: 600; background: rgba(52, 152, 219, 0.1); color: var(--primary-color); border-color: var(--primary-color);">
+                    分享图片
                 </button>
                 <div id="details-aiFeedbackBtns" style="display: flex; gap: 10px; flex: 1; justify-content: flex-end;">
                     <button class="action-btn"
@@ -604,10 +606,6 @@
                     style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); margin-bottom: 15px;">
                 <option value="">请先选择平台</option>
             </select>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <input type="checkbox" id="aiModelSseToggle" checked style="width: auto;">
-                <label for="aiModelSseToggle" style="font-weight: normal; cursor: pointer;">流式输出结果</label>
-            </div>
         </div>
         <div style="display: flex; gap: 12px;">
             <button class="action-btn"

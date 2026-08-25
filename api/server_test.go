@@ -481,58 +481,36 @@ func TestRegisterAIRoutesRejectInvalidPlatform(t *testing.T) {
 	}
 }
 
-func TestRegisterAIRoutesTrackInsightPassesProviderAndModel(t *testing.T) {
+func TestRegisterAIRoutesDeprecatedPostEndpointsReturnGone(t *testing.T) {
 	service := &fakeAIRouteService{}
 	router := newAITestRouter(service)
 
-	body := `{"artist":"A","album":"B","track":"C","track_number":1,"disc_number":2,"provider":"openai","model":"gpt-5"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/track-insight", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, req)
+	// POST /api/track-insight 应当返回 410 Gone
+	bodyTrack := `{"artist":"A","album":"B","track":"C","track_number":1,"disc_number":2,"provider":"openai","model":"gpt-5"}`
+	reqTrack := httptest.NewRequest(http.MethodPost, "/api/track-insight", strings.NewReader(bodyTrack))
+	reqTrack.Header.Set("Content-Type", "application/json")
+	recTrack := httptest.NewRecorder()
+	router.ServeHTTP(recTrack, reqTrack)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	if recTrack.Code != http.StatusGone {
+		t.Fatalf("expected 410 Gone for POST /api/track-insight, got %d body=%s", recTrack.Code, recTrack.Body.String())
 	}
-	if service.lastTrackInput.provider != "openai" || service.lastTrackInput.model != "gpt-5" {
-		t.Fatalf("provider/model not passed through: %+v", service.lastTrackInput)
+	if !strings.Contains(recTrack.Body.String(), "DEPRECATED_USE_INSIGHT_JOBS") {
+		t.Fatalf("expected error code DEPRECATED_USE_INSIGHT_JOBS, got %s", recTrack.Body.String())
 	}
-	if !service.lastTrackInput.forceFlag {
-		t.Fatalf("expected force flag to be true")
+
+	// POST /api/album-insight 应当返回 410 Gone
+	bodyAlbum := `{"album_id":42,"modelType":"gemini"}`
+	reqAlbum := httptest.NewRequest(http.MethodPost, "/api/album-insight", strings.NewReader(bodyAlbum))
+	reqAlbum.Header.Set("Content-Type", "application/json")
+	recAlbum := httptest.NewRecorder()
+	router.ServeHTTP(recAlbum, reqAlbum)
+
+	if recAlbum.Code != http.StatusGone {
+		t.Fatalf("expected 410 Gone for POST /api/album-insight, got %d body=%s", recAlbum.Code, recAlbum.Body.String())
 	}
-}
-
-func TestRegisterAIRoutesTrackInsightBadRequestOnUnsupportedModel(t *testing.T) {
-	service := &fakeAIRouteService{trackErr: context.Canceled}
-	service.trackErr = assertAISelectionError("不支持模型: bad-model")
-	router := newAITestRouter(service)
-
-	body := `{"artist":"A","track":"C","provider":"openai","model":"bad-model"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/track-insight", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, req)
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
-	}
-}
-
-func TestRegisterAIRoutesAlbumInsightSupportsLegacyModelType(t *testing.T) {
-	service := &fakeAIRouteService{}
-	router := newAITestRouter(service)
-
-	body := `{"album_id":42,"modelType":"gemini"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/album-insight", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, req)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if service.lastAlbumInput.albumID != 42 || service.lastAlbumInput.legacy != "gemini" {
-		t.Fatalf("legacy modelType not passed through: %+v", service.lastAlbumInput)
+	if !strings.Contains(recAlbum.Body.String(), "DEPRECATED_USE_INSIGHT_JOBS") {
+		t.Fatalf("expected error code DEPRECATED_USE_INSIGHT_JOBS, got %s", recAlbum.Body.String())
 	}
 }
 
@@ -875,26 +853,23 @@ func TestRegisterAIRoutesDeleteInsightJob(t *testing.T) {
 	}
 }
 
-func TestRegisterAIRoutesStreamSupportsProviderModelAndBadRequest(t *testing.T) {
-	service := &fakeAIRouteService{streamErr: assertAISelectionError("不支持模型: bad-model")}
+func TestRegisterAIRoutesDeprecatedStreamReturnsGone(t *testing.T) {
+	service := &fakeAIRouteService{}
 	router := newAITestRouter(service)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/track-insight-stream?artist=A&track=C&provider=openai&model=bad-model&force=true",
+		"/api/track-insight-stream?artist=A&track=C&provider=openai&model=gpt-5&force=true",
 		nil,
 	)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusGone {
+		t.Fatalf("expected 410 Gone for GET /api/track-insight-stream, got %d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if service.lastStreamInput.provider != "openai" || service.lastStreamInput.model != "bad-model" {
-		t.Fatalf("stream params not passed through: %+v", service.lastStreamInput)
-	}
-	if !service.lastStreamInput.forceFlag {
-		t.Fatalf("expected force flag to be true")
+	if !strings.Contains(recorder.Body.String(), "DEPRECATED_USE_INSIGHT_JOBS") {
+		t.Fatalf("expected error code DEPRECATED_USE_INSIGHT_JOBS, got %s", recorder.Body.String())
 	}
 }
 
@@ -930,15 +905,29 @@ func (f *fakeGenreRouteService) GetGenreByName(ctx context.Context, name string)
 	return f.genreInfo, nil
 }
 
-func (f *fakeGenreRouteService) CreateGenre(ctx context.Context, genre *model.Genre) error { return nil }
-func (f *fakeGenreRouteService) GetGenreByID(ctx context.Context, id uint) (*model.Genre, error) { return nil, nil }
-func (f *fakeGenreRouteService) GetAllGenres(ctx context.Context, limit, offset int) ([]*model.Genre, error) { return nil, nil }
-func (f *fakeGenreRouteService) UpdateGenre(ctx context.Context, genre *model.Genre) error { return nil }
+func (f *fakeGenreRouteService) CreateGenre(ctx context.Context, genre *model.Genre) error {
+	return nil
+}
+func (f *fakeGenreRouteService) GetGenreByID(ctx context.Context, id uint) (*model.Genre, error) {
+	return nil, nil
+}
+func (f *fakeGenreRouteService) GetAllGenres(ctx context.Context, limit, offset int) ([]*model.Genre, error) {
+	return nil, nil
+}
+func (f *fakeGenreRouteService) UpdateGenre(ctx context.Context, genre *model.Genre) error {
+	return nil
+}
 func (f *fakeGenreRouteService) DeleteGenre(ctx context.Context, id uint) error { return nil }
-func (f *fakeGenreRouteService) IncrementGenrePlayCount(ctx context.Context, name string) error { return nil }
+func (f *fakeGenreRouteService) IncrementGenrePlayCount(ctx context.Context, name string) error {
+	return nil
+}
 func (f *fakeGenreRouteService) GetGenreCount(ctx context.Context) (int64, error) { return 0, nil }
-func (f *fakeGenreRouteService) GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error) { return nil, nil }
-func (f *fakeGenreRouteService) GetTopGenresWithDetails(ctx context.Context, limit int) ([]*model.TopGenre, error) { return nil, nil }
+func (f *fakeGenreRouteService) GetTopGenresByPlayCount(ctx context.Context, limit int) ([]*model.Genre, error) {
+	return nil, nil
+}
+func (f *fakeGenreRouteService) GetTopGenresWithDetails(ctx context.Context, limit int) ([]*model.TopGenre, error) {
+	return nil, nil
+}
 
 func TestGenreAlbumsRouteUnescaping(t *testing.T) {
 	gin.SetMode(gin.TestMode)

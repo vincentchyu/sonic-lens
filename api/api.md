@@ -82,10 +82,10 @@
 | 重试音眸任务 | POST | `/api/insight-jobs/:id/retry` | `:id` | `job`, `existing` | 无 | `insightService.RetryInsightJob` -> `insightService.CreateInsightJob` |
 | 上报 Live Activity token | POST | `/api/insight-jobs/:id/live-activity-token` | `:id`, `token` | `job` | 无 | `insightService.UpdateInsightJobLiveActivityToken` -> `model.UpdateInsightJobLiveActivityToken` |
 | 仅读取解析结果 | GET | `/api/track-insight` | `artist`, `album`, `track`, `trackNumber`, `discNumber` | `insights`, `recommended_insight_id` | Redis 1m | `insightService.GetInsightOnly` -> `model.GetTrackInsightsByLookup` |
-| 生成/刷新解析 | POST | `/api/track-insight` | `artist`, `album`, `track`, `track_number`, `disc_number`, `provider`, `model`（兼容 `modelType`） | `insights`, `cached`, `recommended_insight_id` | 无 | `insightService.GetOrCreateInsight` -> `core/ai` + `track_lyrics` + `track_insight` |
-| 流式解析 SSE | GET | `/api/track-insight-stream` | `artist`, `album`, `track`, `trackNumber`, `discNumber`, `force`, `provider`, `model`（兼容 `modelType`） | SSE `message` | 无 | `insightService.GetOrCreateInsightStream` -> `core/ai` |
+| 生成/刷新解析（已废弃） | POST | `/api/track-insight` | 无 | `410 Gone`（统一收口至 `POST /api/insight-jobs`） | 无 | 返回 `DEPRECATED_USE_INSIGHT_JOBS` |
+| 流式解析 SSE（已废弃） | GET | `/api/track-insight-stream` | 无 | `410 Gone`（统一升级为 `POST /api/insight-jobs` + WS） | 无 | 返回 `DEPRECATED_USE_INSIGHT_JOBS` |
 | 仅读取专辑解析结果 | GET | `/api/album-insight` | `albumID` | `insights`, `recommended_insight_id` | Redis 1m | `insightService.GetAlbumInsightOnly` -> `model.GetAlbumInsightsByLookup` |
-| 生成/刷新专辑解析 | POST | `/api/album-insight` | `album_id`, `provider`, `model`（兼容 `modelType`） | `insights`, `cached`, `recommended_insight_id` | 无 | `insightService.GetOrCreateAlbumInsight` -> `core/ai` + `track_album` + `track_insight` |
+| 生成/刷新专辑解析（已废弃） | POST | `/api/album-insight` | 无 | `410 Gone`（统一收口至 `POST /api/insight-jobs`） | 无 | 返回 `DEPRECATED_USE_INSIGHT_JOBS` |
 | 曲目解析反馈 | POST | `/api/track-insight/:id/feedback` | `:id`, `score`, `comment`, `reason_codes[]`（`不准确/太空泛/不贴合歌曲/专辑/缺少关键信息/结构混乱/其他`）, `section_key`, `source_platform` | `status` | 无 | `insightService.RecordFeedback` -> `track_insight_feedbacks` |
 | 专辑解析反馈 | POST | `/api/album-insight/:id/feedback` | `:id`, `score`, `comment`, `reason_codes[]`（`不准确/太空泛/不贴合歌曲/专辑/缺少关键信息/结构混乱/其他`）, `section_key`, `source_platform` | `status` | 无 | `insightService.RecordAlbumFeedback` -> `album_insight_feedbacks` |
 | 解析反馈摘要 | GET | `/api/insights/:id/feedback-summary` | `:id`, `analysis_target_type`(`track`/`album`) | `like_count`, `dislike_count`, `latest_feedback`, `latest_negative_feedback`, `top_reason_codes`, `has_feedback` | 无 | `insightService.GetInsightFeedbackSummary` |
@@ -105,7 +105,7 @@
 
 | 功能 | 方法 | 路径 | 核心参数 | 返回 | 后端关联 |
 |---|---|---|---|---|---|
-| 待归因分组 | GET | `/api/pending-albums` | `limit` | `groups` | `pendingAlbumService.GetPendingAlbumGroups` |
+| 待归因分组 | GET | `/api/pending-albums` | `limit`, `filter` (`all`/`uncreated`/`created`) | `groups` | `pendingAlbumService.GetPendingAlbumGroupsWithOptions` |
 | 创建/获取工作项 | POST | `/api/pending-albums/work-items` | `identity_key` | work item | `CreateOrGetPendingAlbumWorkItem` |
 | 工作项列表 | GET | `/api/pending-albums/work-items` | `limit`, `offset`, `keyword`, `status_group` | `items`, `total` | `ListWorkItems` |
 | 工作项详情 | GET | `/api/pending-albums/work-items/:id` | `:id` | detail（含冻结上下文） | `GetPendingAlbumWorkItemDetail` |
@@ -220,12 +220,10 @@ graph TD
 
 ## 4. 关键调用链（接口 -> logic -> model/外部系统）
 
-- 资料库增量同步：`GET /api/library/sync` -> `trackService.GetLibrarySyncDelta` -> `model.GetLibrarySyncDelta` -> `library_change_log` 游标输出。
-- AI 解析生成：`POST /api/track-insight` -> `insightService.GetOrCreateInsight` -> `model.GetTrackByIdentity/GetTrackInsightsByLookup/GetNegativeFeedbacksByLookup/CreateTrackInsight` + `core/ai`。
-- AI 异步任务：`POST /api/insight-jobs` -> `insightService.CreateInsightJob` -> `model.CreateInsightJob` -> `telemetry.GoSafeDetached(processInsightJob)` -> `GetOrCreateInsight/GetOrCreateAlbumInsight` -> 回写 `result_insight_id` -> `core/websocket.BroadcastInsightJobUpdate`。
+- AI 解析读取：`GET /api/track-insight` -> `insightService.GetInsightOnly` -> `model.GetTrackInsightsByLookup`；`GET /api/album-insight` -> `insightService.GetAlbumInsightOnly` -> `model.GetAlbumInsightsByLookup`。
+- AI 异步任务创建：`POST /api/insight-jobs` -> `insightService.CreateInsightJob` -> `model.CreateInsightJob` -> `telemetry.GoSafeDetached(processInsightJob)` -> `GetOrCreateInsight/GetOrCreateAlbumInsight` -> 回写 `result_insight_id` -> `core/websocket.BroadcastInsightJobUpdate`（终态广播）。
 - AI 任务管理：`GET /api/insight-jobs` -> `insightService.ListInsightJobs` -> `model.ListInsightJobs`；`POST /api/insight-jobs/:id/cancel` -> `insightService.CancelInsightJob` -> `model.CancelInsightJob`；`DELETE /api/insight-jobs/:id` -> `insightService.DeleteInsightJob` -> `model.DeleteInsightJob`；`POST /api/insight-jobs/:id/retry` -> `insightService.RetryInsightJob` -> `CreateInsightJob`。
-- AI 流式解析：`GET /api/track-insight-stream` -> `insightService.GetOrCreateInsightStream` -> `LLM AnalyzeTrackStream` -> 结束后回写 `track_insight`。
-- 专辑 AI 读取/生成：`GET /api/album-insight`、`POST /api/album-insight` -> `insightService.GetAlbumInsightOnly/GetOrCreateAlbumInsight` -> `model.GetAlbumWithTracks/GetAlbumInsightsByLookup` + `core/ai`。
+- 旧接口废弃拦截：`POST /api/track-insight`、`POST /api/album-insight`、`GET /api/track-insight-stream` 统一返回 `410 Gone` (DEPRECATED_USE_INSIGHT_JOBS)。
 - 解析反馈：`POST /api/track-insight/:id/feedback`、`POST /api/album-insight/:id/feedback` -> `insightService.RecordFeedback/RecordAlbumFeedback` -> 记录 `score/comment/reason_codes/section_key/source_platform` 并回写统计字段。
 - 解析反馈摘要：`GET /api/insights/:id/feedback-summary?analysis_target_type=track|album` -> `insightService.GetInsightFeedbackSummary` -> 汇总点赞/点踩、最近反馈与高频问题标签。
 - 解析反馈历史：`GET /api/insights/:id/feedback-history?analysis_target_type=track|album` -> `insightService.GetInsightFeedbackHistory` -> 返回最近若干条个人反馈历史。

@@ -47,15 +47,28 @@ async function handleAiInsightClick() {
         }
 
         if (!aiModelsByPlatform[platformId]) {
-            const resp = await fetch(`/api/ai-models/${encodeURIComponent(platformId)}/models`);
-            if (!resp.ok) {
-                throw new Error('加载模型目录失败');
+            try {
+                const resp = await fetch(`/api/ai-models/${encodeURIComponent(platformId)}/models`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    aiModelsByPlatform[platformId] = Array.isArray(data.models) ? data.models : [];
+                } else {
+                    console.warn(`拉取平台 ${platformId} 模型目录失败，使用默认预设`);
+                    aiModelsByPlatform[platformId] = [];
+                }
+            } catch (err) {
+                console.warn(`请求平台 ${platformId} 模型目录网络异常:`, err);
+                aiModelsByPlatform[platformId] = [];
             }
-            const data = await resp.json();
-            aiModelsByPlatform[platformId] = Array.isArray(data.models) ? data.models : [];
         }
 
-        const models = aiModelsByPlatform[platformId];
+        let models = aiModelsByPlatform[platformId] || [];
+        if (models.length === 0) {
+            const platformObj = availableAIPlatforms.find(item => item.id === platformId);
+            const defaultModelName = platformObj?.default_model || preferredModel || platformId;
+            models = [{ id: defaultModelName, display_name: defaultModelName, is_default: true }];
+        }
+
         select.innerHTML = '';
         models.forEach(item => {
             const opt = document.createElement('option');
@@ -518,9 +531,124 @@ async function handleAiInsightClick() {
         `;
     }
 
+    // 音眸长任务异步跟踪
+    const activeTrackInsightJobs = {
+        nowPlaying: null,
+        list: null,
+        details: null
+    };
+    let activeAlbumInsightJob = null;
+
+    function clearTrackJobTracking(contextType) {
+        if (activeTrackInsightJobs[contextType]?.pollTimer) {
+            clearInterval(activeTrackInsightJobs[contextType].pollTimer);
+        }
+        activeTrackInsightJobs[contextType] = null;
+    }
+
+    function clearAlbumJobTracking() {
+        if (activeAlbumInsightJob?.pollTimer) {
+            clearInterval(activeAlbumInsightJob.pollTimer);
+        }
+        activeAlbumInsightJob = null;
+    }
+
+    function renderTrackInsightJobProgress(contextType, job) {
+        const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
+        const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
+        const aiButton = document.getElementById("aiInsightButton");
+        if (aiButton) aiButton.disabled = true;
+        if (actionFooter) actionFooter.style.display = "none";
+        if (!streamContent) return;
+
+        const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+        const statusText = job.status === 'queued' ? '任务排队中...' : '深度音眸解析中...';
+        const stepText = job.current_step || (job.status === 'queued' ? '等待任务调度' : '正在执行多步意境解析与翻译');
+        const provider = job.provider || 'AI';
+        const model = job.model || '';
+        const modelBadge = model ? `${provider} · ${model}` : provider;
+
+        streamContent.innerHTML = `
+            <div class="ai-job-progress-card" style="padding: 24px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px;">
+                <div class="ai-ripple" style="margin-bottom: 16px;"><div></div><div></div></div>
+                <div style="font-size: 1.1em; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">${statusText}</div>
+                <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 16px;">${escapeHtmlText(stepText)}</div>
+                
+                <div style="width: 80%; max-width: 320px; background: rgba(125, 125, 125, 0.2); border-radius: 999px; height: 8px; overflow: hidden; margin-bottom: 12px;">
+                    <div style="width: ${progress}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 999px; transition: width 0.3s ease;"></div>
+                </div>
+                <div style="font-size: 0.8em; color: var(--text-secondary); display: flex; gap: 12px; align-items: center;">
+                    <span>进度: ${progress}%</span>
+                    <span>·</span>
+                    <span class="queue-chip queue-chip-job" style="font-size: 0.85em; padding: 2px 8px;">${escapeHtmlText(modelBadge)}</span>
+                </div>
+                <div style="margin-top: 18px; display: flex; gap: 10px;">
+                    <button class="time-filter" style="font-size: 0.8em; padding: 4px 12px; border-radius: 6px;" onclick="cancelActiveTrackInsightJob('${contextType}', '${escapeHtmlText(job.id)}')">取消任务</button>
+                    ${typeof showInsightJobDetails === 'function' ? `<button class="time-filter" style="font-size: 0.8em; padding: 4px 12px; border-radius: 6px;" onclick="showInsightJobDetails('${escapeHtmlText(job.id)}')">查看详情</button>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    async function cancelActiveTrackInsightJob(contextType, jobID) {
+        if (!jobID) return;
+        try {
+            const resp = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}/cancel`, { method: "POST" });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || "取消任务失败");
+            clearTrackJobTracking(contextType);
+            handleInsightError(new Error("音眸任务已取消"), true, contextType);
+            if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+        } catch (e) {
+            alert(e.message || "取消任务失败");
+        }
+    }
+    window.cancelActiveTrackInsightJob = cancelActiveTrackInsightJob;
+
+    function isInsightJobCompleted(status) {
+        const s = String(status || '').toLowerCase();
+        return s === 'completed' || s === 'succeeded';
+    }
+
+    function isInsightJobFailed(status) {
+        const s = String(status || '').toLowerCase();
+        return s === 'failed' || s === 'canceled' || s === 'cancelled';
+    }
+
+    function startTrackJobPolling(contextType, jobID, trackInfo) {
+        clearTrackJobTracking(contextType);
+        const pollTimer = setInterval(async () => {
+            try {
+                const resp = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const job = data.job;
+                if (!job) return;
+                if (isInsightJobCompleted(job.status)) {
+                    clearTrackJobTracking(contextType);
+                    fetchTrackInsight(false, trackInfo, contextType);
+                    if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+                } else if (isInsightJobFailed(job.status)) {
+                    clearTrackJobTracking(contextType);
+                    handleInsightError(new Error(job.error_message || "音眸分析任务未成功完成"), true, contextType);
+                    if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+                } else {
+                    renderTrackInsightJobProgress(contextType, job);
+                }
+            } catch (e) {
+                console.warn("轮询音眸任务状态失败:", e);
+            }
+        }, 1500);
+
+        activeTrackInsightJobs[contextType] = {
+            jobID,
+            trackInfo,
+            pollTimer
+        };
+    }
+
     // 5. 核心分析驱动函数
     async function fetchTrackInsight(force = false, targetTrack = null, contextType = 'nowPlaying') {
-        // 这里的逻辑：传入了 targetTrack 就用传入的，否则用全局 currentTrackInfo
         const trackInfo = targetTrack || currentTrackInfo;
         if (!trackInfo) {
             alert("无法获取曲目元数据，请确保页面已加载曲目信息");
@@ -531,7 +659,6 @@ async function handleAiInsightClick() {
         state.trackInfo = trackInfo;
 
         const aiButton = document.getElementById("aiInsightButton");
-        const sseEnabled = document.getElementById("aiModelSseToggle").checked;
         const streamContent = document.getElementById(`${contextType}-aiInsightStreamContent`);
         const actionFooter = document.getElementById(`${contextType}-aiActionFooter`);
         const reanalyzeBtn = document.getElementById(`${contextType}-aiReanalyzeBtn`);
@@ -543,81 +670,59 @@ async function handleAiInsightClick() {
         const trackNumber = trackInfo.track_number || trackInfo.trackNumber || 0;
         const discNumber = trackInfo.disc_number || trackInfo.discNumber || 0;
 
-        // 如果是强制分析，必须有已选模型
-        let provider = "";
-        let modelName = "";
         if (force) {
             const selection = getSelectedAIRequest();
-            provider = selection.provider;
-            modelName = selection.model;
-            console.log("Force analysis started. Provider:", provider, "Model:", modelName, "SSE:", sseEnabled);
+            const provider = selection.provider;
+            const modelName = selection.model;
+            console.log("Job-based force analysis started. Provider:", provider, "Model:", modelName);
             if (aiButton) aiButton.disabled = true;
             if (streamContent) streamContent.innerHTML = getRandomLoadingHtml();
             if (actionFooter) actionFooter.style.display = "none";
-            
-            console.log("Showing modal immediately:", `${contextType}InsightModal`);
             showModal(`${contextType}InsightModal`);
-        } else {
-            // 仅查询模式
-            if (aiButton) aiButton.disabled = true;
-        }
 
-        if (force && sseEnabled) {
-            // --- SSE 流式模式 ---
-            // 如果已有连接先关闭
-            if (state.eventSource) state.eventSource.close();
-            
-            const url = `/api/track-insight-stream?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&track=${encodeURIComponent(track)}&trackNumber=${encodeURIComponent(trackNumber)}&discNumber=${encodeURIComponent(discNumber)}&force=true&provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(modelName)}`;
-            const eventSource = new EventSource(url);
-            state.eventSource = eventSource;
-            let fullText = "";
-
-            eventSource.onmessage = function (event) {
-                if (streamContent) {
-                    if (streamContent.querySelector(".ai-loading-wrapper")) streamContent.innerHTML = "";
-                    fullText += event.data;
-                    streamContent.textContent = fullText;
-                    streamContent.scrollTop = streamContent.scrollHeight;
-                }
+            const body = {
+                target_type: "track",
+                artist,
+                album,
+                track,
+                track_number: Number(trackNumber) || 0,
+                disc_number: Number(discNumber) || 0,
+                provider,
+                model: modelName,
+                client_platform: "web_admin"
             };
 
-            eventSource.onerror = function (err) {
-                eventSource.close();
-                state.eventSource = null;
-                if (aiButton) aiButton.disabled = false;
-                if (fullText.length > 0) {
-                    // 分析完成，执行非强制查询以刷新结果展示排版
-                    fetchTrackInsight(false, trackInfo, contextType);
-                } else {
-                    // 分析失败
-                    streamContent.innerHTML = '<div class="error">对话意外中断或该模型暂不支持流式返回。</div>';
-                    actionFooter.style.display = "flex";
-                    reanalyzeBtn.textContent = "开始分析";
-                }
-            };
-        } else if (force) {
-            // --- 强制执行分析模式 (POST) ---
-            console.log("Starting POST analysis fetch...");
-            const body = {artist, album, track, track_number: trackNumber, disc_number: discNumber, provider, model: modelName};
-            fetch("/api/track-insight", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(body)
-            }).then(response => {
-                console.log("POST analysis response received. Status:", response.status);
-                const aiButton = document.getElementById("aiInsightButton");
-                if (aiButton) aiButton.disabled = false;
-                return response.json().then(data => {
-                    if (!response.ok) throw new Error(data.error || "分析失败");
-                    const insights = data.insights || (data.insight ? [data.insight] : []);
-                    const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
-                    console.log("POST analysis logic success, calling handleInsightResponse");
-                    handleInsightResponse(insights, true, contextType, recommendedInsightID);
+            try {
+                const response = await fetch("/api/insight-jobs", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(body)
                 });
-            }).catch(err => {
-                console.error("POST analysis fetch error:", err);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || "创建音眸分析任务失败");
+                }
+                const job = data.job;
+                if (!job) {
+                    throw new Error("服务端未返回有效任务实体");
+                }
+
+                if (isInsightJobCompleted(job.status) && job.result_insight_id) {
+                    // 已有终态结果，直接拉取正文并渲染
+                    await fetchTrackInsight(false, trackInfo, contextType);
+                } else {
+                    // 异步进行中，渲染进度并开启轮询与监听
+                    renderTrackInsightJobProgress(contextType, job);
+                    startTrackJobPolling(contextType, job.id, trackInfo);
+                }
+
+                // 联动任务监控看板
+                if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+                if (typeof loadInsightJobList === 'function') loadInsightJobList(1);
+            } catch (err) {
+                console.error("创建音眸任务失败:", err);
                 handleInsightError(err, true, contextType);
-            });
+            }
         } else {
             // --- 纯查询模式 (GET) ---
             try {
@@ -1385,7 +1490,33 @@ async function handleAiInsightClick() {
         }
 
         if (albumInsightState.generating) {
-            container.innerHTML = buildAlbumInsightStatusHtml("正在生成专辑音眸", "正在按曲序聚合已有曲目音眸，返回整张专辑的主题、叙事与听感结构。");
+            const job = albumInsightState.activeJob;
+            const progress = job ? Math.max(0, Math.min(100, Number(job.progress || 0))) : 0;
+            const stepText = job?.current_step || "正在按曲序聚合已有曲目音眸，生成整张专辑的主题与结构...";
+            const provider = job?.provider || 'AI';
+            const model = job?.model || '';
+            const modelBadge = model ? `${provider} · ${model}` : provider;
+            container.innerHTML = `
+                <div class="album-insight-status" style="text-align: center; padding: 32px 16px;">
+                    <div class="ai-ripple" style="margin-bottom: 16px;"><div></div><div></div></div>
+                    <div style="font-size: 1.1em; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">正在生成专辑音眸</div>
+                    <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 16px;">${escapeHtmlText(stepText)}</div>
+                    <div style="width: 80%; max-width: 320px; margin: 0 auto 12px; background: rgba(125, 125, 125, 0.2); border-radius: 999px; height: 8px; overflow: hidden;">
+                        <div style="width: ${progress}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 999px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="font-size: 0.8em; color: var(--text-secondary); display: flex; gap: 12px; align-items: center; justify-content: center; margin-bottom: 14px;">
+                        <span>进度: ${progress}%</span>
+                        <span>·</span>
+                        <span class="queue-chip queue-chip-job" style="font-size: 0.85em; padding: 2px 8px;">${escapeHtmlText(modelBadge)}</span>
+                    </div>
+                    ${job?.id ? `
+                        <div style="display: flex; gap: 10px; justify-content: center;">
+                            <button class="time-filter" style="font-size: 0.8em; padding: 4px 12px; border-radius: 6px;" onclick="cancelActiveAlbumInsightJob('${escapeHtmlText(job.id)}')">取消任务</button>
+                            ${typeof showInsightJobDetails === 'function' ? `<button class="time-filter" style="font-size: 0.8em; padding: 4px 12px; border-radius: 6px;" onclick="showInsightJobDetails('${escapeHtmlText(job.id)}')">查看流水</button>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
             return;
         }
 
@@ -1462,6 +1593,97 @@ async function handleAiInsightClick() {
         renderAlbumInsightPanel();
     }
 
+    async function cancelActiveAlbumInsightJob(jobID) {
+        if (!jobID) return;
+        try {
+            const resp = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}/cancel`, { method: "POST" });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || "取消专辑分析任务失败");
+            clearAlbumJobTracking();
+            albumInsightState.generating = false;
+            albumInsightState.lastError = "专辑分析任务已取消";
+            renderAlbumInsightPanel();
+            if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+        } catch (e) {
+            alert(e.message || "取消任务失败");
+        }
+    }
+    window.cancelActiveAlbumInsightJob = cancelActiveAlbumInsightJob;
+
+    function startAlbumJobPolling(jobID, albumID) {
+        clearAlbumJobTracking();
+        const pollTimer = setInterval(async () => {
+            try {
+                const resp = await fetch(`/api/insight-jobs/${encodeURIComponent(jobID)}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const job = data.job;
+                if (!job) return;
+                if (isInsightJobCompleted(job.status)) {
+                    clearAlbumJobTracking();
+                    fetchAlbumInsight(false, albumID);
+                    if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+                } else if (isInsightJobFailed(job.status)) {
+                    clearAlbumJobTracking();
+                    albumInsightState.generating = false;
+                    albumInsightState.lastError = job.error_message || "专辑分析任务未成功完成";
+                    renderAlbumInsightPanel();
+                    if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+                } else {
+                    albumInsightState.activeJob = job;
+                    renderAlbumInsightPanel();
+                }
+            } catch (e) {
+                console.warn("轮询专辑音眸任务失败:", e);
+            }
+        }, 1500);
+
+        activeAlbumInsightJob = {
+            jobID,
+            albumID,
+            pollTimer
+        };
+    }
+
+    // 全局活跃音眸长任务更新监听器（由 WebSocket 实时触发）
+    window.handleActiveInsightJobUpdate = function(job) {
+        if (!job || !job.id) return;
+
+        // 1. 检查曲目活跃任务
+        for (const contextType of ['nowPlaying', 'list', 'details']) {
+            const tracking = activeTrackInsightJobs[contextType];
+            if (tracking && tracking.jobID === job.id) {
+                if (isInsightJobCompleted(job.status)) {
+                    clearTrackJobTracking(contextType);
+                    fetchTrackInsight(false, tracking.trackInfo, contextType);
+                } else if (isInsightJobFailed(job.status)) {
+                    clearTrackJobTracking(contextType);
+                    handleInsightError(new Error(job.error_message || "音眸分析任务未成功完成"), true, contextType);
+                } else {
+                    renderTrackInsightJobProgress(contextType, job);
+                }
+                break;
+            }
+        }
+
+        // 2. 检查专辑活跃任务
+        if (activeAlbumInsightJob && activeAlbumInsightJob.jobID === job.id) {
+            if (isInsightJobCompleted(job.status)) {
+                const albumID = activeAlbumInsightJob.albumID;
+                clearAlbumJobTracking();
+                fetchAlbumInsight(false, albumID);
+            } else if (isInsightJobFailed(job.status)) {
+                clearAlbumJobTracking();
+                albumInsightState.generating = false;
+                albumInsightState.lastError = job.error_message || "专辑分析任务未成功完成";
+                renderAlbumInsightPanel();
+            } else {
+                albumInsightState.activeJob = job;
+                renderAlbumInsightPanel();
+            }
+        }
+    };
+
     async function fetchAlbumInsight(force = false, albumID = window.currentAlbumID) {
         if (!albumID) {
             return;
@@ -1476,50 +1698,88 @@ async function handleAiInsightClick() {
         }
         renderAlbumInsightPanel();
 
-        const selection = force ? getSelectedAIRequest() : {provider: '', model: ''};
-        const url = force ? '/api/album-insight' : `/api/album-insight?albumID=${encodeURIComponent(albumID)}`;
-        const options = force ? {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({album_id: albumID, provider: selection.provider, model: selection.model})
-        } : {};
+        if (force) {
+            const selection = getSelectedAIRequest();
+            const payload = {
+                target_type: "album",
+                album_id: Number(albumID),
+                provider: selection.provider,
+                model: selection.model,
+                client_platform: "web_admin"
+            };
 
-        try {
-            const response = await fetch(url, options);
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || '获取专辑分析失败');
-            }
-            if (albumInsightState.albumID !== albumID) {
-                return;
-            }
+            try {
+                const response = await fetch("/api/insight-jobs", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '创建专辑分析任务失败');
+                }
+                const job = data.job;
+                if (!job) {
+                    throw new Error('服务端未返回有效任务实体');
+                }
 
-            const insights = data.insights || (data.insight ? [data.insight] : []);
-            const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
-            albumInsightState.insights = insights;
-            const focusInsightID = Number(albumInsightState.focusInsightID || 0);
-            const recommendedInsight = recommendedInsightID > 0
-                ? insights.find((item) => Number(item.id || 0) === recommendedInsightID)
-                : null;
-            const focusedInsight = focusInsightID > 0
-                ? insights.find((item) => Number(item.id || 0) === focusInsightID)
-                : null;
-            albumInsightState.insight = focusedInsight || recommendedInsight || insights[0] || null;
-            albumInsightState.focusInsightID = Number(albumInsightState.insight ? albumInsightState.insight.id : 0);
-            albumInsightState.view = albumInsightState.view || 'summary';
-            window.currentAlbumDetailData = window.currentAlbumDetailData || {};
-            window.currentAlbumDetailData.insights = insights;
-            window.currentAlbumDetailData.recommendedInsightID = recommendedInsightID;
-        } catch (error) {
-            if (albumInsightState.albumID !== albumID) {
-                return;
+                if (isInsightJobCompleted(job.status) && job.result_insight_id) {
+                    await fetchAlbumInsight(false, albumID);
+                } else {
+                    albumInsightState.activeJob = job;
+                    renderAlbumInsightPanel();
+                    startAlbumJobPolling(job.id, albumID);
+                }
+
+                if (typeof loadInsightJobSummarySnapshot === 'function') loadInsightJobSummarySnapshot();
+                if (typeof loadInsightJobList === 'function') loadInsightJobList(1);
+            } catch (error) {
+                if (albumInsightState.albumID === albumID) {
+                    albumInsightState.generating = false;
+                    albumInsightState.lastError = error.message || '创建专辑分析任务失败';
+                    renderAlbumInsightPanel();
+                }
             }
-            albumInsightState.lastError = error.message || '获取专辑分析失败';
-        } finally {
-            if (albumInsightState.albumID === albumID) {
-                albumInsightState.loading = false;
-                albumInsightState.generating = false;
-                renderAlbumInsightPanel();
+        } else {
+            // --- 纯查询模式 (GET) ---
+            try {
+                const url = `/api/album-insight?albumID=${encodeURIComponent(albumID)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '获取专辑分析失败');
+                }
+                if (albumInsightState.albumID !== albumID) {
+                    return;
+                }
+
+                const insights = data.insights || (data.insight ? [data.insight] : []);
+                const recommendedInsightID = Number(data.recommended_insight_id || data.recommendedInsightID || 0);
+                albumInsightState.insights = insights;
+                const focusInsightID = Number(albumInsightState.focusInsightID || 0);
+                const recommendedInsight = recommendedInsightID > 0
+                    ? insights.find((item) => Number(item.id || 0) === recommendedInsightID)
+                    : null;
+                const focusedInsight = focusInsightID > 0
+                    ? insights.find((item) => Number(item.id || 0) === focusInsightID)
+                    : null;
+                albumInsightState.insight = focusedInsight || recommendedInsight || insights[0] || null;
+                albumInsightState.focusInsightID = Number(albumInsightState.insight ? albumInsightState.insight.id : 0);
+                albumInsightState.view = albumInsightState.view || 'summary';
+                window.currentAlbumDetailData = window.currentAlbumDetailData || {};
+                window.currentAlbumDetailData.insights = insights;
+                window.currentAlbumDetailData.recommendedInsightID = recommendedInsightID;
+            } catch (error) {
+                if (albumInsightState.albumID !== albumID) {
+                    return;
+                }
+                albumInsightState.lastError = error.message || '获取专辑分析失败';
+            } finally {
+                if (albumInsightState.albumID === albumID) {
+                    albumInsightState.loading = false;
+                    albumInsightState.generating = false;
+                    renderAlbumInsightPanel();
+                }
             }
         }
     }

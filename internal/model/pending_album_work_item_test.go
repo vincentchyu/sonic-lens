@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -288,35 +289,109 @@ func TestGetPendingAlbumGroupsSorting(t *testing.T) {
 
 	now := time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
 
-	// A: 2 records, Latest: now - 3h, Artist: A
+	// A: 0 favorites, 2 play records, Latest: now - 3h, Artist: A
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 1, Artist: "A", Album: "A", AlbumArtist: "A", Track: "T1", PlayTime: now.Add(-time.Hour * 5)}).Error)
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 2, Artist: "A", Album: "A", AlbumArtist: "A", Track: "T2", PlayTime: now.Add(-time.Hour * 3)}).Error)
 
-	// B: 3 records, Latest: now - 5h, Artist: B
+	// B: 0 favorites, 3 play records, Latest: now - 5h, Artist: B
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 3, Artist: "B", Album: "B", AlbumArtist: "B", Track: "T1", PlayTime: now.Add(-time.Hour * 7)}).Error)
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 4, Artist: "B", Album: "B", AlbumArtist: "B", Track: "T2", PlayTime: now.Add(-time.Hour * 6)}).Error)
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 5, Artist: "B", Album: "B", AlbumArtist: "B", Track: "T3", PlayTime: now.Add(-time.Hour * 5)}).Error)
 
-	// C: 2 records, Latest: now - 1h, Artist: C
+	// C: 0 favorites, 2 play records, Latest: now - 1h, Artist: C
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 6, Artist: "C", Album: "C", AlbumArtist: "C", Track: "T1", PlayTime: now.Add(-time.Hour * 1)}).Error)
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 7, Artist: "C", Album: "C", AlbumArtist: "C", Track: "T2", PlayTime: now.Add(-time.Hour * 4)}).Error)
 
-	// D: 2 records, Latest: now - 1h, Artist: D
+	// D: 0 favorites, 2 play records, Latest: now - 1h, Artist: D
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 8, Artist: "D", Album: "D", AlbumArtist: "D", Track: "T1", PlayTime: now.Add(-time.Hour * 1)}).Error)
 	require.NoError(t, db.Create(&TrackPlayRecord{ID: 9, Artist: "D", Album: "D", AlbumArtist: "D", Track: "T2", PlayTime: now.Add(-time.Hour * 4)}).Error)
+
+	// E: 1 favorite, 1 play record, Artist: E
+	require.NoError(t, db.Create(&TrackPlayRecord{ID: 10, Artist: "E", Album: "E", AlbumArtist: "E", Track: "T1", PlayTime: now.Add(-time.Hour * 2)}).Error)
+	require.NoError(t, db.Create(&TrackFavoriteEvent{ID: 1, Artist: "E", Album: "E", AlbumArtist: "E", Track: "T1", ResolutionStatus: TrackFavoriteEventResolutionPending, Applied: false}).Error)
+
+	// F: 2 favorites, 0 play records, Artist: F
+	require.NoError(t, db.Create(&TrackFavoriteEvent{ID: 2, Artist: "F", Album: "F", AlbumArtist: "F", Track: "T1", ResolutionStatus: TrackFavoriteEventResolutionPending, Applied: false}).Error)
+	require.NoError(t, db.Create(&TrackFavoriteEvent{ID: 3, Artist: "F", Album: "F", AlbumArtist: "F", Track: "T2", ResolutionStatus: TrackFavoriteEventResolutionPending, Applied: false}).Error)
 
 	groups, err := GetPendingAlbumGroups(ctx, 0)
 	require.NoError(t, err)
 
 	// 预期顺序:
-	// 1. B (3条记录)
-	// 2. C (2条记录, 最后播放 -1h, ID: c||c)
-	// 3. D (2条记录, 最后播放 -1h, ID: d||d)
-	// 4. A (2条记录, 最后播放 -3h, ID: a||a)
+	// 1. F (2条点赞事件, 0条播放)
+	// 2. E (1条点赞事件, 1条播放)
+	// 3. B (0条点赞, 3条播放)
+	// 4. C (0条点赞, 2条播放, 最后播放 -1h, ID: c||c)
+	// 5. D (0条点赞, 2条播放, 最后播放 -1h, ID: d||d)
+	// 6. A (0条点赞, 2条播放, 最后播放 -3h, ID: a||a)
 
-	require.Len(t, groups, 4)
-	require.Equal(t, "B", groups[0].Artist)
-	require.Equal(t, "C", groups[1].Artist)
-	require.Equal(t, "D", groups[2].Artist)
-	require.Equal(t, "A", groups[3].Artist)
+	require.Len(t, groups, 6)
+	require.Equal(t, "F", groups[0].Artist)
+	require.Equal(t, "E", groups[1].Artist)
+	require.Equal(t, "B", groups[2].Artist)
+	require.Equal(t, "C", groups[3].Artist)
+	require.Equal(t, "D", groups[4].Artist)
+	require.Equal(t, "A", groups[5].Artist)
+}
+
+func TestGetPendingAlbumGroupsWithOptions_Filter(t *testing.T) {
+	db := newTrackResolutionTestDB(t, "pending_album_filter_fill_limit")
+	ctx := context.Background()
+
+	now := time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
+
+	// 构造 10 个专辑 (Album01 ~ Album10)，播放量从高到低 (10 次 ~ 1 次)
+	for i := 1; i <= 10; i++ {
+		albumName := fmt.Sprintf("Album%02d", i)
+		for p := 0; p < (11 - i); p++ {
+			require.NoError(t, db.Create(&TrackPlayRecord{
+				Artist:      "ArtistX",
+				AlbumArtist: "ArtistX",
+				Album:       albumName,
+				Track:       "Track1",
+				PlayTime:    now.Add(time.Duration(-p) * time.Minute),
+			}).Error)
+		}
+	}
+
+	// 为前 6 个专辑 (Album01 ~ Album06) 创建活跃工单 (status = open)
+	for i := 1; i <= 6; i++ {
+		albumName := fmt.Sprintf("Album%02d", i)
+		identityKey := normalizePendingAlbumIdentity("ArtistX", "ArtistX", albumName, "")
+		require.NoError(t, db.Create(&PendingAlbumWorkItem{
+			Artist:                "ArtistX",
+			AlbumArtist:           "ArtistX",
+			Album:                 albumName,
+			NormalizedIdentityKey: identityKey,
+			Status:                PendingAlbumWorkItemStatusOpen,
+		}).Error)
+	}
+
+	// 测试 1: 请求 filter = "uncreated", limit = 3
+	// 前 6 个热门专辑都已建单，过滤后应从后 4 个未建单专辑中精准返回 3 个 (Album07, Album08, Album09)
+	uncreatedGroups, err := GetPendingAlbumGroupsWithOptions(ctx, PendingAlbumGroupQueryOptions{
+		Filter: "uncreated",
+		Limit:  3,
+	})
+	require.NoError(t, err)
+	require.Len(t, uncreatedGroups, 3, "未建单过滤必须填满请求的 limit 数量")
+	for _, g := range uncreatedGroups {
+		require.Equal(t, int64(0), g.OpenWorkItemID, "返回的分组必须未建单")
+	}
+	require.Equal(t, "Album07", uncreatedGroups[0].Album)
+	require.Equal(t, "Album08", uncreatedGroups[1].Album)
+	require.Equal(t, "Album09", uncreatedGroups[2].Album)
+
+	// 测试 2: 请求 filter = "created", limit = 4
+	createdGroups, err := GetPendingAlbumGroupsWithOptions(ctx, PendingAlbumGroupQueryOptions{
+		Filter: "created",
+		Limit:  4,
+	})
+	require.NoError(t, err)
+	require.Len(t, createdGroups, 4, "已建单过滤必须返回 4 条")
+	for _, g := range createdGroups {
+		require.Greater(t, g.OpenWorkItemID, int64(0), "返回的分组必须已建单")
+	}
+	require.Equal(t, "Album01", createdGroups[0].Album)
+	require.Equal(t, "Album02", createdGroups[1].Album)
 }

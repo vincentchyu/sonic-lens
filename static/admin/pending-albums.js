@@ -878,6 +878,15 @@ async function loadPendingAlbumList() {
         if (input) input.value = val;
     }
 
+window.setPendingDiffGenre = setPendingDiffGenre;
+
+function setPendingDiffReleaseType(val) {
+    const input = document.getElementById('pendingDiffReleaseType');
+    if (input) input.value = val;
+}
+
+window.setPendingDiffReleaseType = setPendingDiffReleaseType;
+
     function renderPendingDiffPreview(preview) {
         if (!preview) return;
         const album = preview.album_preview || {};
@@ -885,7 +894,29 @@ async function loadPendingAlbumList() {
         const diffSubInput = document.getElementById('pendingDiffAlbumSubtitle');
         if (diffSubInput) diffSubInput.value = album.album_subtitle || '';
         const diffRtInput = document.getElementById('pendingDiffReleaseType');
-        if (diffRtInput) diffRtInput.value = album.release_type || '';
+        const mbRt = (album.mb_release_type || '').toLowerCase();
+        const evRt = (album.evidence_release_type || '').toLowerCase();
+        const chosenRt = (album.release_type || album.mb_release_type || album.evidence_release_type || '').toLowerCase();
+        if (diffRtInput) diffRtInput.value = chosenRt;
+
+        const rtHint = document.getElementById('pendingDiffReleaseTypeHint');
+        if (rtHint) {
+            let hintHtml = '';
+            if (mbRt || evRt) {
+                hintHtml = `MB: <b>${esc(mbRt || '-')}</b> | 监听源: <b>${esc(evRt || '-')}</b>`;
+                if (evRt && evRt !== mbRt) {
+                    hintHtml += ` <a href="javascript:void(0)" onclick="setPendingDiffReleaseType('${esc(evRt)}')" style="color: var(--primary-color); text-decoration: underline; margin-left: 6px; font-weight: bold;">[用监听源]</a>`;
+                }
+                if (mbRt && evRt && evRt !== mbRt) {
+                    hintHtml += ` <a href="javascript:void(0)" onclick="setPendingDiffReleaseType('${esc(mbRt)}')" style="color: #e67e22; text-decoration: underline; margin-left: 6px; font-weight: bold;">[用 MB]</a>`;
+                }
+                if (mbRt && evRt && mbRt !== evRt) {
+                    hintHtml += ` <span style="color: #e67e22; font-weight: bold; margin-left: 6px;">⚠️ 存在差异</span>`;
+                }
+            }
+            rtHint.innerHTML = hintHtml;
+        }
+
         document.getElementById('pendingDiffAlbumArtist').value = album.album_artist || '';
         
         const mbGenre = album.genre || '';
@@ -1032,6 +1063,9 @@ async function loadPendingAlbumList() {
                 album_artist: albumArtist,
                 display_artist: albumArtist,
                 genre: document.getElementById('pendingDiffGenre').value.trim(),
+                evidence_genre: currentPendingDiffPreview.album_preview?.evidence_genre || '',
+                evidence_release_type: currentPendingDiffPreview.album_preview?.evidence_release_type || '',
+                mb_release_type: currentPendingDiffPreview.album_preview?.mb_release_type || '',
                 release_date: document.getElementById('pendingDiffReleaseDate').value.trim(),
                 original_release_date: document.getElementById('pendingDiffOriginalReleaseDate').value.trim(),
                 country: document.getElementById('pendingDiffCountry').value.trim(),

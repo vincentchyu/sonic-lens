@@ -38,6 +38,9 @@ function connectWebSocket() {
                 trackDurationMs = 0;
             } else if (data.type === "insight_job_updated") {
                 handleInsightJobRealtimeUpdate(data.data);
+                if (typeof window.handleActiveInsightJobUpdate === "function") {
+                    window.handleActiveInsightJobUpdate(data.data);
+                }
             }
         };
 
