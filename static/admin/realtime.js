@@ -234,10 +234,11 @@ function connectWebSocket() {
         const albumArtist = String(entity.albumArtist || entity.album_artist || "").trim();
         const artist = String(entity.artist || "").trim();
         const album = String(entity.album || "").trim();
+        const albumSubtitle = String(entity.albumSubtitle || entity.album_subtitle || "").trim();
         const artworkKey = String(entity.artworkKey || entity.artwork_key || "").trim();
 
         if (albumID > 0) return `album:${albumID}`;
-        if (albumArtist || artist || album) return `seed:${albumArtist}|${artist}|${album}`;
+        if (albumArtist || artist || album) return `seed:${albumArtist}|${artist}|${album}|${albumSubtitle}`;
         if (artworkKey) return `artwork:${artworkKey}`;
         return "";
     }
@@ -286,6 +287,7 @@ function connectWebSocket() {
             albumArtist: String(entity.albumArtist || entity.album_artist || "").trim(),
             artist: String(entity.artist || "").trim(),
             album: String(entity.album || "").trim(),
+            albumSubtitle: String(entity.albumSubtitle || entity.album_subtitle || "").trim(),
             artworkKey: String(entity.artworkKey || entity.artwork_key || "").trim(),
             coverArtURL: String(entity.coverArtURL || entity.cover_art_url || "").trim(),
         };
@@ -314,6 +316,7 @@ function connectWebSocket() {
         if (normalized.albumArtist) params.set("albumArtist", normalized.albumArtist);
         if (normalized.artist) params.set("artist", normalized.artist);
         if (normalized.album) params.set("album", normalized.album);
+        if (normalized.albumSubtitle) params.set("albumSubtitle", normalized.albumSubtitle);
         if (normalized.artworkKey) params.set("artworkKey", normalized.artworkKey);
 
         const request = fetch(`/api/artwork/resolve?${params.toString()}`)
@@ -374,6 +377,7 @@ function connectWebSocket() {
                     albumArtist: container.dataset.albumArtist || "",
                     artist: container.dataset.artist || "",
                     album: container.dataset.album || "",
+                    albumSubtitle: container.dataset.albumSubtitle || "",
                     artworkKey: container.dataset.artworkKey || "",
                     coverArtURL: container.dataset.coverArtUrl || "",
                 },

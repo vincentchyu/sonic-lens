@@ -21,6 +21,7 @@ struct HomeView: View {
 
 struct HomeContentView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
     @ObservedObject var viewModel: HomeViewModel
     @Binding var selectedRecentTrack: Track?
     @Binding var selectedAlbumID: Int64?
@@ -115,7 +116,7 @@ struct HomeContentView: View {
                                         collectionCount: hotPresentation.totalAlbumsCount,
                                         accentKey: selectedAccent,
                                         onAlbumTap: { albumID in
-                                            selectedAlbumID = albumID
+                                            navigationCoordinator.push(.albumDetail(albumID: albumID))
                                         }
                                     )
                                     .frame(minWidth: AlbumShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
@@ -137,7 +138,7 @@ struct HomeContentView: View {
                                         visibleItemCount: 9,
                                         totalTracksCount: hotPresentation.totalTracksCount,
                                         accentKey: selectedAccent,
-                                        onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                        onTrackTap: { navigationCoordinator.push(.trackDetail(track: $0.bridgeTrack)) }
                                     )
                                     .frame(minWidth: TrackShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
 
@@ -147,7 +148,7 @@ struct HomeContentView: View {
                                         totalPlaysCount: hotPresentation.totalPlaysCount,
                                         accentKey: selectedAccent,
                                         onTrackTap: { track in
-                                            selectedRecentTrack = track
+                                            navigationCoordinator.push(.trackDetail(track: track))
                                         }
                                     )
                                     .frame(minWidth: RecentPlaysSection.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
@@ -161,7 +162,7 @@ struct HomeContentView: View {
                                         collectionCount: hotPresentation.totalAlbumsCount,
                                         accentKey: selectedAccent,
                                         onAlbumTap: { albumID in
-                                            selectedAlbumID = albumID
+                                            navigationCoordinator.push(.albumDetail(albumID: albumID))
                                         }
                                     )
 
@@ -179,7 +180,7 @@ struct HomeContentView: View {
                                         visibleItemCount: 5,
                                         totalTracksCount: hotPresentation.totalTracksCount,
                                         accentKey: selectedAccent,
-                                        onTrackTap: { selectedRecentTrack = $0.bridgeTrack }
+                                        onTrackTap: { navigationCoordinator.push(.trackDetail(track: $0.bridgeTrack)) }
                                     )
 
                                     RecentPlaysSection(
@@ -188,7 +189,7 @@ struct HomeContentView: View {
                                         totalPlaysCount: hotPresentation.totalPlaysCount,
                                         accentKey: selectedAccent,
                                         onTrackTap: { track in
-                                            selectedRecentTrack = track
+                                            navigationCoordinator.push(.trackDetail(track: track))
                                         }
                                     )
                                 }
@@ -230,17 +231,11 @@ struct HomeContentView: View {
             guard let server = store.currentServer else { return }
             Task { await viewModel.refreshRecentPlays(using: server) }
         }
-        .navigationDestination(item: $selectedRecentTrack) { track in
-            TrackDetailView(track: track)
-        }
-        .navigationDestination(item: $selectedAlbumID) { albumID in
-            albumDetailDestination(albumID: albumID)
-        }
         .sheet(item: $selectedGenreItem) { genreItem in
             GenreAlbumsSheet(
                 item: genreItem,
                 onSelectAlbum: { albumID in
-                    selectedAlbumID = albumID
+                    navigationCoordinator.push(.albumDetail(albumID: albumID))
                 }
             )
         }

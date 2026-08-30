@@ -346,6 +346,7 @@ final class AlbumDetailViewModel: ObservableObject {
                 albumArtist: detail.artist,
                 artist: detail.artist,
                 album: detail.name,
+                albumSubtitle: detail.nameSubtitle,
                 artworkKey: detail.coverArtObjectKey
             )
             guard self.artworkRequestAlbumID == requestedAlbumID else { return }

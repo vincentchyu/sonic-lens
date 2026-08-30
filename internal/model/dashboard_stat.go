@@ -988,7 +988,7 @@ func resolveTrackRankCoverUpdate(
 		return trackRankCoverUpdate{}, false, nil
 	}
 
-	seed := artworkcore.BuildAlbumArtworkSeed(artist, artist, album)
+	seed := artworkcore.BuildAlbumArtworkSeed(artist, artist, album, "")
 	objectKey := strings.TrimSpace(provider.BuildOriginalObjectKey(seed))
 	if objectKey == "" {
 		return trackRankCoverUpdate{}, false, nil

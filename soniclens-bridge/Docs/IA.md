@@ -1,11 +1,20 @@
 # IA & Page Specs
 
 ## Navigation
-- Tab Bar
-  - Home
-  - Library
-- Global Mini Player (always visible, above Tab Bar)
-- Fullscreen Player (modal/push)
+
+- macOS Sidebar / iOS Tab Bar
+    - Home (`Ctrl + 1`)
+    - Albums (`Ctrl + 2`)
+    - Tracks (`Ctrl + 3`)
+    - Unreported (`Ctrl + 4`)
+    - SonicLens Insights (`Ctrl + 5`)
+    - Future Features (`Ctrl + 6`)
+- Global Navigation Shortcuts (macOS)
+    - Back: `Command + [`
+    - Forward: `Command + ]`
+    - Now Playing Toggle / Close: `Command + J`
+- Global Mini Player (always visible, above bottom / sidebar)
+- Fullscreen / Immersive Player (modal/overlay)
 
 ## Home (Dashboard)
 Purpose: showcase SonicLens server capabilities.

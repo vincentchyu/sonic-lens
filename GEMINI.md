@@ -67,6 +67,10 @@ SonicLens 核心架构蓝图、领域规则、开发规范与防坑记忆。AI A
 - **流水快照独立承载**：
   - **流水表 (`TrackPlayRecord`) vs 曲库实体 (`Track`) 严格解耦**：最近播放（`RecentPlayRecord`）属于时序播放事实，自带播放发生时的快照元数据（`genre`, `duration`, `track_number`, `disc_number` 等）。对于从未加入曲库的歌曲，点击详情时必须完整承载流水自带的元数据；杜绝因曲库无实体而导致流派与元数据空白。
 - **状态与高频隔离**：`AppStore` 仅承载全局低频态（连接/配置）；高频播放态、收藏态收口到 `PlaybackStore` / `FavoriteStore`；密集列表/详情页禁止直接订阅高频广播。
+- **全局历史导航与快捷键规范 (NavigationCoordinator)**：
+    - macOS 统一采用“双栈快照模型 (`backHistory` / `forwardHistory`) + 根栈拦截 + 声明式值路由
+      (`NavigationLink(value:)`)”；子组件 0 侵入，严禁到处散落命令式 push 埋点。
+    - 标准快捷键绑定：`Cmd + [`（后退）、`Cmd + ]`（前进）、`Cmd + J`（正在播放开关/关闭）、`Ctrl + 1...6`（侧边栏直达）。
 - **播放与网络契约**：
   - GET 请求 query 参数统一经由 `APIClient` 百分号编码（将 `+` 编码为 `%2B`），路径拼接严禁使用 `appendingPathComponent` 二次转义。
   - 正在播放消费 `WS now_playing` 结构化状态（`apple_music_state`、`lastfm_state`、`favorite_state`）；WS 静默超时自动冻结本地进度。

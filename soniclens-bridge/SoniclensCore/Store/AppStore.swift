@@ -1083,6 +1083,7 @@ actor ArtworkResolveService {
     private enum ResolveKey: Hashable {
         case albumID(Int64)
         case artistAlbum(String, String)
+        case artistAlbumSubtitle(String, String, String)
         case artworkKey(String)
     }
 
@@ -1100,9 +1101,10 @@ actor ArtworkResolveService {
         albumArtist: String?,
         artist: String?,
         album: String?,
+        albumSubtitle: String? = nil,
         artworkKey: String?
     ) async -> ResolvedArtworkResource? {
-        guard let key = Self.resolveKey(albumID: albumID, albumArtist: albumArtist, artist: artist, album: album, artworkKey: artworkKey) else {
+        guard let key = Self.resolveKey(albumID: albumID, albumArtist: albumArtist, artist: artist, album: album, albumSubtitle: albumSubtitle, artworkKey: artworkKey) else {
             return nil
         }
 
@@ -1122,6 +1124,7 @@ actor ArtworkResolveService {
                 albumArtist: albumArtist,
                 artist: artist,
                 album: album,
+                albumSubtitle: albumSubtitle,
                 artworkKey: artworkKey
             )
 
@@ -1152,6 +1155,7 @@ actor ArtworkResolveService {
         albumArtist: String?,
         artist: String?,
         album: String?,
+        albumSubtitle: String? = nil,
         artworkKey: String?
     ) async -> String? {
         let resource = await resolveArtworkResource(
@@ -1160,6 +1164,7 @@ actor ArtworkResolveService {
             albumArtist: albumArtist,
             artist: artist,
             album: album,
+            albumSubtitle: albumSubtitle,
             artworkKey: artworkKey
         )
         return resource?.remoteURL
@@ -1170,6 +1175,7 @@ actor ArtworkResolveService {
         albumArtist: String?,
         artist: String?,
         album: String?,
+        albumSubtitle: String?,
         artworkKey: String?
     ) -> ResolveKey? {
         if let albumID, albumID > 0 {
@@ -1178,7 +1184,12 @@ actor ArtworkResolveService {
 
         let canonicalAlbum = canonical(album)
         let canonicalArtist = canonical(albumArtist) ?? canonical(artist)
+        let canonicalSubtitle = canonical(albumSubtitle)
+
         if let canonicalArtist, let canonicalAlbum {
+            if let canonicalSubtitle, !canonicalSubtitle.isEmpty {
+                return .artistAlbumSubtitle(canonicalArtist, canonicalAlbum, canonicalSubtitle)
+            }
             return .artistAlbum(canonicalArtist, canonicalAlbum)
         }
 
@@ -1193,6 +1204,7 @@ actor ArtworkResolveService {
         albumArtist: String?,
         artist: String?,
         album: String?,
+        albumSubtitle: String?,
         artworkKey: String?
     ) -> [URLQueryItem] {
         var items: [URLQueryItem] = []
@@ -1207,6 +1219,9 @@ actor ArtworkResolveService {
         }
         if let album = nonEmpty(album) {
             items.append(URLQueryItem(name: "album", value: album))
+        }
+        if let albumSubtitle = nonEmpty(albumSubtitle) {
+            items.append(URLQueryItem(name: "albumSubtitle", value: albumSubtitle))
         }
         if let artworkKey = nonEmpty(artworkKey) {
             items.append(URLQueryItem(name: "artworkKey", value: artworkKey))

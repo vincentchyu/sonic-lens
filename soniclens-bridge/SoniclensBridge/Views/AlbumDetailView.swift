@@ -678,6 +678,7 @@ private struct AlbumInsightRichContentView: View {
                 )
             }
         }
+        .textSelection(.enabled)
     }
 
     private func trimmed(_ text: String?) -> String? {
@@ -921,7 +922,7 @@ struct AlbumTrackListSection: View {
                                 LazyVStack(spacing: isCompact ? 8 : 10) {
                                     ForEach(discGroup.tracks) { track in
                                         let isFavorite = favoriteTrackIDs.contains(track.id)
-                                        NavigationLink(destination: TrackDetailView(track: track)) {
+                                        NavigationLink(value: AppRoute.trackDetail(track: track)) {
                                             AlbumTrackRow(track: track, compact: isCompact, isFavorite: isFavorite)
                                         }
                                         .buttonStyle(.plain)
@@ -934,7 +935,7 @@ struct AlbumTrackListSection: View {
                     LazyVStack(spacing: isCompact ? 8 : 10) {
                         ForEach(presentation.discGroups.first?.tracks ?? []) { track in
                             let isFavorite = favoriteTrackIDs.contains(track.id)
-                            NavigationLink(destination: TrackDetailView(track: track)) {
+                            NavigationLink(value: AppRoute.trackDetail(track: track)) {
                                 AlbumTrackRow(track: track, compact: isCompact, isFavorite: isFavorite)
                             }
                             .buttonStyle(.plain)
@@ -1070,6 +1071,7 @@ struct AlbumCurationSection: View {
                                 .fontDesign(.monospaced)
                                 .lineLimit(1)
                         }
+                        .textSelection(.enabled)
                         Spacer()
                         if link.confirmed {
                             Text("已确认")
@@ -1142,6 +1144,7 @@ struct CandidateRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .textSelection(.enabled)
             Spacer()
             if isSelected {
                 Text("已选")
@@ -1222,6 +1225,7 @@ private struct AlbumHeroSection: View {
                 .font(layout == .phone ? .headline : .body)
                 .foregroundStyle(.secondary)
         }
+        .textSelection(.enabled)
     }
 
     private var metaFlow: some View {
@@ -1450,6 +1454,30 @@ struct AlbumTrackRow: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(SonicTheme.glassBorder.opacity(0.7), lineWidth: 1)
         )
+        .contextMenu {
+            Button {
+                #if os(macOS)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(track.track, forType: .string)
+                #else
+                UIPasteboard.general.string = track.track
+                #endif
+            } label: {
+                Label("拷贝曲目名称", systemImage: "doc.on.doc")
+            }
+
+            Button {
+                let fullInfo = "\(track.artist) - \(track.track)"
+                #if os(macOS)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(fullInfo, forType: .string)
+                #else
+                UIPasteboard.general.string = fullInfo
+                #endif
+            } label: {
+                Label("拷贝曲目与歌手", systemImage: "person.crop.square")
+            }
+        }
     }
 
     private var trackNumber: String {

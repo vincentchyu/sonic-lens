@@ -1,5 +1,26 @@
 # 记忆索引
 
+## 2026-08-30
+
+- **日期**: 2026-08-30
+    - **聚合摘要**: 【当日演进二】macOS 客户端全局多级双栈历史导航体系、原生快捷键矩阵（`Cmd + [` / `Cmd + ]` / `Cmd + J` /
+      `Ctrl + 1...6`）与声明式无侵入拦截架构落地。核心包括：
+        1. 构建 `NavigationCoordinator` 双栈快照模型（`backHistory` / `forwardHistory`），将侧边栏 Tab 切换与页面下钻统一串入全局时间线；
+        2. 实现“声明式值路由 (`NavigationLink(value:)`) + 根栈自动捕获 + Binding 代理拦截”，子视图 0 侵入，彻底告别命令式手动埋点；
+        3. 绑定标准快捷键：`Cmd + [`（后退）、`Cmd + ]`（前进）、`Cmd + J`（正在播放大画布开关/退出）；
+        4. 细节打磨：正在播放与详情页全面支持触控板三指拖移划选复制，曲目列表行支持 macOS 原生右键上下文菜单一键拷贝曲目与歌手。
+    -
+    **聚合链接**: [macOS 全局多级双栈历史导航与原生快捷键体系特性清单](memory/2026-08-30/macos_navigation_coordinator_and_shortcuts_manifest.md)
+- **日期**: 2026-08-30
+    - **聚合摘要**: 【当日演进一】全站专辑封面多版本物理隔离、艺术家存储空间解耦、待归因版本 Tag 徽章化与全链路精准解析闭环。核心包括：
+        1. 升级 `BuildAlbumArtworkSeed` 为三元组（`Artist, Album, AlbumSubtitle`），实现同名多版本专辑（如原版 vs 1996 重制版
+           vs 40 周年版）封面物理隔离与向后完全兼容；
+        2. 规范对象存储与缓存域隔离（`artwork/albums/...` vs `artwork/artists/...`），解耦艺术家头像与专辑封面；
+        3. `/api/artwork/resolve` 接口支持 `albumSubtitle` 参数并在 Web 待归因、曲库卡片透传；
+        4. 待归因列表全面渲染版本 Tag 徽章，并修复历史副标题遗漏脏数据。
+    -
+    **聚合链接**: [专辑封面多版本隔离与艺术家存储空间解耦特性清单](memory/2026-08-30/album_multiversion_artwork_and_artist_storage_isolation_manifest.md)
+
 ## 2026-08-15
 
 - **日期**: 2026-08-15

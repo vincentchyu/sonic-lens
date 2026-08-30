@@ -82,6 +82,15 @@ Rules:
 - macOS:
   - window and split-view semantics
   - immersive now playing behaviors
+  - **Unified Navigation History (`NavigationCoordinator`)**:
+      - Two-stack architecture (Back Stack `backHistory` + Forward Stack `forwardHistory`) managing full-app history
+        timeline.
+      - Captures both sidebar tab switching (`selectTab`) and in-page value-driven route pushing
+        (`NavigationLink(value:)`).
+      - Standard keyboard shortcuts: `Cmd + [` (Back), `Cmd + ]` (Forward), `Cmd + J` (Toggle/Close Now Playing),
+        `Ctrl + 1...6` (Sidebar Tabs).
+      - Zero-intrusion design: child views declare standard SwiftUI routes without injecting or coupling to the
+        coordinator.
 - iPad:
   - tablet navigation shell
   - iPad-specific home and now-playing composition

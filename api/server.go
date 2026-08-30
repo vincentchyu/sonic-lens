@@ -89,14 +89,19 @@ func setupRouter(name string) *gin.Engine {
 			if albumID <= 0 {
 				albumID = parseInt64Query(c, "albumID")
 			}
+			subtitle := c.Query("albumSubtitle")
+			if subtitle == "" {
+				subtitle = c.Query("album_subtitle")
+			}
 			result, err := artworkService.Resolve(
 				c.Request.Context(),
 				artworklogic.ResolveArtworkInput{
-					AlbumID:     albumID,
-					AlbumArtist: c.Query("albumArtist"),
-					Artist:      c.Query("artist"),
-					Album:       c.Query("album"),
-					ArtworkKey:  c.Query("artworkKey"),
+					AlbumID:       albumID,
+					AlbumArtist:   c.Query("albumArtist"),
+					Artist:        c.Query("artist"),
+					Album:         c.Query("album"),
+					AlbumSubtitle: subtitle,
+					ArtworkKey:    c.Query("artworkKey"),
 				},
 			)
 			if err != nil {

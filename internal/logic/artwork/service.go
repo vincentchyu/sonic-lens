@@ -17,19 +17,21 @@ import (
 )
 
 var (
-	modelGetAlbum                = model.GetAlbum
-	modelGetAlbumByArtistAndName = model.GetAlbumByArtistAndName
-	modelUpsertAlbumCoverByID    = model.UpsertAlbumCoverByID
-	objectStorageGet             = objectstorage.Get
+	modelGetAlbum                        = model.GetAlbum
+	modelGetAlbumByArtistAndName         = model.GetAlbumByArtistAndName
+	modelGetAlbumByArtistNameAndSubtitle = model.GetAlbumByArtistNameAndSubtitle
+	modelUpsertAlbumCoverByID            = model.UpsertAlbumCoverByID
+	objectStorageGet                     = objectstorage.Get
 )
 
 // ResolveArtworkInput 描述封面解析请求参数。
 type ResolveArtworkInput struct {
-	AlbumID     int64
-	AlbumArtist string
-	Artist      string
-	Album       string
-	ArtworkKey  string
+	AlbumID       int64
+	AlbumArtist   string
+	Artist        string
+	Album         string
+	AlbumSubtitle string
+	ArtworkKey    string
 }
 
 // ResolveArtworkResult 描述封面解析输出。
@@ -45,6 +47,7 @@ type EnsureAlbumCoverInput struct {
 	AlbumArtist       string
 	Artist            string
 	Album             string
+	AlbumSubtitle     string
 	ArtworkKey        string
 	CoverArtURL       string
 	CoverArtMime      string
@@ -97,6 +100,17 @@ func (s *service) resolve(
 	albumRecord, err := findCandidateAlbum(ctx, normalized)
 	if err != nil {
 		return result, err
+	}
+	if albumRecord != nil {
+		if normalized.AlbumSubtitle == "" && strings.TrimSpace(albumRecord.NameSubtitle) != "" {
+			normalized.AlbumSubtitle = strings.TrimSpace(albumRecord.NameSubtitle)
+		}
+		if normalized.Album == "" && strings.TrimSpace(albumRecord.Name) != "" {
+			normalized.Album = strings.TrimSpace(albumRecord.Name)
+		}
+		if normalized.Artist == "" && strings.TrimSpace(albumRecord.Artist) != "" {
+			normalized.Artist = strings.TrimSpace(albumRecord.Artist)
+		}
 	}
 
 	if albumRecord != nil && strings.TrimSpace(albumRecord.CoverArtURL) != "" {
@@ -224,11 +238,12 @@ func (s *service) ensureResolveWithoutBackfill(
 	return s.resolve(
 		ctx,
 		ResolveArtworkInput{
-			AlbumID:     albumID,
-			AlbumArtist: input.AlbumArtist,
-			Artist:      input.Artist,
-			Album:       input.Album,
-			ArtworkKey:  input.ArtworkKey,
+			AlbumID:       albumID,
+			AlbumArtist:   input.AlbumArtist,
+			Artist:        input.Artist,
+			Album:         input.Album,
+			AlbumSubtitle: input.AlbumSubtitle,
+			ArtworkKey:    input.ArtworkKey,
 		},
 		false,
 	)
@@ -238,6 +253,7 @@ func normalizeResolveInput(input ResolveArtworkInput) ResolveArtworkInput {
 	input.AlbumArtist = strings.TrimSpace(input.AlbumArtist)
 	input.Artist = strings.TrimSpace(input.Artist)
 	input.Album = strings.TrimSpace(input.Album)
+	input.AlbumSubtitle = strings.TrimSpace(input.AlbumSubtitle)
 	input.ArtworkKey = strings.TrimSpace(input.ArtworkKey)
 	return input
 }
@@ -246,6 +262,7 @@ func normalizeEnsureInput(input EnsureAlbumCoverInput) EnsureAlbumCoverInput {
 	input.AlbumArtist = strings.TrimSpace(input.AlbumArtist)
 	input.Artist = strings.TrimSpace(input.Artist)
 	input.Album = strings.TrimSpace(input.Album)
+	input.AlbumSubtitle = strings.TrimSpace(input.AlbumSubtitle)
 	input.ArtworkKey = strings.TrimSpace(input.ArtworkKey)
 	input.CoverArtURL = strings.TrimSpace(input.CoverArtURL)
 	input.CoverArtMime = strings.TrimSpace(input.CoverArtMime)
@@ -264,9 +281,10 @@ func resolveAlbumIDForEnsure(ctx context.Context, input EnsureAlbumCoverInput) (
 	albumRecord, err := findCandidateAlbum(
 		ctx,
 		ResolveArtworkInput{
-			AlbumArtist: input.AlbumArtist,
-			Artist:      input.Artist,
-			Album:       input.Album,
+			AlbumArtist:   input.AlbumArtist,
+			Artist:        input.Artist,
+			Album:         input.Album,
+			AlbumSubtitle: input.AlbumSubtitle,
 		},
 	)
 	if err != nil || albumRecord == nil {
@@ -291,6 +309,18 @@ func findCandidateAlbum(ctx context.Context, input ResolveArtworkInput) (*model.
 	}
 	candidates := buildArtistCandidates(input.AlbumArtist, input.Artist)
 	for _, artist := range candidates {
+		// 1. 若指定了副标题，优先精准匹配该版本专辑
+		if input.AlbumSubtitle != "" {
+			albumRecord, err := modelGetAlbumByArtistNameAndSubtitle(ctx, artist, input.Album, input.AlbumSubtitle)
+			if err == nil {
+				return albumRecord, nil
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
+
+		// 2. 无副标题或未精确命中副标题时，按歌手+专辑名回退查询
 		albumRecord, err := modelGetAlbumByArtistAndName(ctx, artist, input.Album)
 		if err == nil {
 			return albumRecord, nil
@@ -325,7 +355,8 @@ func resolveByAlbumSeed(
 	if input.Album == "" {
 		return ResolveArtworkResult{}, false, nil
 	}
-	seed := artworkcore.BuildAlbumArtworkSeed(input.AlbumArtist, input.Artist, input.Album)
+	// 精准使用三元组（包含副标题）Seed，未听过的版本等待听歌自愈采集专属封面
+	seed := artworkcore.BuildAlbumArtworkSeed(input.AlbumArtist, input.Artist, input.Album, input.AlbumSubtitle)
 	return resolveBySeed(ctx, obj, seed)
 }
 

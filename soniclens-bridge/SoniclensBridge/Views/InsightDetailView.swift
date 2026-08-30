@@ -255,6 +255,7 @@ struct InsightDetailView: View {
                 }
             }
             .padding(layoutMetrics.outerPadding)
+            .textSelection(.enabled)
         }
         .navigationTitle("曲目详情")
         .task(id: feedbackTaskToken) {

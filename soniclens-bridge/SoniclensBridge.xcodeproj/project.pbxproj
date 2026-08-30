@@ -76,6 +76,7 @@
 		42BA4F1B98A0E6441F429934 /* PhotoSaveCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF599DAE4909AC0E606E22F /* PhotoSaveCoordinator.swift */; };
 		42CDE05E71EA5B5E1AC98563 /* AlbumDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBFCAD5691A19C887ED8D52 /* AlbumDetailViewModel.swift */; };
 		42F124AB7681281582440974 /* AlbumDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BDE46CA9821A5AC73A6F625 /* AlbumDetailView.swift */; };
+		45792B601FDCF78D3B5B1AB8 /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32C14962F848B634901C3A54 /* NavigationCoordinator.swift */; };
 		465DB4DECC03B8EC851434BB /* MacSharePosterViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFAED9565367578F42396FB2 /* MacSharePosterViews.swift */; };
 		46BFECE845CE9801DCAED4E1 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0680F99F9446C9D23554280F /* HomeViewModel.swift */; };
 		483D533AB86AC155A123118E /* Endpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91D5E0EAD0DF0083EB957FC1 /* Endpoints.swift */; };
@@ -226,6 +227,7 @@
 		B39A991376632BDDB34084F8 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3578F13A37665F8AF823DBD /* RootView.swift */; };
 		B3BF4D959ADEBAD5FC2A7DDC /* ConnectionRecoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A996124F225F9B1532E25E /* ConnectionRecoveryStore.swift */; };
 		B53F8BDC7D9CBA76413CC347 /* MacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B449B89006039F519AB50033 /* MacRootView.swift */; };
+		B5BED13C7EEBBBFE4CFE58DE /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32C14962F848B634901C3A54 /* NavigationCoordinator.swift */; };
 		B6023A2685E1D5B20D5B6182 /* ShareSheetPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F533AA64D9C2D538B528175F /* ShareSheetPresenter.swift */; };
 		B7B4F4210E8DA0C6BA421408 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2012ADAB60E7057D93856E5 /* APIClient.swift */; };
 		B7D4093F3B17041D4823E719 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E0BD7AE5C2F1A1F809E1F1B3 /* LaunchScreen.storyboard */; };
@@ -236,6 +238,7 @@
 		BC99487DE7CA23D3EDB3AED7 /* ResolvedArtworkResource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250A48A089169AF6F24C35EA /* ResolvedArtworkResource.swift */; };
 		BFC5591CE11745582B9DEDFE /* PhoneHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5285A85D59EB8D92826CFD33 /* PhoneHomeView.swift */; };
 		C01615A3E082786B8CB19AF9 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77FBE966C99C0809A070AAD /* NowPlayingView.swift */; };
+		C0F5A7E3675C46D41BF1DF5C /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32C14962F848B634901C3A54 /* NavigationCoordinator.swift */; };
 		C3C4D148A15BC6B4EE633DC2 /* PlaybackBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 004D6378FD701E286C32ADF3 /* PlaybackBarView.swift */; };
 		C3D97C0E8C6D490D611F2D23 /* TrackDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A87592A2E655876279EC1257 /* TrackDetailView.swift */; };
 		C6CBA6A85B7252FA084D2236 /* LiveActivityArtworkSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138431EA8C1F27F5F779891E /* LiveActivityArtworkSupport.swift */; };
@@ -356,6 +359,7 @@
 		2C3AFAFB549CE1BE5B6B7480 /* LiveActivityArtworkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityArtworkStore.swift; sourceTree = "<group>"; };
 		2C8FCD2E9C10D53C4EDAAA98 /* HomeHotModulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHotModulesView.swift; sourceTree = "<group>"; };
 		2DD14F0272E0A0C7B67F5E29 /* TrackDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackDetailViewModel.swift; sourceTree = "<group>"; };
+		32C14962F848B634901C3A54 /* NavigationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCoordinator.swift; sourceTree = "<group>"; };
 		339F1CB6F00D6A9422DFCA42 /* FavoriteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteModels.swift; sourceTree = "<group>"; };
 		34267BD0116B57097C1C9D35 /* SharePayloadPaginator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePayloadPaginator.swift; sourceTree = "<group>"; };
 		34CB3297A168BF756E621733 /* SoniclensBridgePad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SoniclensBridgePad.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -473,6 +477,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1068A327D877548EE5F3F0BC /* Navigation */ = {
+			isa = PBXGroup;
+			children = (
+				32C14962F848B634901C3A54 /* NavigationCoordinator.swift */,
+			);
+			path = Navigation;
+			sourceTree = "<group>";
+		};
 		158CF6E817CAF9503EB62657 /* Discovery */ = {
 			isa = PBXGroup;
 			children = (
@@ -732,6 +744,7 @@
 				9D7D5A2A3DCDC3E78F9DDBC1 /* SoniclensBridgePadApp.swift */,
 				0B3B00F836C77227235BB1BE /* SoniclensBridgePhone.entitlements */,
 				0D46A15FDA6E73B91ED1EE36 /* SoniclensBridgePhoneApp.swift */,
+				1068A327D877548EE5F3F0BC /* Navigation */,
 				3329F6A22BF67C9C584BF0FE /* ShareKit */,
 				B5261CEC4203EE6B2DD06454 /* ViewModels */,
 				E73D75687474394478CB7567 /* Views */,
@@ -962,6 +975,7 @@
 				2C885744080A45C201C819E5 /* MacSharePosterShell.swift in Sources */,
 				465DB4DECC03B8EC851434BB /* MacSharePosterViews.swift in Sources */,
 				9CDCDD0E22C94A530F62185F /* MiniPlayerView.swift in Sources */,
+				C0F5A7E3675C46D41BF1DF5C /* NavigationCoordinator.swift in Sources */,
 				58EFC8B33109E4DAF47F027E /* NowPlaying.swift in Sources */,
 				F29E89C9BADA469F17A30EE0 /* NowPlayingPayloadStore.swift in Sources */,
 				8FE0489B47F7D07B6E6898EB /* NowPlayingService.swift in Sources */,
@@ -1065,6 +1079,7 @@
 				BB19CA1590D222283A7FC0FB /* MacSharePosterShell.swift in Sources */,
 				AD0B6CC652E65CA4295CD4DE /* MacSharePosterViews.swift in Sources */,
 				F8EB146AD5603BE04A662931 /* MiniPlayerView.swift in Sources */,
+				45792B601FDCF78D3B5B1AB8 /* NavigationCoordinator.swift in Sources */,
 				D1385C6349C8F6DC821AE6FE /* NowPlaying.swift in Sources */,
 				FB102111ED644EE7597EBCF4 /* NowPlayingPayloadStore.swift in Sources */,
 				D7DF840510952AC42F360EFB /* NowPlayingService.swift in Sources */,
@@ -1165,6 +1180,7 @@
 				A7D0CD1E95AD27F227D854C5 /* MacSharePosterShell.swift in Sources */,
 				941CC4060F6CC52D272F96E4 /* MacSharePosterViews.swift in Sources */,
 				7A19F215A99D4BAAE338C022 /* MiniPlayerView.swift in Sources */,
+				B5BED13C7EEBBBFE4CFE58DE /* NavigationCoordinator.swift in Sources */,
 				31FA108290A8D4067B5077C9 /* NowPlaying.swift in Sources */,
 				4D7A6C6E29C589114186B51B /* NowPlayingPayloadStore.swift in Sources */,
 				CEF5F8C8F020C69695E14623 /* NowPlayingService.swift in Sources */,
@@ -1407,7 +1423,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1472,7 +1488,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

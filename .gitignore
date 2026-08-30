@@ -79,3 +79,4 @@ scratch/binlogs/binlog.000018
 scratch/binlogs/binlog.000019
 scratch/binlogs/binlog.000020
 scratch/binlogs/parsed_binlog.sql
+/dist/

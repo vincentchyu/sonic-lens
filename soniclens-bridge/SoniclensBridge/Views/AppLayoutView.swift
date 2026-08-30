@@ -91,22 +91,44 @@ struct AppLayoutView: View {
     @State private var albumQuery: String = ""
     @State private var trackQuery: String = ""
     @StateObject private var libraryViewModel = LibraryViewModel()
+    @StateObject private var navigationCoordinator = NavigationCoordinator()
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled: Bool = false
     @State private var playbackOverlayController = PlaybackBarWindowOverlayController()
     @State private var nowPlayingOverlayController = NowPlayingWindowOverlayController()
 
+    private var sidebarSelectionBinding: Binding<SidebarDestination> {
+        Binding(
+            get: { navigationCoordinator.selectedTab },
+            set: { newTab in
+                navigationCoordinator.selectTab(newTab)
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $selection)
+            SidebarView(selection: sidebarSelectionBinding)
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $navigationCoordinator.path) {
                 contentView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(AppWindowBackground(useMaterial: false))
+                    .navigationDestination(for: AppRoute.self) { route in
+                        switch route {
+                        case .albumDetail(let albumID):
+                            albumDetailDestination(albumID: albumID)
+                        case .trackDetail(let track):
+                            TrackDetailView(track: track)
+                        case .insightDetail(let insight):
+                            InsightDetailView(insight: insight)
+                        case .insightSummary(let summary):
+                            InsightDetailLoaderView(summary: summary)
+                        }
+                    }
                     .toolbar {
                         ToolbarItemGroup(placement: .principal) {
                             ToolbarTitleMenu(
-                                selection: $selection,
+                                selection: sidebarSelectionBinding,
                                 subtitle: toolbarSubtitle
                             )
                         }
@@ -125,6 +147,7 @@ struct AppLayoutView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
+        .environmentObject(navigationCoordinator)
         .background(
             PlaybackBarWindowOverlayBridge(
                 controller: playbackOverlayController,
@@ -194,12 +217,21 @@ struct AppLayoutView: View {
         .frame(minWidth: 1100, minHeight: 720)
         .background(
             Group {
-                Button("") { selection = .home }.keyboardShortcut("1", modifiers: .control)
-                Button("") { selection = .albums }.keyboardShortcut("2", modifiers: .control)
-                Button("") { selection = .tracks }.keyboardShortcut("3", modifiers: .control)
-                Button("") { selection = .unreported }.keyboardShortcut("4", modifiers: .control)
-                Button("") { selection = .sonicLens }.keyboardShortcut("5", modifiers: .control)
-                Button("") { selection = .futureFeatures }.keyboardShortcut("6", modifiers: .control)
+                Button("") { navigationCoordinator.goBack() }.keyboardShortcut("[", modifiers: .command)
+                Button("") { navigationCoordinator.goForward() }.keyboardShortcut("]", modifiers: .command)
+                Button("") {
+                    if showNowPlaying {
+                        showNowPlaying = false
+                    } else if playbackStore.hasActiveNowPlaying {
+                        showNowPlaying = true
+                    }
+                }.keyboardShortcut("j", modifiers: .command)
+                Button("") { navigationCoordinator.selectTab(.home) }.keyboardShortcut("1", modifiers: .control)
+                Button("") { navigationCoordinator.selectTab(.albums) }.keyboardShortcut("2", modifiers: .control)
+                Button("") { navigationCoordinator.selectTab(.tracks) }.keyboardShortcut("3", modifiers: .control)
+                Button("") { navigationCoordinator.selectTab(.unreported) }.keyboardShortcut("4", modifiers: .control)
+                Button("") { navigationCoordinator.selectTab(.sonicLens) }.keyboardShortcut("5", modifiers: .control)
+                Button("") { navigationCoordinator.selectTab(.futureFeatures) }.keyboardShortcut("6", modifiers: .control)
             }
             .opacity(0)
             .allowsHitTesting(false)
@@ -208,7 +240,7 @@ struct AppLayoutView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        switch selection {
+        switch navigationCoordinator.selectedTab {
         case .home:
             HomeView()
         case .futureFeatures:
@@ -236,19 +268,19 @@ struct AppLayoutView: View {
     }
 
     private var toolbarSubtitle: String? {
-        switch selection {
+        switch navigationCoordinator.selectedTab {
         case .albums:
             return LibraryStatusSummary.album(sort: albumSort)
         case .tracks:
             return LibraryStatusSummary.track(sort: trackSort, filter: trackFilter)
         default:
-            return selection.subtitle
+            return navigationCoordinator.selectedTab.subtitle
         }
     }
 
     @ViewBuilder
     private var toolbarPageOperations: some View {
-        switch selection {
+        switch navigationCoordinator.selectedTab {
         case .albums:
             ToolbarSearchField(text: $albumQuery)
             LibrarySortMenu(title: "排序", selection: $albumSort, options: LibrarySort.albumOptions)

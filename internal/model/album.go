@@ -387,6 +387,19 @@ func GetAlbumByArtistAndName(ctx context.Context, artist, albumName string) (*Al
 	return &album, err
 }
 
+// GetAlbumByArtistNameAndSubtitle 根据艺术家、专辑名与副标题查询专辑。
+func GetAlbumByArtistNameAndSubtitle(ctx context.Context, artist, albumName, subtitle string) (*Album, error) {
+	var album Album
+	db := GetDB().WithContext(ctx).Where("artist = ? AND name = ?", artist, albumName)
+	if subtitle == "" {
+		db = db.Where("COALESCE(name_subtitle, '') = ''")
+	} else {
+		db = db.Where("name_subtitle = ?", subtitle)
+	}
+	err := db.First(&album).Error
+	return &album, err
+}
+
 // AlbumDetail 包含专辑及其关联的所有曲目信息，以及确认关联的 MusicBrainz 记录
 type AlbumDetail struct {
 	Album
@@ -783,5 +796,3 @@ func ReconcileAlbumPlayCounts(ctx context.Context, targetAlbumIDs ...int64) erro
 		return ReconcileAlbumPlayCountsTx(tx, targetAlbumIDs...)
 	})
 }
-
-

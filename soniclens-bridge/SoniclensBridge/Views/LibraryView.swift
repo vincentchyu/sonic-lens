@@ -419,6 +419,7 @@ private struct LibraryMetaLabel: View {
 
 struct TrackListView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
     @Environment(PlaybackStore.self) private var playbackStore
     @Environment(FavoriteStore.self) private var favoriteStore
     @ObservedObject var viewModel: LibraryViewModel
@@ -558,7 +559,7 @@ struct TrackListView: View {
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    selectedTrack = track
+                                    navigationCoordinator.push(.trackDetail(track: track))
                                 }
                                 .onAppear {
                                     if viewModel.shouldLoadMoreTracks(at: index) {
@@ -596,9 +597,6 @@ struct TrackListView: View {
         .onChange(of: query) { _, value in
             guard showsInlineControls else { return }
             scheduleSearchCommit(value)
-        }
-        .navigationDestination(item: $selectedTrack) { track in
-            TrackDetailView(track: track)
         }
     }
 

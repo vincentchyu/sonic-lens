@@ -105,12 +105,16 @@ async function loadPendingAlbumList() {
                             data-artist="${esc(item.artist || "")}"
                             data-album-artist="${esc(item.album_artist || "")}"
                             data-album="${esc(item.album || "")}"
+                            data-album-subtitle="${esc(item.album_subtitle || "")}"
                             data-artwork-compact="1"
                             data-alt-text="${esc(item.album || "专辑封面")}"
                             style="width: 64px; height: 64px; flex-shrink: 0; border-radius: 12px;"
                         >${renderArtworkPlaceholder(item.album || "", true)}</div>
                         <div style="flex: 1; min-width: 0;">
-                            <div style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${item.album}</div>
+                            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                <span style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${esc(item.album || "")}</span>
+                                ${renderPendingAlbumSubtitleBadge(item.album_subtitle)}
+                            </div>
                             <div style="margin-top: 4px; opacity: 0.65; color: var(--text-secondary);">${item.album_artist || item.artist || '-'}</div>
                             <div style="margin-top: 10px; font-size: 0.82em; color: var(--text-secondary);">
                                 ID: #${item.id} · 状态: ${statusLabel} · 创建时间: ${dateStr}
@@ -167,6 +171,12 @@ async function loadPendingAlbumList() {
         }
     }
 
+function renderPendingAlbumSubtitleBadge(subtitle) {
+    const text = String(subtitle || '').trim();
+    if (!text) return '';
+    return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 0.76em; font-weight: 700; line-height: 1.3; background: rgba(52, 152, 219, 0.16); color: #2980b9; border: 1px solid rgba(52, 152, 219, 0.3); vertical-align: middle; letter-spacing: 0.02em;">${esc(text)}</span>`;
+}
+
     function renderPendingAlbumWorkItemStatusBadge(status) {
         const statusName = formatPendingAlbumWorkItemStatus(status);
         if (statusName === '尚未建单') {
@@ -210,12 +220,16 @@ async function loadPendingAlbumList() {
                             data-artist="${esc(group.artist || "")}"
                             data-album-artist="${esc(group.album_artist || "")}"
                             data-album="${esc(group.album || "")}"
+                            data-album-subtitle="${esc(group.album_subtitle || "")}"
                             data-artwork-compact="1"
                             data-alt-text="${esc(group.album || "专辑封面")}"
                             style="width: 64px; height: 64px; flex-shrink: 0; border-radius: 12px;"
                         >${renderArtworkPlaceholder(group.album || "", true)}</div>
                         <div style="flex: 1; min-width: 0;">
-                            <div style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${group.album}</div>
+                            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                <span style="font-size: 1.05em; font-weight: 700; color: var(--text-primary);">${esc(group.album || "")}</span>
+                                ${renderPendingAlbumSubtitleBadge(group.album_subtitle)}
+                            </div>
                             <div style="margin-top: 4px; opacity: 0.65; color: var(--text-secondary);">${group.album_artist || group.artist || '-'}</div>
                             <div style="margin-top: 10px; font-size: 0.82em; color: var(--text-secondary);">
                                 待处理播放 ${group.play_record_count} 条 · 点赞事件 ${group.favorite_event_count} 条 · 来源 ${sourceText}
@@ -604,8 +618,9 @@ async function loadPendingAlbumList() {
         currentPendingAlbumWorkItemDetail = data;
         const workItem = data.work_item || {};
         currentPendingSelectedMBID = workItem.selected_mbid || "";
+        const subtitlePart = workItem.album_subtitle ? ` (${workItem.album_subtitle})` : '';
         document.getElementById('pendingAlbumWorkItemMeta').textContent =
-            `${workItem.album || '-'} · ${workItem.album_artist || workItem.artist || '-'} · 状态 ${workItem.status || '-'}`;
+            `${workItem.album || '-'}${subtitlePart} · ${workItem.album_artist || workItem.artist || '-'} · 状态 ${workItem.status || '-'}`;
         document.getElementById('pendingAlbumSelectedMBID').textContent =
             workItem.selected_mbid ? `当前候选: ${workItem.selected_mbid}` : '未选择候选版本';
 

@@ -67,6 +67,14 @@ struct NowPlayingView: View {
             refreshFullscreenState()
         }
         .modifier(FullscreenStateObserver(onChange: refreshFullscreenState))
+        .background(
+            Group {
+                Button("") { onClose() }.keyboardShortcut("j", modifiers: .command)
+                Button("") { onClose() }.keyboardShortcut(.escape, modifiers: [])
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+        )
     }
 
     private var currentNowPlaying: NowPlaying {
@@ -463,6 +471,7 @@ struct NowPlayingTopBar: View {
                                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
+                        .keyboardShortcut("j", modifiers: .command)
                     }
 
                     if favoriteActionLoading {
@@ -625,6 +634,7 @@ struct MacNowPlayingInsightPanel: View {
                     .id("insight-\(selectedInsightIndex)")
                 }
             }
+            .textSelection(.enabled)
 
             if items.count > 1 {
                 InsightVersionPicker(
@@ -674,13 +684,14 @@ struct NowPlayingLeftPanel: View {
                     .foregroundStyle(Color.white.opacity(0.82))
                     .lineLimit(2)
                 DiscTrackBadgeRow(discNumber: nowPlaying.discNumber, trackNumber: nowPlaying.trackNumber)
-                
             }
+            .textSelection(.enabled)
 
             NowPlayingAdaptiveSummarySection(
                 title: "沉浸模式",
                 text: insightSummary ?? "专注当前播放，把封面、歌词和音眸洞察放到同一块大画布里。"
             )
+            .textSelection(.enabled)
             .padding(.top, 0)
         }
     }
@@ -1305,6 +1316,7 @@ struct NowPlayingLyricsPanel: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 20)
                 .padding(.bottom, bottomContentInset)
+                .textSelection(.enabled)
             }
             .scrollDisabled(!scrollEnabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

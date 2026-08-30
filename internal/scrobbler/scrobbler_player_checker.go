@@ -342,7 +342,7 @@ func (b *BasePlayerChecker) resolveArtwork(
 		return "", "", ""
 	}
 	albumSeed := artwork.BuildAlbumArtworkSeed(
-		playerInfo.GetAlbumArtist(), playerInfo.GetArtist(), playerInfo.GetAlbum(),
+		playerInfo.GetAlbumArtist(), playerInfo.GetArtist(), playerInfo.GetAlbum(), playerInfo.GetAlbumSubtitle(),
 	)
 
 	obj := objectstorage.Get()

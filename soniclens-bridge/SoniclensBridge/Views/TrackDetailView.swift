@@ -492,6 +492,7 @@ struct LyricsPane: View {
                     }
                 }
                 .padding(16)
+                .textSelection(.enabled)
             }
             .mask(
                 LinearGradient(
@@ -595,6 +596,7 @@ struct TrackDetailHeader: View {
                         }
                     }
                 }
+                .textSelection(.enabled)
                 Spacer()
                 favoriteButton
             }

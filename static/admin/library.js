@@ -34,6 +34,7 @@ async function loadAlbumList(page = 1) {
                         data-album-id="${album.id}"
                         data-artist="${esc(album.artist || "")}"
                         data-album="${esc(album.name || "")}"
+                        data-album-subtitle="${esc(album.name_subtitle || album.album_subtitle || "")}"
                         data-cover-art-url="${esc(album.cover_art_url || "")}"
                         data-alt-text="${esc(album.name || "专辑封面")}"
                     >${renderArtworkPlaceholder(album.name || "")}</div>

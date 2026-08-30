@@ -8,6 +8,7 @@ struct AlbumGridView: View {
     let artworkBaseURL: URL?
     let statusSummary: String?
     var prefersCompactLayout: Bool = false
+    @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
     @State private var selectedAlbum: Album?
 
     init(
@@ -58,7 +59,7 @@ struct AlbumGridView: View {
                                     contentWidth: metrics.cardContentWidth,
                                     prefersCompactLayout: prefersCompactLayout,
                                     onSelect: {
-                                        selectedAlbum = album
+                                        navigationCoordinator.push(.albumDetail(albumID: album.id))
                                     }
                                 )
                                 .contentShape(RoundedRectangle(cornerRadius: 18))
@@ -78,9 +79,6 @@ struct AlbumGridView: View {
         }
         .task(id: "\(sort.rawValue)|\(query)") {
             await viewModel.reloadAlbums(sort: sort, query: query)
-        }
-        .navigationDestination(item: $selectedAlbum) { album in
-            albumDetailDestination(albumID: album.id)
         }
     }
 }

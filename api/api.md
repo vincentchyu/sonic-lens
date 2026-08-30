@@ -27,10 +27,10 @@
 
 ## 2.2 专辑封面（Artwork）
 
-| 功能 | 方法 | 路径 | 核心参数 | 返回 | 缓存 | 后端关联 |
-|---|---|---|---|---|---|---|
-| 封面解析 | GET | `/api/artwork/resolve` | `album_id/albumID`, `albumArtist`, `artist`, `album`, `artworkKey` | `exists`, `cover_art_url`, `cover_art_object_key` | Redis 10m | `artworklogic.Service.Resolve` -> `model.GetAlbum/GetAlbumByArtistAndName` + `objectstorage` |
-| 封面二进制读取 | GET | `/api/artwork/:key` | `:key` | 图片流 | 浏览器缓存 1h | `core/artwork.DefaultStore.Get` |
+| 功能           | 方法 | 路径                   | 核心参数                                                                                           | 返回                                              | 缓存          | 后端关联                                                                                             |
+|----------------|------|------------------------|----------------------------------------------------------------------------------------------------|---------------------------------------------------|---------------|------------------------------------------------------------------------------------------------------|
+| 封面解析       | GET  | `/api/artwork/resolve` | `album_id/albumID`, `albumArtist`, `artist`, `album`, `albumSubtitle/album_subtitle`, `artworkKey` | `exists`, `cover_art_url`, `cover_art_object_key` | Redis 10m     | `artworklogic.Service.Resolve` -> `model.GetAlbum/GetAlbumByArtistNameAndSubtitle` + `objectstorage` |
+| 封面二进制读取 | GET  | `/api/artwork/:key`    | `:key`                                                                                             | 图片流                                            | 浏览器缓存 1h | `core/artwork.DefaultStore.Get`                                                                      |
 
 ## 2.3 曲目与资料库核心
 

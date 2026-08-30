@@ -55,7 +55,7 @@ struct SonicLensInsightsView: View {
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, insight in
-                        NavigationLink(destination: destination(for: insight)) {
+                        NavigationLink(value: AppRoute.insightSummary(summary: insight)) {
                             InsightRowCard(insight: insight)
                         }
                         .buttonStyle(.plain)
