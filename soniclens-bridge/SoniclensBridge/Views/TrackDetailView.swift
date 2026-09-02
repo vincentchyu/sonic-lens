@@ -357,7 +357,6 @@ struct TrackDetailView: View {
     }
 
     private func openSharePreview(scene: ShareScene) {
-        let t0 = CFAbsoluteTimeGetCurrent()
         print("[ShareTiming] 1. [曲目] openSharePreview 触发, scene: \(scene)")
         let tBuildStart = CFAbsoluteTimeGetCurrent()
         let payload = SharePayloadBuilder.build(

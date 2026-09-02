@@ -3,7 +3,7 @@ package lastfm
 import (
 	"bufio"
 	"context"
-	"encoding/json/v2"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -37,7 +37,7 @@ type Api struct {
 
 type (
 	Struct2Map interface {
-		ToMap() (res map[string]interface{}, err error)
+		ToMap() (res map[string]any, err error)
 	}
 	base struct {
 		ApiKey string `json:"api_key"` // A Last.fm API key.
@@ -196,7 +196,7 @@ func removeNewlines(s string) string {
 	return strings.ReplaceAll(s, "\n", "")
 }
 
-func (t *PushTrackScrobbleReq) ToMap() (res map[string]interface{}, err error) {
+func (t *PushTrackScrobbleReq) ToMap() (res map[string]any, err error) {
 	res = make(map[string]any)
 	err = common.Decode(t, &res)
 	if err != nil {
@@ -205,7 +205,7 @@ func (t *PushTrackScrobbleReq) ToMap() (res map[string]interface{}, err error) {
 	return res, err
 }
 
-func (t *TrackUpdateNowPlayingReq) ToMap() (res map[string]interface{}, err error) {
+func (t *TrackUpdateNowPlayingReq) ToMap() (res map[string]any, err error) {
 	res = make(map[string]any)
 	err = common.Decode(t, &res)
 	if err != nil {
@@ -214,7 +214,7 @@ func (t *TrackUpdateNowPlayingReq) ToMap() (res map[string]interface{}, err erro
 	return res, err
 }
 
-func (t *TrackGetInfoReq) ToMap() (res map[string]interface{}, err error) {
+func (t *TrackGetInfoReq) ToMap() (res map[string]any, err error) {
 	res = make(map[string]any)
 	err = common.Decode(t, &res)
 	if err != nil {

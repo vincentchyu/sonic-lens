@@ -1,11 +1,12 @@
 package ai
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -144,12 +145,15 @@ func (f *ollamaProviderFactory) ListModels(ctx context.Context) ([]ModelOption, 
 		}
 	}
 
-	sort.Slice(
-		models, func(i, j int) bool {
-			if models[i].IsDefault != models[j].IsDefault {
-				return models[i].IsDefault
+	slices.SortFunc(
+		models, func(a, b ModelOption) int {
+			if a.IsDefault != b.IsDefault {
+				if a.IsDefault {
+					return -1
+				}
+				return 1
 			}
-			return models[i].ID < models[j].ID
+			return cmp.Compare(a.ID, b.ID)
 		},
 	)
 	return models, nil
@@ -193,7 +197,7 @@ func (p *OllamaProvider) AnalyzeTrack(
 		System: prompt,
 		Format: json.RawMessage("json"),
 		Stream: new(bool), // set streaming to false
-		Options: map[string]interface{}{
+		Options: map[string]any{
 			"temperature": float32(DefaultInsightTemperature),
 		},
 		Think:  &api.ThinkValue{Value: "medium"},
@@ -254,7 +258,7 @@ func (p *OllamaProvider) AnalyzeAlbum(
 		System: prompt,
 		Format: json.RawMessage("json"),
 		Stream: new(bool),
-		Options: map[string]interface{}{
+		Options: map[string]any{
 			"temperature": float32(DefaultInsightTemperature),
 		},
 		Think:  &api.ThinkValue{Value: "medium"},

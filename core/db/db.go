@@ -30,7 +30,7 @@ func (l *customLogger) LogMode(level logger.LogLevel) logger.Interface {
 	return l
 }
 
-func (l *customLogger) Fields(datas ...interface{}) []zap.Field {
+func (l *customLogger) Fields(datas ...any) []zap.Field {
 	fields := make([]zap.Field, 0, len(datas))
 	for _, data := range datas {
 		if v, ok := data.(zap.Field); ok {
@@ -41,17 +41,17 @@ func (l *customLogger) Fields(datas ...interface{}) []zap.Field {
 }
 
 // Info logs info level messages
-func (l *customLogger) Info(ctx context.Context, msg string, data ...interface{}) {
+func (l *customLogger) Info(ctx context.Context, msg string, data ...any) {
 	log.InfoForLog(ctx, l.logger, msg, l.Fields(data...)...)
 }
 
 // Warn logs warn level messages
-func (l *customLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
+func (l *customLogger) Warn(ctx context.Context, msg string, data ...any) {
 	log.InfoForLog(ctx, l.logger, msg, l.Fields(data...)...)
 }
 
 // Error logs error level messages
-func (l *customLogger) Error(ctx context.Context, msg string, data ...interface{}) {
+func (l *customLogger) Error(ctx context.Context, msg string, data ...any) {
 	log.ErrorForLog(ctx, l.logger, msg, l.Fields(data...)...)
 }
 

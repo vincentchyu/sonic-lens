@@ -1,6 +1,6 @@
 module github.com/vincentchyu/sonic-lens
 
-go 1.26.0
+go 1.27.1
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -11,7 +11,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.1
 	github.com/aws/smithy-go/metrics/smithyotelmetrics v1.0.12
 	github.com/aws/smithy-go/tracing/smithyoteltracing v1.0.12
-	github.com/gin-contrib/sse v1.1.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-audio/wav v1.1.0
 	github.com/google/uuid v1.6.0
@@ -34,7 +33,6 @@ require (
 	github.com/volcengine/volcengine-go-sdk v1.2.12
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.63.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
-	go.opentelemetry.io/contrib/instrumentation/runtime v0.63.0
 	go.opentelemetry.io/otel v1.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.38.0
@@ -84,6 +82,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.10 // indirect
+	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-audio/audio v1.0.0 // indirect
 	github.com/go-audio/riff v1.0.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect

@@ -62,23 +62,23 @@ type AlbumAnalysisRequest struct {
 
 // TrackAnalysisResult 表示大模型返回的结构化分析结果
 type TrackAnalysisResult struct {
-	LyricsTranslation string                 `json:"lyrics_translation"`
-	AnalysisSummary   string                 `json:"analysis_summary"`
-	AnalysisBySection map[string]string      `json:"analysis_by_section"`
-	BackgroundInfo    string                 `json:"background_info"`
-	EraContext        string                 `json:"era_context"`
-	Metadata          map[string]interface{} `json:"metadata"`
-	LLMProvider       string                 `json:"llm_provider"`
+	LyricsTranslation string            `json:"lyrics_translation"`
+	AnalysisSummary   string            `json:"analysis_summary"`
+	AnalysisBySection map[string]string `json:"analysis_by_section"`
+	BackgroundInfo    string            `json:"background_info"`
+	EraContext        string            `json:"era_context"`
+	Metadata          map[string]any    `json:"metadata"`
+	LLMProvider       string            `json:"llm_provider"`
 }
 
 // AlbumAnalysisResult 表示大模型返回的专辑结构化分析结果。
 type AlbumAnalysisResult struct {
-	AnalysisSummary   string                 `json:"analysis_summary"`
-	AnalysisBySection map[string]string      `json:"analysis_by_section"`
-	BackgroundInfo    string                 `json:"background_info"`
-	EraContext        string                 `json:"era_context"`
-	Metadata          map[string]interface{} `json:"metadata"`
-	LLMProvider       string                 `json:"llm_provider"`
+	AnalysisSummary   string            `json:"analysis_summary"`
+	AnalysisBySection map[string]string `json:"analysis_by_section"`
+	BackgroundInfo    string            `json:"background_info"`
+	EraContext        string            `json:"era_context"`
+	Metadata          map[string]any    `json:"metadata"`
+	LLMProvider       string            `json:"llm_provider"`
 }
 
 // LLMProvider 抽象大模型提供方
@@ -160,7 +160,9 @@ func multiStepAnalyzeTrack(ctx context.Context, client RawChatClient, req TrackA
 		log.Info(ctx, "检测到纯音乐/无歌词曲目，自动跳过 Step 1 翻译 LLM 调用", zap.String("track", req.Title))
 		lyricsTranslation = "[纯音乐 / 无歌词曲目]"
 	} else if isChinese {
-		log.Info(ctx, "检测到纯中文歌词，自动跳过 Step 1 翻译 LLM 调用，使用本地格式化结果", zap.String("track", req.Title))
+		log.Info(
+			ctx, "检测到纯中文歌词，自动跳过 Step 1 翻译 LLM 调用，使用本地格式化结果", zap.String("track", req.Title),
+		)
 		lyricsTranslation = FormatChineseLyricsTranslation(req.Lyrics)
 	} else {
 		sys1 := buildTrackInsightStep1SystemPrompt(req)
@@ -301,10 +303,10 @@ func TrimCodeFence(s string) string {
 	}
 	s = strings.TrimSpace(s)
 	// 粗略处理即可，避免引入额外依赖
-	if strings.HasPrefix(s, "```json") {
-		s = strings.TrimPrefix(s, "```json")
-	} else if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```")
+	if trimmed, ok := strings.CutPrefix(s, "```json"); ok {
+		s = trimmed
+	} else if trimmed, ok := strings.CutPrefix(s, "```"); ok {
+		s = trimmed
 	}
 	s = strings.TrimSuffix(s, "```")
 	return strings.TrimSpace(s)

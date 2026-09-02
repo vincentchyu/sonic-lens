@@ -2,7 +2,7 @@ package websocket
 
 import (
 	"context"
-	"encoding/json/v2"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
@@ -264,7 +264,7 @@ func (b *libraryUpdateBatcher) pendingKey(entityType string, entityID int64) str
 	return fmt.Sprintf("%s:%d", entityType, entityID)
 }
 
-func broadcastJSON(ctx context.Context, message interface{}) {
+func broadcastJSON(ctx context.Context, message any) {
 	clientsMutex.RLock()
 	defer clientsMutex.RUnlock()
 

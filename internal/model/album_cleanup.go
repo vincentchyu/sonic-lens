@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 
 	"gorm.io/gorm"
 )
@@ -127,11 +127,7 @@ func cleanupDuplicateAlbumGroupTx(
 		return nil, nil
 	}
 
-	sort.SliceStable(
-		candidates, func(i, j int) bool {
-			return compareDuplicateAlbumCandidate(candidates[i], candidates[j]) < 0
-		},
-	)
+	slices.SortStableFunc(candidates, compareDuplicateAlbumCandidate)
 
 	canonical := candidates[0]
 	mergedIDs := make([]int64, 0, len(candidates)-1)
@@ -306,7 +302,7 @@ func buildAlbumMergeUpdates(canonical, source *Album) map[string]interface{} {
 		fields["disc_infos"] = source.DiscInfos
 	}
 
-	mergedSyncStatus := maxInt(canonical.SyncStatus, source.SyncStatus)
+	mergedSyncStatus := max(canonical.SyncStatus, source.SyncStatus)
 	if mergedSyncStatus != canonical.SyncStatus {
 		fields["sync_status"] = mergedSyncStatus
 	}
@@ -397,13 +393,6 @@ func moveAlbumReleaseLinksToCanonicalTx(tx *gorm.DB, canonicalAlbumID, sourceAlb
 	}
 
 	return tx.Where("album_id = ?", sourceAlbumID).Delete(&AlbumReleaseMB{}).Error
-}
-
-func maxInt(left, right int) int {
-	if left >= right {
-		return left
-	}
-	return right
 }
 
 // ============================================================

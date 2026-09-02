@@ -482,7 +482,7 @@ final class AppStore: ObservableObject {
             )
         case .background, .foreground, .realtimeDisconnect:
             connectionRecoveryStore.setNeedsDecision(
-                server: currentServer ?? server,
+                server: targetServer,
                 message: "连接失效，请处理",
                 detail: detail ?? server.displayName
             )

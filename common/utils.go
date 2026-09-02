@@ -9,7 +9,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
-func Decode(input interface{}, output interface{}) error {
+func Decode(input any, output any) error {
 	decoder, err := mapstructure.NewDecoder(
 		&mapstructure.DecoderConfig{
 			ZeroFields: true,
@@ -51,8 +51,8 @@ func NormalizeChineseGenre(genre string) string {
 	if strings.HasSuffix(genre, "音乐") {
 		return genre
 	}
-	if strings.HasSuffix(genre, "乐") {
-		return strings.TrimSuffix(genre, "乐")
+	if trimmed, ok := strings.CutSuffix(genre, "乐"); ok {
+		return trimmed
 	}
 	return genre
 }

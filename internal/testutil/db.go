@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	memDBSeq  uint64
+	memDBSeq  atomic.Uint64
 	frozenNow = time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 )
 
@@ -26,7 +26,7 @@ var (
 func NewMemoryDB(t *testing.T, schemaSQL ...string) *gorm.DB {
 	t.Helper()
 
-	seq := atomic.AddUint64(&memDBSeq, 1)
+	seq := memDBSeq.Add(1)
 	dsn := fmt.Sprintf("file:test_mem_%d_%d?mode=memory&cache=shared", time.Now().UnixNano(), seq)
 
 	db, err := gorm.Open(
@@ -49,9 +49,11 @@ func NewMemoryDB(t *testing.T, schemaSQL ...string) *gorm.DB {
 
 	sqlDB, err := db.DB()
 	if err == nil {
-		t.Cleanup(func() {
-			_ = sqlDB.Close()
-		})
+		t.Cleanup(
+			func() {
+				_ = sqlDB.Close()
+			},
+		)
 	}
 
 	return db
@@ -80,9 +82,11 @@ func NewMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	)
 	require.NoError(t, err, "绑定 GORM 与 sqlmock 失败")
 
-	t.Cleanup(func() {
-		_ = rawDB.Close()
-	})
+	t.Cleanup(
+		func() {
+			_ = rawDB.Close()
+		},
+	)
 
 	return db, mock
 }
@@ -96,8 +100,10 @@ func SetupTestGlobalMySQL(t *testing.T, db *gorm.DB) {
 
 	model.GlobalDBForMysql = db
 
-	t.Cleanup(func() {
-		*config.ConfigObj = prevConfig
-		model.GlobalDBForMysql = prevMySQL
-	})
+	t.Cleanup(
+		func() {
+			*config.ConfigObj = prevConfig
+			model.GlobalDBForMysql = prevMySQL
+		},
+	)
 }

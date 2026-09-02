@@ -590,7 +590,7 @@ func upsertTrackPlayCountTx(
 
 	var track Track
 	var err error
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if existingTrack != nil {
 			track = *existingTrack
 			err = nil
@@ -711,7 +711,7 @@ func incrementExistingTrackPlayCountTx(tx *gorm.DB, trackID int64) error {
 		return nil
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		current, err := GetTrackByIDTx(tx, trackID)
 		if err != nil {
 			return err
@@ -720,7 +720,7 @@ func incrementExistingTrackPlayCountTx(tx *gorm.DB, trackID int64) error {
 		result := tx.Model(&Track{}).Where(
 			"id = ? AND version = ?", current.ID, current.Version,
 		).Updates(
-			map[string]interface{}{
+			map[string]any{
 				"play_count": current.PlayCount + 1,
 				"version":    current.Version + 1,
 			},
@@ -847,7 +847,7 @@ func setAppleMusicFavoriteByTrackIDTx(tx *gorm.DB, trackID int64, isFavorite boo
 		return gorm.ErrRecordNotFound
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		record, err := GetTrackByIDTx(tx, trackID)
 		if err != nil {
 			return err
@@ -874,7 +874,7 @@ func setLastFmFavoriteByTrackIDTx(tx *gorm.DB, trackID int64, isFavorite bool) e
 		return gorm.ErrRecordNotFound
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		record, err := GetTrackByIDTx(tx, trackID)
 		if err != nil {
 			return err
@@ -1502,7 +1502,7 @@ func UpdateTrackCuratedMetadataTx(
 		return nil
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		current, err := GetTrackByIDTx(tx, trackID)
 		if err != nil {
 			return err

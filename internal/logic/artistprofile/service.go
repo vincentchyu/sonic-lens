@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/vincentchyu/sonic-lens/core/objectstorage"
@@ -21,7 +21,7 @@ type Service interface {
 	ListProfiles(ctx context.Context, limit, offset int, keyword string) (ListResult, error)
 	ListTopArtistSources(ctx context.Context, limit int) ([]string, error)
 	UploadAvatar(ctx context.Context, artistName, imageData string) (*model.ArtistProfile, error)
-	MergeProfilesIntoTopArtists(ctx context.Context, items []map[string]interface{}) ([]map[string]interface{}, error)
+	MergeProfilesIntoTopArtists(ctx context.Context, items []map[string]any) ([]map[string]any, error)
 }
 
 type service struct{}
@@ -70,7 +70,7 @@ func (s *service) ListTopArtistSources(ctx context.Context, limit int) ([]string
 	}
 	candidates := make([]string, 0, limit)
 	seen := map[string]struct{}{}
-	appendNames := func(items []map[string]interface{}) {
+	appendNames := func(items []map[string]any) {
 		for _, item := range items {
 			artistName := strings.TrimSpace(topArtistResponseArtistName(item["artist"]))
 			key := model.NormalizeArtistProfileKey(artistName)
@@ -100,7 +100,7 @@ func (s *service) ListTopArtistSources(ctx context.Context, limit int) ([]string
 		}
 		appendNames(tracks)
 	}
-	sort.Strings(candidates)
+	slices.Sort(candidates)
 	return candidates, nil
 }
 
@@ -138,8 +138,8 @@ func (s *service) UploadAvatar(ctx context.Context, artistName, imageData string
 }
 
 func (s *service) MergeProfilesIntoTopArtists(
-	ctx context.Context, items []map[string]interface{},
-) ([]map[string]interface{}, error) {
+	ctx context.Context, items []map[string]any,
+) ([]map[string]any, error) {
 	if len(items) == 0 {
 		return items, nil
 	}
@@ -195,7 +195,7 @@ func buildListItem(profile model.ArtistProfile) ListItem {
 
 const timeLayout = "2006-01-02 15:04:05"
 
-func collectTopArtistNames(items []map[string]interface{}) []string {
+func collectTopArtistNames(items []map[string]any) []string {
 	seen := make(map[string]struct{}, len(items))
 	result := make([]string, 0, len(items))
 	for _, item := range items {
@@ -213,7 +213,7 @@ func collectTopArtistNames(items []map[string]interface{}) []string {
 	return result
 }
 
-func topArtistResponseArtistName(value interface{}) string {
+func topArtistResponseArtistName(value any) string {
 	switch typed := value.(type) {
 	case string:
 		return typed

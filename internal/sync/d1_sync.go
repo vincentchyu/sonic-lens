@@ -25,7 +25,7 @@ import (
 type D1Client struct {
 	db          *sql.DB
 	cfg         *config.CloudflareConfig
-	syncRunning int32
+	syncRunning atomic.Bool
 }
 
 const d1MaxParamsPerStatement = 31
@@ -1429,11 +1429,11 @@ func boolToInt(b bool) int {
 }
 
 func (c *D1Client) tryBeginSync() bool {
-	return atomic.CompareAndSwapInt32(&c.syncRunning, 0, 1)
+	return c.syncRunning.CompareAndSwap(false, true)
 }
 
 func (c *D1Client) endSync() {
-	atomic.StoreInt32(&c.syncRunning, 0)
+	c.syncRunning.Store(false)
 }
 
 // SyncAll 同步所有数据

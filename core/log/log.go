@@ -15,13 +15,13 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var dayRotationCounter int32 = 0 // 记录每天日志文件计数值
+var dayRotationCounter atomic.Int32 // 记录每天日志文件计数值
 var Logger *zap.Logger
 
 // 创建日期分隔的日志文件
 func openDailyLogFile(dir string) (zapcore.WriteSyncer, error) {
 	var fsyncer zapcore.WriteSyncer
-	atomic.AddInt32(&dayRotationCounter, 1)
+	dayRotationCounter.Add(1)
 	logFileName := time.Now().Format("2006-01-02") + ".log"
 
 	filePath := filepath.Join(dir, logFileName)

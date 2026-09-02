@@ -1,11 +1,12 @@
 package insight
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -218,12 +219,18 @@ func (s *serviceImpl) GetInsightOnly(
 		}
 	}
 	// 排序：高分优先；同分时，按创建时间降序（最新优先）
-	sort.Slice(
-		result, func(i, j int) bool {
-			if result[i].TotalScore != result[j].TotalScore {
-				return result[i].TotalScore > result[j].TotalScore
+	slices.SortFunc(
+		result, func(a, b *InsightWithScore) int {
+			if a.TotalScore != b.TotalScore {
+				return cmp.Compare(b.TotalScore, a.TotalScore)
 			}
-			return result[i].CreatedAt.After(result[j].CreatedAt)
+			if a.CreatedAt.Equal(b.CreatedAt) {
+				return 0
+			}
+			if a.CreatedAt.After(b.CreatedAt) {
+				return -1
+			}
+			return 1
 		},
 	)
 	return result, nil
@@ -397,7 +404,7 @@ func (s *serviceImpl) GetOrCreateAlbumInsight(
 
 	metadata := llmResp.Metadata
 	if metadata == nil {
-		metadata = make(map[string]interface{})
+		metadata = make(map[string]any)
 	}
 	metadata["album_id"] = detail.ID
 	metadata["total_tracks"] = totalTracks
@@ -1164,9 +1171,15 @@ func mergeCallLogs(limit int, groups ...[]*model.LLMCallLog) []*model.LLMCallLog
 		}
 	}
 
-	sort.Slice(
-		merged, func(i, j int) bool {
-			return merged[i].CreatedAt.After(merged[j].CreatedAt)
+	slices.SortFunc(
+		merged, func(a, b *model.LLMCallLog) int {
+			if a.CreatedAt.Equal(b.CreatedAt) {
+				return 0
+			}
+			if a.CreatedAt.After(b.CreatedAt) {
+				return -1
+			}
+			return 1
 		},
 	)
 	if len(merged) > limit {
@@ -1522,14 +1535,20 @@ func pickBestTrackInsightWithScores(
 		return nil
 	}
 
-	sort.SliceStable(
-		insights, func(i, j int) bool {
-			leftScore := scoreMap[insights[i].ID]
-			rightScore := scoreMap[insights[j].ID]
+	slices.SortStableFunc(
+		insights, func(a, b *model.TrackInsight) int {
+			leftScore := scoreMap[a.ID]
+			rightScore := scoreMap[b.ID]
 			if leftScore != rightScore {
-				return leftScore > rightScore
+				return cmp.Compare(rightScore, leftScore)
 			}
-			return insights[i].CreatedAt.After(insights[j].CreatedAt)
+			if a.CreatedAt.Equal(b.CreatedAt) {
+				return 0
+			}
+			if a.CreatedAt.After(b.CreatedAt) {
+				return -1
+			}
+			return 1
 		},
 	)
 
@@ -1569,27 +1588,39 @@ func sortAlbumInsightsByTotalScore(ctx context.Context, insights []*model.AlbumI
 }
 
 func sortTrackInsightsWithScoreMap(insights []*model.TrackInsight, scoreMap map[int64]int) {
-	sort.SliceStable(
-		insights, func(i, j int) bool {
-			leftScore := scoreMap[insights[i].ID]
-			rightScore := scoreMap[insights[j].ID]
+	slices.SortStableFunc(
+		insights, func(a, b *model.TrackInsight) int {
+			leftScore := scoreMap[a.ID]
+			rightScore := scoreMap[b.ID]
 			if leftScore != rightScore {
-				return leftScore > rightScore
+				return cmp.Compare(rightScore, leftScore)
 			}
-			return insights[i].CreatedAt.After(insights[j].CreatedAt)
+			if a.CreatedAt.Equal(b.CreatedAt) {
+				return 0
+			}
+			if a.CreatedAt.After(b.CreatedAt) {
+				return -1
+			}
+			return 1
 		},
 	)
 }
 
 func sortAlbumInsightsWithScoreMap(insights []*model.AlbumInsight, scoreMap map[int64]int) {
-	sort.SliceStable(
-		insights, func(i, j int) bool {
-			leftScore := scoreMap[insights[i].ID]
-			rightScore := scoreMap[insights[j].ID]
+	slices.SortStableFunc(
+		insights, func(a, b *model.AlbumInsight) int {
+			leftScore := scoreMap[a.ID]
+			rightScore := scoreMap[b.ID]
 			if leftScore != rightScore {
-				return leftScore > rightScore
+				return cmp.Compare(rightScore, leftScore)
 			}
-			return insights[i].CreatedAt.After(insights[j].CreatedAt)
+			if a.CreatedAt.Equal(b.CreatedAt) {
+				return 0
+			}
+			if a.CreatedAt.After(b.CreatedAt) {
+				return -1
+			}
+			return 1
 		},
 	)
 }
@@ -1720,12 +1751,12 @@ func buildFeedbackSummary(
 	for reason, count := range reasonCounts {
 		pairs = append(pairs, reasonCount{Reason: reason, Count: count})
 	}
-	sort.Slice(
-		pairs, func(i, j int) bool {
-			if pairs[i].Count != pairs[j].Count {
-				return pairs[i].Count > pairs[j].Count
+	slices.SortFunc(
+		pairs, func(a, b reasonCount) int {
+			if a.Count != b.Count {
+				return cmp.Compare(b.Count, a.Count)
 			}
-			return pairs[i].Reason < pairs[j].Reason
+			return cmp.Compare(a.Reason, b.Reason)
 		},
 	)
 	limit := 3
@@ -1802,12 +1833,12 @@ func topCountKeys(counts map[string]int, limit int) []string {
 	for key, count := range counts {
 		pairs = append(pairs, pair{Key: key, Count: count})
 	}
-	sort.Slice(
-		pairs, func(i, j int) bool {
-			if pairs[i].Count != pairs[j].Count {
-				return pairs[i].Count > pairs[j].Count
+	slices.SortFunc(
+		pairs, func(a, b pair) int {
+			if a.Count != b.Count {
+				return cmp.Compare(b.Count, a.Count)
 			}
-			return pairs[i].Key < pairs[j].Key
+			return cmp.Compare(a.Key, b.Key)
 		},
 	)
 	if len(pairs) < limit {

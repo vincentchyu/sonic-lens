@@ -1,11 +1,12 @@
 package ai
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -149,12 +150,15 @@ func (f *geminiProviderFactory) ListModels(ctx context.Context) ([]ModelOption, 
 			)
 		}
 	}
-	sort.Slice(
-		models, func(i, j int) bool {
-			if models[i].IsDefault != models[j].IsDefault {
-				return models[i].IsDefault
+	slices.SortFunc(
+		models, func(a, b ModelOption) int {
+			if a.IsDefault != b.IsDefault {
+				if a.IsDefault {
+					return -1
+				}
+				return 1
 			}
-			return models[i].ID < models[j].ID
+			return cmp.Compare(a.ID, b.ID)
 		},
 	)
 	return models, nil

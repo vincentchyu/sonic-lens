@@ -143,7 +143,6 @@ struct AlbumDetailView: View {
     }
 
     private func openSharePreview(scene: ShareScene) {
-        let t0 = CFAbsoluteTimeGetCurrent()
         print("[ShareTiming] 1. [专辑] openSharePreview 触发, scene: \(scene)")
         guard let detail = viewModel.detail else {
             print("[ShareTiming] [专辑] viewModel.detail 为 nil，中断")
