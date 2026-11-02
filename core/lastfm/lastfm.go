@@ -151,34 +151,52 @@ func InitLastfmApi(
 	ctx context.Context, apiKey, apiSecret, userLoginToken string, isMobile bool, userUsername, userPassword string,
 ) {
 	_redisClient = coreredisclient.GetRedisClient()
-	lastfmApi.Api = lastfm.New(apiKey, apiSecret)
+	if apiKey == "" || apiSecret == "" {
+		alog.Warn(ctx, "Last.fm 未配置 apiKey 或 apiSecret，跳过 Last.fm 初始化")
+		lastfmApi = nil
+		return
+	}
+
+	lastfmApi = &Api{Api: lastfm.New(apiKey, apiSecret)}
 	if isMobile {
-		err := lastfmApi.Login(userUsername, userPassword)
-		if err != nil {
-			panic(err)
+		if err := lastfmApi.Login(userUsername, userPassword); err != nil {
+			alog.Error(ctx, "Last.fm 移动端登录失败，跳过 Last.fm 自动同步", zap.Error(err))
+			lastfmApi = nil
+			return
 		}
+		alog.Info(ctx, "Last.fm 移动端登录成功")
 	} else if len(userLoginToken) <= 0 {
 		token, err := lastfmApi.GetToken()
 		if err != nil {
-			panic(err)
+			alog.Error(ctx, "Last.fm 获取 Token 失败", zap.Error(err))
+			lastfmApi = nil
+			return
 		}
 		authUrl := lastfmApi.GetAuthTokenUrl(token)
 
-		alog.Info(ctx, token)
+		alog.Info(ctx, "Last.fm 待授权", zap.String("auth_url", authUrl), zap.String("token", token))
 		ok := promptUser(authUrl)
 		if ok {
 			err = lastfmApi.LoginWithToken(token)
 			if err != nil {
-				panic(err)
+				alog.Error(ctx, "Last.fm Token 登录失败", zap.Error(err))
+				lastfmApi = nil
+				return
 			}
+			alog.Info(ctx, "Last.fm Token 登录成功")
 		} else {
-			panic("登陆失败")
+			alog.Warn(ctx, "Last.fm 未完成授权交互，跳过初始化")
+			lastfmApi = nil
+			return
 		}
 	} else {
 		err := lastfmApi.LoginWithToken(userLoginToken)
 		if err != nil {
-			panic(err)
+			alog.Error(ctx, "Last.fm Token 登录失败", zap.Error(err))
+			lastfmApi = nil
+			return
 		}
+		alog.Info(ctx, "Last.fm Token 登录成功")
 	}
 }
 

@@ -44,6 +44,7 @@ struct TopAlbum: Codable, Identifiable {
     let album: String
     let albumSubtitle: String?
     let artist: String
+    let releaseDate: String?
     let playCount: Int
     let coverArtURL: String?
     let coverArtMime: String?
@@ -56,16 +57,72 @@ struct TopAlbum: Codable, Identifiable {
         case album
         case albumSubtitle = "album_subtitle"
         case artist
+        case releaseDate = "release_date"
         case playCount = "play_count"
         case coverArtURL = "cover_art_url"
         case coverArtMime = "cover_art_mime"
         case coverArtObjectKey = "cover_art_object_key"
     }
 
+    init(
+        albumID: Int64,
+        album: String,
+        albumSubtitle: String? = nil,
+        artist: String,
+        releaseDate: String? = nil,
+        playCount: Int,
+        coverArtURL: String? = nil,
+        coverArtMime: String? = nil,
+        coverArtObjectKey: String? = nil
+    ) {
+        self.albumID = albumID
+        self.album = album
+        self.albumSubtitle = albumSubtitle
+        self.artist = artist
+        self.releaseDate = releaseDate
+        self.playCount = playCount
+        self.coverArtURL = coverArtURL
+        self.coverArtMime = coverArtMime
+        self.coverArtObjectKey = coverArtObjectKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        albumID = try container.decode(Int64.self, forKey: .albumID)
+        album = try container.decode(String.self, forKey: .album)
+        albumSubtitle = try container.decodeIfPresent(String.self, forKey: .albumSubtitle)
+        artist = try container.decode(String.self, forKey: .artist)
+        releaseDate = try container.decodeIfPresent(String.self, forKey: .releaseDate)
+        playCount = try container.decode(Int.self, forKey: .playCount)
+        coverArtURL = try container.decodeIfPresent(String.self, forKey: .coverArtURL)
+        coverArtMime = try container.decodeIfPresent(String.self, forKey: .coverArtMime)
+        coverArtObjectKey = try container.decodeIfPresent(String.self, forKey: .coverArtObjectKey)
+    }
+
     var displayAlbum: String {
         let subtitle = albumSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !subtitle.isEmpty else { return album }
         return "\(album) (\(subtitle))"
+    }
+
+    var releaseYear: String? {
+        guard let releaseDate = releaseDate?.trimmingCharacters(in: .whitespacesAndNewlines), !releaseDate.isEmpty else {
+            return nil
+        }
+        if releaseDate.count >= 4 {
+            let year = String(releaseDate.prefix(4))
+            if year.allSatisfy(\.isNumber) {
+                return year
+            }
+        }
+        return releaseDate
+    }
+
+    var displaySubtitle: String {
+        if let year = releaseYear, !year.isEmpty {
+            return "\(artist) · \(year)"
+        }
+        return artist
     }
 }
 

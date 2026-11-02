@@ -1038,6 +1038,7 @@ type TopAlbum struct {
 	Album             string `json:"album"`
 	AlbumSubtitle     string `json:"album_subtitle"`
 	Artist            string `json:"artist"`
+	ReleaseDate       string `json:"release_date"`
 	PlayCount         int    `json:"play_count"`
 	CoverArtURL       string `json:"cover_art_url"`
 	CoverArtMime      string `json:"cover_art_mime"`
@@ -1110,6 +1111,7 @@ func GetTopAlbumsByPlayCount(ctx context.Context, days int, limit int) ([]*TopAl
 				Album:             row.Album,
 				AlbumSubtitle:     row.AlbumSubtitle,
 				Artist:            row.Artist,
+				ReleaseDate:       albumObj.ReleaseDate,
 				PlayCount:         row.PlayCount,
 				CoverArtURL:       albumObj.CoverArtURL,
 				CoverArtMime:      albumObj.CoverArtMime,

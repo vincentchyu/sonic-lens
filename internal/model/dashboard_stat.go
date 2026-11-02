@@ -1150,6 +1150,7 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 		Album             string
 		AlbumSubtitle     string
 		Artist            string
+		ReleaseDate       string
 		PlayCount         int64
 		CoverArtURL       string
 		CoverArtMime      string
@@ -1159,9 +1160,11 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 	if err := GetDB().WithContext(ctx).
 		Table("top_album_stat AS tas").
 		Select(
-			"tas.album_id, tas.album, COALESCE(a.name_subtitle, tas.album_subtitle, '') AS album_subtitle, tas.artist, tas.play_count, "+
-				"COALESCE(a.cover_art_url, '') AS cover_art_url, "+
-				"COALESCE(a.cover_art_mime, '') AS cover_art_mime, "+
+			"tas.album_id, tas.album, COALESCE(a.name_subtitle, tas.album_subtitle, '') AS album_subtitle, tas.artist, " +
+				"COALESCE(a.release_date, '') AS release_date, " +
+				"tas.play_count, " +
+				"COALESCE(a.cover_art_url, '') AS cover_art_url, " +
+				"COALESCE(a.cover_art_mime, '') AS cover_art_mime, " +
 				"COALESCE(a.cover_art_object_key, '') AS cover_art_object_key",
 		).
 		Joins("LEFT JOIN album AS a ON a.id = tas.album_id").
@@ -1181,6 +1184,7 @@ func GetTopAlbumsByPlayCountFromStat(ctx context.Context, days int, limit int) (
 				Album:             row.Album,
 				AlbumSubtitle:     row.AlbumSubtitle,
 				Artist:            row.Artist,
+				ReleaseDate:       row.ReleaseDate,
 				PlayCount:         int(row.PlayCount),
 				CoverArtURL:       row.CoverArtURL,
 				CoverArtMime:      row.CoverArtMime,

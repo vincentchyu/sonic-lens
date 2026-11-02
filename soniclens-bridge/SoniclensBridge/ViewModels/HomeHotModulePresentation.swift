@@ -208,8 +208,8 @@ struct HomeHotModulePresentation: Equatable {
             let rank = index + 1
             return HomeHotAlbumPresentationItem(
                 id: album.id,
-                title: album.album,
-                subtitle: album.artist,
+                title: album.displayAlbum,
+                subtitle: album.displaySubtitle,
                 count: album.playCount,
                 rank: rank,
                 relativeWeight: Self.relativeWeight(for: album.playCount, maxCount: maxCount),
@@ -222,14 +222,38 @@ struct HomeHotModulePresentation: Equatable {
 
     private static func makeTracks(_ source: [TopTrack], albums: [TopAlbum]) -> [HomeHotTrackPresentationItem] {
         let maxCount = source.map(\.playCount).max() ?? 0
-        let artworkByAlbumKey = Dictionary(
-            uniqueKeysWithValues: albums.map { album in
-                (albumLookupKey(artist: album.artist, album: album.album), album.coverArtURL)
+        var artworkByAlbumKey: [String: String] = [:]
+        for album in albums {
+            guard let cover = album.coverArtURL, !cover.isEmpty else { continue }
+            // 1. 四元组精确 key: artist::album::subtitle::year
+            let fullKey = albumLookupKey(
+                artist: album.artist,
+                album: album.album,
+                subtitle: album.albumSubtitle,
+                releaseDate: album.releaseDate
+            )
+            artworkByAlbumKey[fullKey] = artworkByAlbumKey[fullKey] ?? cover
+
+            // 2. 三元组 key: artist::album::subtitle (当有子标题时)
+            if let sub = album.albumSubtitle, !canonical(sub).isEmpty {
+                let subKey = albumLookupKey(artist: album.artist, album: album.album, subtitle: sub)
+                artworkByAlbumKey[subKey] = artworkByAlbumKey[subKey] ?? cover
             }
-        )
+
+            // 3. 三元组 key: artist::album::year (当有发布年份时)
+            if let date = album.releaseDate, !extractYear(date).isEmpty {
+                let yearKey = albumLookupKey(artist: album.artist, album: album.album, releaseDate: date)
+                artworkByAlbumKey[yearKey] = artworkByAlbumKey[yearKey] ?? cover
+            }
+
+            // 4. 二元组兜底 key: artist::album
+            let baseKey = albumLookupKey(artist: album.artist, album: album.album)
+            artworkByAlbumKey[baseKey] = artworkByAlbumKey[baseKey] ?? cover
+        }
 
         return source.enumerated().map { index, track in
             let rank = track.rank
+            let fallbackArtwork = artworkByAlbumKey[albumLookupKey(artist: track.artist, album: track.album)]
             return HomeHotTrackPresentationItem(
                 id: track.id,
                 title: track.track,
@@ -239,7 +263,7 @@ struct HomeHotModulePresentation: Equatable {
                 rank: rank,
                 relativeWeight: Self.relativeWeight(for: track.playCount, maxCount: maxCount),
                 accentKey: .accent(forRank: rank),
-                artworkPath: track.coverArtURL ?? artworkByAlbumKey[albumLookupKey(artist: track.artist, album: track.album)] ?? nil,
+                artworkPath: track.coverArtURL ?? fallbackArtwork,
                 sourceTrack: track,
                 navigationTarget: track.trackID > 0 ? .track(track.trackID) : .none
             )
@@ -331,8 +355,41 @@ struct HomeHotModulePresentation: Equatable {
         }
     }
 
-    private static func albumLookupKey(artist: String, album: String) -> String {
-        "\(artist.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())::\(album.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    private static func canonical(_ text: String?) -> String {
+        text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+
+    private static func extractYear(_ dateString: String?) -> String {
+        let trimmed = canonical(dateString)
+        guard !trimmed.isEmpty else { return "" }
+        if trimmed.count >= 4 {
+            let prefix = String(trimmed.prefix(4))
+            if prefix.allSatisfy(\.isNumber) {
+                return prefix
+            }
+        }
+        return trimmed
+    }
+
+    private static func albumLookupKey(
+        artist: String,
+        album: String,
+        subtitle: String? = nil,
+        releaseDate: String? = nil
+    ) -> String {
+        let normArtist = canonical(artist)
+        let normAlbum = canonical(album)
+        let normSubtitle = canonical(subtitle)
+        let normYear = extractYear(releaseDate)
+
+        var components = [normArtist, normAlbum]
+        if !normSubtitle.isEmpty {
+            components.append(normSubtitle)
+        }
+        if !normYear.isEmpty {
+            components.append(normYear)
+        }
+        return components.joined(separator: "::")
     }
 
     private static func normalizedSourceTitle(for rawValue: String) -> String {

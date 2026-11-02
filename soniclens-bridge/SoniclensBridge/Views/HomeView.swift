@@ -1344,16 +1344,16 @@ struct TopAlbumsCard: View {
                     GlassPanel(cornerRadius: 12, padding: 10) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(album.album)
+                                Text(album.displayAlbum)
                                     .font(.subheadline)
                                     .foregroundColor(SonicTheme.textPrimary)
                                     .lineLimit(1)
-                                    .help(album.album)
-                                Text(album.artist)
+                                    .help(album.displayAlbum)
+                                Text(album.displaySubtitle)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
-                                    .help(album.artist)
+                                    .help(album.displaySubtitle)
                             }
                             Spacer()
                             Text("\(album.playCount)")

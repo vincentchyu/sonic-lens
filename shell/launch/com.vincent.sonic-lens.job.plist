@@ -2,11 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>EnvironmentVariables</key>
-	<dict>
-		<key>PATH</key>
-		<string>/usr/local/sbin:/opt/local/bin:/opt/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:/opt/homebrew/bin</string>
-	</dict>
 	<!-- 唯一标识符 -->
 	<key>Label</key>
 	<string>com.vincent.sonic-lens.job</string>
@@ -19,23 +14,21 @@
 		<string>./config/config_local.yaml</string>
 	</array>
 	<key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HTTP_PROXY</key>
-        <string>http://127.0.0.1:7897</string>
-        <key>HTTPS_PROXY</key>
-        <string>http://127.0.0.1:7897</string>
-        <key>NO_PROXY</key>
-        <string>localhost,127.0.0.1</string>
-    </dict>
-    <key>WorkingDirectory</key>
-    <string>/Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/</string>
-    <!-- 在登录时自动启动 -->
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>__PROJECT_ROOT__</string>
+	<key>StandardOutPath</key>
+	<string>__PROJECT_ROOT__/.logs/launchd_stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>__PROJECT_ROOT__/.logs/launchd_stderr.log</string>
+	<!-- 在登录时自动启动 -->
 	<key>RunAtLoad</key>
 	<true/>
 	<!-- 保持存活，挂了自动重启 -->
-    <key>KeepAlive</key>
-    <true/>
+	<key>KeepAlive</key>
+	<true/>
 </dict>
 </plist>
