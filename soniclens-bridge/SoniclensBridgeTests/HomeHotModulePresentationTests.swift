@@ -105,4 +105,43 @@ final class HomeHotModulePresentationTests: XCTestCase {
         XCTAssertEqual(presentation.tracks.count, 1)
         XCTAssertNotNil(presentation.tracks[0].artworkPath)
     }
+
+    func testMakeTracksFallbacksToRecentPlaysArtworkWhenTopAlbumMissing() {
+        let trackA = TopTrack(
+            trackID: 101,
+            track: "Here Comes the Sun (2019 Mix)",
+            album: "Abbey Road",
+            artist: "The Beatles",
+            playCount: 4,
+            rank: 1,
+            coverArtURL: nil,
+            coverArtMime: nil,
+            coverArtObjectKey: nil
+        )
+
+        let recentPlay = RecentPlayRecord(
+            id: 9946,
+            artist: "The Beatles",
+            album: "Abbey Road",
+            track: "Here Comes the Sun (2019 Mix)",
+            playTime: Date(),
+            coverArtPath: "/album/v1/originals/42f3ba944229ed8629f32bc4375f3ed5c87dcc38"
+        )
+
+        let presentation = HomeHotModulePresentation(
+            topGenres: [],
+            topArtists: [],
+            topAlbums: [], // 专辑榜为空或未收录
+            topTracks: [trackA],
+            playSourceCounts: [:],
+            stats: nil,
+            recentPlays: [recentPlay]
+        )
+
+        XCTAssertEqual(presentation.tracks.count, 1)
+        XCTAssertEqual(
+            presentation.tracks[0].artworkPath,
+            "/album/v1/originals/42f3ba944229ed8629f32bc4375f3ed5c87dcc38"
+        )
+    }
 }

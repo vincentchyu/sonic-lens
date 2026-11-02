@@ -134,12 +134,13 @@ struct HomeHotModulePresentation: Equatable {
         topAlbums: [TopAlbum],
         topTracks: [TopTrack],
         playSourceCounts: [String: Int64],
-        stats: DashboardStats?
+        stats: DashboardStats?,
+        recentPlays: [RecentPlayRecord] = []
     ) {
         let genres = Self.makeGenres(topGenres)
         let artists = Self.makeArtists(topArtists)
         let albums = Self.makeAlbums(topAlbums)
-        let tracks = Self.makeTracks(topTracks, albums: topAlbums)
+        let tracks = Self.makeTracks(topTracks, albums: topAlbums, recentPlays: recentPlays)
         let sources = Self.makeSources(playSourceCounts)
         let primaryAccentKey = genres.first?.accentKey
             ?? artists.first?.accentKey
@@ -220,7 +221,11 @@ struct HomeHotModulePresentation: Equatable {
         }
     }
 
-    private static func makeTracks(_ source: [TopTrack], albums: [TopAlbum]) -> [HomeHotTrackPresentationItem] {
+    private static func makeTracks(
+        _ source: [TopTrack],
+        albums: [TopAlbum],
+        recentPlays: [RecentPlayRecord] = []
+    ) -> [HomeHotTrackPresentationItem] {
         let maxCount = source.map(\.playCount).max() ?? 0
         var artworkByAlbumKey: [String: String] = [:]
         for album in albums {
@@ -249,6 +254,17 @@ struct HomeHotModulePresentation: Equatable {
             // 4. 二元组兜底 key: artist::album
             let baseKey = albumLookupKey(artist: album.artist, album: album.album)
             artworkByAlbumKey[baseKey] = artworkByAlbumKey[baseKey] ?? cover
+        }
+
+        // 5. 从最近播放中兜底相同专辑/艺人的封面（针对未入库专辑或后端排行榜暂未带上封面的场景）
+        for play in recentPlays {
+            guard let cover = play.coverArtPath, !cover.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let baseKey = albumLookupKey(artist: play.artist, album: play.album)
+            artworkByAlbumKey[baseKey] = artworkByAlbumKey[baseKey] ?? cover
+            if let sub = play.albumSubtitle, !canonical(sub).isEmpty {
+                let subKey = albumLookupKey(artist: play.artist, album: play.album, subtitle: sub)
+                artworkByAlbumKey[subKey] = artworkByAlbumKey[subKey] ?? cover
+            }
         }
 
         return source.enumerated().map { index, track in

@@ -851,9 +851,9 @@ func refreshTrackRankStats(tx *gorm.DB, topN int, periods []string) error {
 				Select(
 					"COALESCE(MAX(CASE WHEN tpr.resolved_track_id > 0 THEN tpr.resolved_track_id ELSE 0 END), 0) AS track_id, " +
 						"tpr.artist, tpr.album, tpr.track, tpr.track_number, tpr.disc_number, COUNT(*) AS play_count, " +
-						"COALESCE(MAX(aa.cover_art_url), MAX(ab.cover_art_url), '') AS cover_art_url, " +
-						"COALESCE(MAX(aa.cover_art_mime), MAX(ab.cover_art_mime), '') AS cover_art_mime, " +
-						"COALESCE(MAX(aa.cover_art_object_key), MAX(ab.cover_art_object_key), '') AS cover_art_object_key",
+						"COALESCE(MAX(NULLIF(aa.cover_art_url, '')), MAX(NULLIF(ab.cover_art_url, '')), MAX(NULLIF(tpr.cover_art_path, '')), '') AS cover_art_url, " +
+						"COALESCE(MAX(NULLIF(aa.cover_art_mime, '')), MAX(NULLIF(ab.cover_art_mime, '')), CASE WHEN MAX(NULLIF(tpr.cover_art_path, '')) IS NOT NULL THEN 'image/jpeg' ELSE '' END) AS cover_art_mime, " +
+						"COALESCE(MAX(NULLIF(aa.cover_art_object_key, '')), MAX(NULLIF(ab.cover_art_object_key, '')), '') AS cover_art_object_key",
 				).
 				Joins("LEFT JOIN album AS aa ON aa.id = tpr.album_id AND tpr.album_id > 0").
 				Joins(
@@ -933,6 +933,41 @@ func backfillTrackRankStatArtwork(ctx context.Context, periods []string) error {
 		return nil
 	}
 
+	db := GetDB().WithContext(ctx)
+
+	// 1. 优先从播放流水 track_play_records 中提取有效封面，秒级回填未归因或历史遗漏封面的榜单曲目
+	type recordArtworkSeed struct {
+		Artist       string `gorm:"column:artist"`
+		Album        string `gorm:"column:album"`
+		CoverArtPath string `gorm:"column:cover_art_path"`
+	}
+	var recordSeeds []recordArtworkSeed
+	if err := db.Table("track_rank_stat AS trs").
+		Select("trs.artist, trs.album, MAX(tpr.cover_art_path) AS cover_art_path").
+		Joins("JOIN track_play_records AS tpr ON tpr.artist = trs.artist AND tpr.album = trs.album AND TRIM(COALESCE(tpr.cover_art_path, '')) <> ''").
+		Where("trs.period_type IN ?", normalizedPeriods).
+		Where("TRIM(COALESCE(trs.cover_art_url, '')) = ''").
+		Group("trs.artist, trs.album").
+		Scan(&recordSeeds).Error; err == nil && len(recordSeeds) > 0 {
+		for _, seed := range recordSeeds {
+			coverPath := strings.TrimSpace(seed.CoverArtPath)
+			if coverPath == "" {
+				continue
+			}
+			_ = db.Model(&TrackRankStat{}).
+				Where("period_type IN ?", normalizedPeriods).
+				Where("artist = ? AND album = ?", seed.Artist, seed.Album).
+				Where("TRIM(COALESCE(cover_art_url, '')) = ''").
+				Updates(
+					map[string]interface{}{
+						"cover_art_url":  coverPath,
+						"cover_art_mime": "image/jpeg",
+					},
+				).Error
+		}
+	}
+
+	// 2. 针对依然缺失封面的，尝试通过对象存储规则回填
 	provider := dashboardTrackRankObjectStorageGet()
 	if provider == nil {
 		return nil
@@ -952,7 +987,6 @@ func backfillTrackRankStatArtwork(ctx context.Context, periods []string) error {
 		return err
 	}
 
-	db := GetDB().WithContext(ctx)
 	for _, seed := range seeds {
 		update, ok, err := resolveTrackRankCoverUpdate(ctx, provider, seed.Artist, seed.Album)
 		if err != nil || !ok {

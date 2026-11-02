@@ -292,7 +292,8 @@ final class HomeViewModel: ObservableObject {
             topAlbums: topAlbums,
             topTracks: topTracks,
             playSourceCounts: playSourceCounts,
-            stats: stats
+            stats: stats,
+            recentPlays: recentPlays
         )
         trendSnapshot = HomeTrendSnapshot(
             rangeDays: selectedTrendRange,
