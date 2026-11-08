@@ -153,9 +153,19 @@ func (a *AudirvanaTrackInfoWrapper) GetSource() string {
 }
 
 func (a *AudirvanaTrackInfoWrapper) GetBundleID() string {
-	// Audirvana没有直接提供应用标识符
+	// Audirvana 默认未提供应用标识符时，优先使用文件元数据，缺失时按当前运行的 Audirvana 应用区分
 	if metadata := a.metadataHandle(); metadata != nil {
-		return metadata.GetBundleID()
+		if bundleID := metadata.GetBundleID(); strings.TrimSpace(bundleID) != "" {
+			return bundleID
+		}
+	}
+	if a != nil && a.TrackInfo != nil {
+		switch a.AppName {
+		case common.AppAudirvanaStudio:
+			return common.BundleIDAudirvanaStudio
+		case common.AppAudirvanaOrigin:
+			return common.BundleIDAudirvanaOrigin
+		}
 	}
 	return ""
 }

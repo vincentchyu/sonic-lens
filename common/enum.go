@@ -7,8 +7,14 @@ import (
 var (
 	AppSystemEvents    = "System Events"
 	AppAudirvanaOrigin = "Audirvana Origin"
+	AppAudirvanaStudio = "Audirvana Studio"
 	FileExtWav1        = ".wav"
 	FileExtWav2        = strings.ToUpper(FileExtWav1)
+)
+
+const (
+	BundleIDAudirvanaOrigin = "com.audirvana.Audirvana-Origin"
+	BundleIDAudirvanaStudio = "com.audirvana.Audirvana-Studio"
 )
 
 type PlayerState string

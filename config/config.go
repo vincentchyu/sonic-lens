@@ -82,11 +82,15 @@ type DashboardConfig struct {
 }
 
 type MysqlConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	Database string `yaml:"database"`
+	Host                   string `yaml:"host"`
+	Port                   int    `yaml:"port"`
+	User                   string `yaml:"user"`
+	Password               string `yaml:"password"`
+	Database               string `yaml:"database"`
+	MaxOpenConns           int    `yaml:"maxOpenConns"`
+	MaxIdleConns           int    `yaml:"maxIdleConns"`
+	ConnMaxLifetimeMinutes int    `yaml:"connMaxLifetimeMinutes"`
+	ConnMaxIdleTimeMinutes int    `yaml:"connMaxIdleTimeMinutes"`
 }
 
 func (m MysqlConfig) GetMysqlDSN() string {
