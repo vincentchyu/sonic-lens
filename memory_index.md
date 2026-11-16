@@ -1,5 +1,15 @@
 # 记忆索引
 
+## 2026-11-16
+
+- **日期**: 2026-11-16
+    - **聚合摘要**: iOS 端户外/旅行 Apple Music 听歌离线捕获与握手批量补录闭环落地，并顺带修复历史跨平台导航编译回归。核心包括：
+        1. iOS 端构建 MediaPlayer 双引擎采集（`MPMediaLibrary` 静默基线 + 差量对账、`MPMusicPlayerController.systemMusicPlayer` 实时播放阈值入队）与独立持久化队列 `MobileScrobbleStore`；
+        2. 接入 `AppStore` 连接握手与前台健康检查自动触发同步，并在连接页与 iOS/iPadOS 首页提供轻量化授权引导、待同步数量胶囊与一键扫描同步卡片；
+        3. 后端在 `internal/logic/track` 抽离统一的 Apple Music 清洗与 `BuildAppleMusicPlaybackEventInput` / `IngestAppleMusicPlaybackBatch` 调度逻辑，供桌面 `scrobbler` 与新路由 `POST /api/scrobbler/mobile/batch` 全链路复用（含 60s 时间窗防重、Last.fm 历史时间戳补推与 WS 广播）；
+        4. 修复 `SidebarDestination` / `NavigationCoordinator` 在 `AlbumGridView`、`LibraryView` 的跨平台 `#if os(macOS)` 隔离与 iOS 详情跳转，实现三端（Phone/Pad/Mac）全绿编译通过。
+    - **聚合链接**: [iOS 端户外/旅行 Apple Music 听歌离线捕获与握手补录特性清单](memory/2026-11-16/ios_offline_apple_music_scrobble_sync_manifest.md)
+
 ## 2026-08-30
 
 - **日期**: 2026-08-30

@@ -92,6 +92,21 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    func loadLocalOnly() async {
+        isLoading = albums.isEmpty && tracks.isEmpty
+        errorMessage = nil
+        do {
+            logger.info("离线模式开始加载本地资料库索引")
+            try await ensureIndexStore()
+            await reloadAlbums(sort: currentAlbumSort, query: currentAlbumQuery)
+            await reloadTracks(sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery)
+        } catch {
+            logger.error("loadLocalOnly failed: \(error.localizedDescription, privacy: .public)")
+            errorMessage = "本地资料库初始化失败"
+        }
+        isLoading = false
+    }
+
     func load(using server: ServerConfig) async {
         let isServerChanged = currentServerURL != server.baseURL
         if isServerChanged {

@@ -122,8 +122,11 @@ struct PhoneAppLayoutView: View {
             }
         }
         .task {
-            guard let server = store.currentServer else { return }
-            await libraryViewModel.load(using: server)
+            if let server = store.currentServer {
+                await libraryViewModel.load(using: server)
+            } else {
+                await libraryViewModel.loadLocalOnly()
+            }
         }
         .onChange(of: store.currentServer) { _, server in
             guard let server else { return }
@@ -132,11 +135,20 @@ struct PhoneAppLayoutView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task {
-                await store.performForegroundConnectionHealthCheckIfNeeded()
+                if store.currentServer != nil {
+                    await store.performForegroundConnectionHealthCheckIfNeeded()
+                } else if store.isOfflineBrowsing {
+                    await store.attemptAutoReconnectIfOffline()
+                }
                 guard let server = store.currentServer, store.isConnectionHealthy else { return }
                 await libraryViewModel.refresh(using: server)
                 await insightCoordinator.reconcileIfNeeded(using: server)
             }
+        }
+        .sheet(isPresented: $store.isConnectionSheetPresented) {
+            ConnectionView(isPresentedInSheet: true)
+                .environmentObject(store)
+                .environment(store.mobileScrobbleCoordinator)
         }
         .onOpenURL { url in
             Task {
@@ -166,11 +178,6 @@ struct PhoneAppLayoutView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AppBackground())
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Text(destination.title)
-                            .font(.headline.weight(.semibold))
-                    }
-
                     ToolbarItem(placement: .topBarLeading) {
                         Text(destination.title)
                             .font(.headline.weight(.semibold))

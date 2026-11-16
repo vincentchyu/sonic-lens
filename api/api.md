@@ -6,8 +6,8 @@
 
 ## 1. 接口总览
 
-- HTTP 路由总数：`58`
-- 其中 API 路由（`/api/*`）：`52`
+- HTTP 路由总数：`59`
+- 其中 API 路由（`/api/*`）：`53`
 - 页面路由：`4`（`/`、`/admin`、`/lyrics-live`、`/playCounts`）
 - 实时路由：`1`（`/ws`）
 - 健康检查：`1`（`/health`）
@@ -134,6 +134,7 @@
 | 未 scrobble 列表 | GET | `/api/unscrobbled-records` | `limit`, `offset` | records | `trackService.GetUnscrobbledRecordsWithPagination` |
 | 未 scrobble 数量 | GET | `/api/unscrobbled-records/count` | 无 | `count` | `trackService.GetUnscrobbledRecordsCount` |
 | 批量补同步 | POST | `/api/unscrobbled-records/sync` | `ids` | `success_count`, `failed_*` | `trackService.SyncSelectedUnscrobbledRecords` -> `core/lastfm.PushTrackScrobble` + `model.BatchUpdateScrobbledStatus` |
+| 移动端离线播放批量补录 | POST | `/api/scrobbler/mobile/batch` | `device_id`, `device_name`, `records[]`（`idempotency_key`, `title`, `artist`, `album_artist`, `album`, `genre`, `composer`, `track_number`, `disc_number`, `duration`, `played_at`, `unique_id`） | `status`, `accepted_count`, `duplicate_count`, `scrobbled_count`, `failed_count`, `accepted_keys`, `failed_keys` | `trackService.IngestAppleMusicPlaybackBatch` -> 60s 窗口去重 -> `HandleTrackPlaybackThreshold`（Last.fm 历史时间戳补推 + `track_play_records` 落库 + 归因 + WS 广播） |
 | 收藏双写 | POST | `/api/favorite` | `artist`, `album`, `track`, `source`, `favorite`（可带曲目位置信息） | `apple_music`, `lastfm`, `apple_music_state`, `lastfm_state`, `favorite_state` | `trackService.SetTrackFavorite` -> AppleMusic + Last.fm + favorite projection（稳定态 + pending 事件态） |
 
 ## 2.9 实时连接与运维
@@ -197,6 +198,7 @@ graph TD
     F --> F1[GET /api/unscrobbled-records]
     F --> F2[GET /api/unscrobbled-records/count]
     F --> F3[POST /api/unscrobbled-records/sync]
+    F --> F3a[POST /api/scrobbler/mobile/batch]
     F --> F4[POST /api/favorite]
 
     G --> G1[GET /api/dashboard/stats]
@@ -236,6 +238,7 @@ graph TD
 - MB 专辑维护：`POST /api/musicbrainz/deep-maintenance/:album_id` -> `musicbrainz.DeepingMaintenance` -> MB 拉取+本地 `album/track_album` 修正。
 - 收藏双写：`POST /api/favorite` -> `trackService.SetTrackFavorite` -> AppleMusic/Last.fm API + `model.SetAppleMusicFavorite/SetLastFmFavorite` -> `buildFavoriteProjection` 统一返回稳定收藏态与 pending 收藏态。
 - 未上报补同步：`POST /api/unscrobbled-records/sync` -> `trackService.SyncSelectedUnscrobbledRecords` -> `lastfm.PushTrackScrobble` -> `model.BatchUpdateScrobbledStatus`。
+- 移动端离线播放补录：`POST /api/scrobbler/mobile/batch` -> `trackService.IngestAppleMusicPlaybackBatch` -> `BuildAppleMusicPlaybackEventInput` -> 60 秒窗口去重 -> `HandleTrackPlaybackThreshold`（按原始播放时间戳推送 Last.fm + 写入 `track_play_records` + 归因 + 广播 `recent_plays_updated`）。
 - 封面解析：`GET /api/artwork/resolve` -> `artworklogic.Resolve` -> `model` 专辑封面字段优先 + `objectstorage` 回源。
 
 ## 5. 前端重构拆分建议（基于接口边界）

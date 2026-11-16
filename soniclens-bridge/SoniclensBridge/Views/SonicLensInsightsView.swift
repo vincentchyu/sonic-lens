@@ -47,7 +47,19 @@ struct SonicLensInsightsView: View {
     private var insightList: some View {
         Group {
             let items = currentInsights
-            if items.isEmpty {
+            if store.currentServer == nil && items.isEmpty {
+                VStack(spacing: 12) {
+                    EmptyStateView(
+                        title: "离线模式",
+                        subtitle: "连接服务端后可浏览音眸解析列表。"
+                    )
+                    Button("连接服务端") {
+                        store.isConnectionSheetPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.top, 24)
+            } else if items.isEmpty {
                 EmptyStateView(
                     title: selectedTargetType == .album ? "暂无专辑音眸" : "暂无曲目音眸",
                     subtitle: selectedTargetType == .album ? "生成专辑分析后会显示在这里。" : "生成赏析后会显示在这里。"

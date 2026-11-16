@@ -37,6 +37,8 @@ var (
 	modelResolveTrackForFavoriteProjection = model.ResolveTrackForFavoriteProjection
 	modelGetTrackPlayRecordByID            = model.GetTrackPlayRecordByID
 	modelUpdateAlbumTitleMetadataByID      = model.UpdateAlbumTitleMetadataByID
+	modelIncrementGenrePlayCount           = model.IncrementGenrePlayCount
+	modelNormalizeGenre                    = model.NormalizeGenre
 	telemetryGoOnlySafe                    = telemetry.GoOnlySafe
 	websocketBroadcastRecentPlaysUpdated   = corews.BroadcastRecentPlaysUpdated
 	favoriteProjectionVersion              atomic.Uint64
@@ -124,6 +126,8 @@ type TrackService interface {
 	ProbeAndSyncTrackFavorite(ctx context.Context, input PlaybackEventInput) TrackFavoriteProbeResult
 	HandleNowPlayingStarted(ctx context.Context, input PlaybackEventInput)
 	HandleTrackPlaybackThreshold(ctx context.Context, input PlaybackEventInput) PlaybackThresholdResult
+	// IngestAppleMusicPlaybackBatch 批量接入移动端离线采集的 Apple Music 播放流水。
+	IngestAppleMusicPlaybackBatch(ctx context.Context, records []ExternalPlaybackRecordInput) (*MobileScrobbleBatchResult, error)
 }
 
 // TrackServiceImpl 实现TrackService接口

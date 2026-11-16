@@ -2240,6 +2240,8 @@ func setupRouter(name string) *gin.Engine {
 		},
 	)
 
+	registerMobileScrobblerRoutes(r, trackService)
+
 	// WebSocket endpoint
 	r.GET(
 		"/ws", func(c *gin.Context) {
@@ -3079,6 +3081,87 @@ func registerInsightFeedbackRoutes(r gin.IRoutes, insightService insightFeedback
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"feedbacks": feedbacks, "analysis_target_type": common.AnalysisTargetTypeAlbum})
+		},
+	)
+}
+
+const maxMobileScrobbleBatchSize = 200
+
+type mobileScrobbleRouteService interface {
+	IngestAppleMusicPlaybackBatch(
+		ctx context.Context, records []track.ExternalPlaybackRecordInput,
+	) (*track.MobileScrobbleBatchResult, error)
+}
+
+type mobileScrobbleBatchRequest struct {
+	DeviceID   string                              `json:"device_id"`
+	DeviceName string                              `json:"device_name"`
+	Records    []track.ExternalPlaybackRecordInput `json:"records"`
+}
+
+// registerMobileScrobblerRoutes 注册移动端离线播放流水批量补录路由，支持单测注入。
+func registerMobileScrobblerRoutes(r gin.IRoutes, trackService mobileScrobbleRouteService) {
+	r.POST(
+		"/api/scrobbler/mobile/batch", func(c *gin.Context) {
+			ctx := c.Request.Context()
+			if trackService == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "曲目服务未初始化"})
+				return
+			}
+
+			var req mobileScrobbleBatchRequest
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数格式错误"})
+				return
+			}
+
+			if len(req.Records) > maxMobileScrobbleBatchSize {
+				c.JSON(
+					http.StatusBadRequest,
+					gin.H{"error": "单次批量补录记录数不能超过 " + strconv.Itoa(maxMobileScrobbleBatchSize) + " 条"},
+				)
+				return
+			}
+
+			res, err := trackService.IngestAppleMusicPlaybackBatch(ctx, req.Records)
+			if err != nil {
+				log.Error(
+					ctx,
+					"移动端 Apple Music 播放流水批量补录失败",
+					zap.String("device_id", req.DeviceID),
+					zap.String("device_name", req.DeviceName),
+					zap.Int("record_count", len(req.Records)),
+					zap.Error(err),
+				)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "批量补录处理失败"})
+				return
+			}
+
+			log.Info(
+				ctx,
+				"移动端 Apple Music 播放流水批量补录接口响应",
+				zap.String("device_id", req.DeviceID),
+				zap.String("device_name", req.DeviceName),
+				zap.Int("record_count", len(req.Records)),
+				zap.Int("accepted_count", res.AcceptedCount),
+				zap.Int("duplicate_count", res.DuplicateCount),
+				zap.Int("scrobbled_count", res.ScrobbledCount),
+				zap.Int("failed_count", res.FailedCount),
+			)
+
+			c.JSON(
+				http.StatusOK,
+				gin.H{
+					"status":          "ok",
+					"accepted_count":  res.AcceptedCount,
+					"duplicate_count": res.DuplicateCount,
+					"scrobbled_count": res.ScrobbledCount,
+					"failed_count":    res.FailedCount,
+					"accepted_keys":   res.AcceptedKeys,
+					"failed_keys":     res.FailedKeys,
+					"results":         res.Results,
+				},
+			)
 		},
 	)
 }

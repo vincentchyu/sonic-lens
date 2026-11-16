@@ -10,6 +10,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/applemusic"
 	"github.com/vincentchyu/sonic-lens/core/exec"
 	"github.com/vincentchyu/sonic-lens/core/log"
+	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 )
 
 // AppleMusicTrackInfoWrapper 包装 AppleMusic TrackInfo 以实现 PlayerInfoHandler 接口
@@ -19,28 +20,26 @@ type AppleMusicTrackInfoWrapper struct {
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetTitle() string {
-	return a.baseWrapper.ConversionSimplified(common.UnityFixAll(common.TrackCustomFit(a.Title)))
+	return track.NormalizeAppleMusicTitle(a.Title)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetAlbum() string {
-	// ParseAlbumTitleMetadata 先剥括号版本，再剥 " - EP/Single/LP" 连字符后缀，
-	// OfficialTitle 就是干净主标题，与 album.name 保持一致。
-	meta := common.ParseAlbumTitleMetadata(a.Album)
-	return a.baseWrapper.ConversionSimplified(meta.OfficialTitle)
+	cleanAlbum, _, _ := track.ParseAppleMusicAlbumMetadata(a.Album)
+	return cleanAlbum
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetAlbumSubtitle() string {
-	// AlbumSubtitle 只关心括号内的版本说明（Remaster/Deluxe 等），与发行类型无关。
-	_, subtitle := common.ParseAlbumTitleAndSubtitle(a.Album)
-	return a.baseWrapper.ConversionSimplified(subtitle)
+	_, subtitle, _ := track.ParseAppleMusicAlbumMetadata(a.Album)
+	return subtitle
 }
+
 func (a *AppleMusicTrackInfoWrapper) GetAlbumTitleMetadata() *common.AlbumTitleMetadata {
-	meta := common.ParseAlbumTitleMetadata(a.Album)
+	_, _, meta := track.ParseAppleMusicAlbumMetadata(a.Album)
 	return &meta
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetArtist() string {
-	return a.baseWrapper.ConversionSimplified(common.ArtistCustomFit(a.Artist))
+	return track.NormalizeAppleMusicArtist(a.Artist)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetPosition() float64 {
@@ -61,12 +60,7 @@ func (a *AppleMusicTrackInfoWrapper) GetUrl() string {
 
 // 新增方法实现
 func (a *AppleMusicTrackInfoWrapper) GetAlbumArtist() string {
-	// Apple Music 底层已提供专辑艺术家字段，这里统一按“专辑艺术家优先，缺失时回退曲目艺术家”处理。
-	artist := preferredAlbumArtist(
-		common.ArtistCustomFit(a.AlbumArtist),
-		common.ArtistCustomFit(a.Artist),
-	)
-	return a.baseWrapper.ConversionSimplified(artist)
+	return track.NormalizeAppleMusicAlbumArtist(a.AlbumArtist, a.Artist)
 }
 
 func (a *AppleMusicTrackInfoWrapper) GetTrackNumber() int64 {

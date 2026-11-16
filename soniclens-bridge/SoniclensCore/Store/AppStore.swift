@@ -83,6 +83,8 @@ final class AppStore: ObservableObject {
     @Published var connectionStatus: ConnectionStatus = .idle
     @Published var recentServers: [ServerConfig] = []
     @Published private(set) var activeConnectionTargetKey: String?
+    @Published private(set) var isOfflineBrowsing: Bool = false
+    @Published var isConnectionSheetPresented: Bool = false
     @Published var sharePreviewRequest: SharePreviewRequest?
 
     func presentSharePreview(payload: SharePayload) {
@@ -101,6 +103,7 @@ final class AppStore: ObservableObject {
     let favoriteActionStore = FavoriteActionStore()
     let connectionRecoveryStore = ConnectionRecoveryStore()
     let insightCoordinator = InsightAnalysisCoordinator()
+    let mobileScrobbleCoordinator = AppleMusicScrobbleCoordinator()
 
     private var nowPlayingService: NowPlayingService?
     private var libraryUpdateWorkItem: DispatchWorkItem?
@@ -130,6 +133,20 @@ final class AppStore: ObservableObject {
     ) {
         self.favoriteRequestHandler = favoriteRequestHandler
         recentServers = recentStore.load()
+        mobileScrobbleCoordinator.onPendingItemsEnqueued = { [weak self] in
+            guard let self, self.isConnectionHealthy, let server = self.currentServer else { return }
+            Task {
+                await self.mobileScrobbleCoordinator.syncPendingIfNeeded(using: server)
+            }
+        }
+    }
+
+    func refreshMobileScrobblesIfNeeded() async {
+        await mobileScrobbleCoordinator.refreshAndSync(using: isConnectionHealthy ? currentServer : nil)
+    }
+
+    func requestMobileScrobbleAuthorization() async {
+        await mobileScrobbleCoordinator.requestAuthorizationAndScan(using: isConnectionHealthy ? currentServer : nil)
     }
 
     @MainActor
@@ -207,6 +224,8 @@ final class AppStore: ObservableObject {
             )
             let realtimeStartedAt = CFAbsoluteTimeGetCurrent()
             currentServer = effectiveServer
+            isOfflineBrowsing = false
+            isConnectionSheetPresented = false
             recentStore.add(effectiveServer)
             recentServers = recentStore.load()
             logger.info("服务端连接成功，开始启动播放态监听")
@@ -214,6 +233,9 @@ final class AppStore: ObservableObject {
             setAutoRestoreEnabled(true)
             connectionRecoveryStore.clear()
             startSilentHealthMonitoring(for: effectiveServer)
+            Task {
+                await self.refreshMobileScrobblesIfNeeded()
+            }
             let realtimeElapsed = CFAbsoluteTimeGetCurrent() - realtimeStartedAt
             logger.info("实时连接启动完成，耗时 \(String(format: "%.3f", realtimeElapsed), privacy: .public) 秒")
 
@@ -250,6 +272,8 @@ final class AppStore: ObservableObject {
         nowPlayingService = nil
         currentServer = nil
         isRealtimeConnected = false
+        isOfflineBrowsing = false
+        isConnectionSheetPresented = false
         activeConnectionTargetKey = nil
         connectionRecoveryStore.clear()
         favoriteActionStore.clear()
@@ -303,12 +327,76 @@ final class AppStore: ObservableObject {
             return
         }
 
+        #if os(iOS)
+        connectionRecoveryStore.clear()
+        isOfflineBrowsing = true
+        connectionStatus = .idle
+        logger.warning("启动静默恢复失败，已自动降级为离线浏览模式 \(server.displayName, privacy: .public)")
+        #else
         connectionRecoveryStore.setNeedsDecision(
             server: server,
             message: "上次连接不可用",
             detail: connectionStatus.detail ?? server.displayName
         )
         logger.warning("启动静默恢复失败，需要用户决策 \(server.displayName, privacy: .public)")
+        #endif
+    }
+
+    func enterOfflineMode(preserving server: ServerConfig? = nil) {
+        let preservedServer = server ?? connectionRecoveryStore.server ?? currentServer ?? recentServers.first
+        logger.info("进入离线浏览模式")
+        cancelActiveConnection(announceCancellation: false)
+        stopSilentHealthMonitoring()
+        stopRealtimeRecovery()
+        stopRecoveryProbeMonitoring()
+        if let preservedServer {
+            recentStore.add(preservedServer)
+            recentServers = recentStore.load()
+            setAutoRestoreEnabled(true)
+        }
+        libraryUpdateWorkItem?.cancel()
+        libraryUpdateWorkItem = nil
+        nowPlayingService?.onConnectionStateChange = nil
+        nowPlayingService?.stop()
+        nowPlayingService = nil
+        currentServer = nil
+        isRealtimeConnected = false
+        isOfflineBrowsing = true
+        isConnectionSheetPresented = false
+        connectionRecoveryStore.clear()
+        playbackStore.reset()
+        connectionStatus = .idle
+    }
+
+    func attemptAutoReconnectIfOffline() async {
+        guard isOfflineBrowsing, currentServer == nil, !isConnecting else { return }
+        loadRecentServers()
+        guard isAutoRestoreEnabled(), let server = recentServers.first else { return }
+
+        do {
+            let (effectiveServer, health) = try await resolveReachableServer(from: server)
+            guard health.status == "ok" else {
+                connectionStatus = .idle
+                return
+            }
+            guard isOfflineBrowsing, currentServer == nil else { return }
+            logger.info("离线模式下检测到服务端已恢复可达，自动重连 \(effectiveServer.displayName, privacy: .public)")
+            _ = await connect(effectiveServer)
+        } catch {
+            if !isConnecting {
+                connectionStatus = .idle
+            }
+            logger.debug("离线模式探活未连上，继续保持离线浏览 \(server.displayName, privacy: .public)")
+        }
+    }
+
+    func reconnectLastServerFromOffline() async {
+        loadRecentServers()
+        guard let server = recentServers.first else {
+            isConnectionSheetPresented = true
+            return
+        }
+        _ = await connect(server)
     }
 
     func performForegroundConnectionHealthCheckIfNeeded() async {
@@ -323,6 +411,7 @@ final class AppStore: ObservableObject {
         )
         if success {
             logger.debug("前台健康检查通过 \(server.displayName, privacy: .public)")
+            await mobileScrobbleCoordinator.syncPendingIfNeeded(using: currentServer)
         }
     }
 
@@ -393,10 +482,15 @@ final class AppStore: ObservableObject {
                         self.connectionRecoveryStore.clear()
                         self.connectionStatus = .connected(message: "已恢复连接", detail: effectiveServer.displayName)
                         self.currentServer = effectiveServer
+                        self.isOfflineBrowsing = false
+                        self.isConnectionSheetPresented = false
                         self.recentStore.add(effectiveServer)
                         self.recentServers = self.recentStore.load()
                         self.startNowPlaying(effectiveServer)
                         self.startSilentHealthMonitoring(for: effectiveServer)
+                        Task {
+                            await self.refreshMobileScrobblesIfNeeded()
+                        }
                     }
                     break
                 } catch {

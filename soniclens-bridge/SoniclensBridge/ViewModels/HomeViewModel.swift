@@ -41,6 +41,14 @@ final class HomeViewModel: ObservableObject {
         self.selectedTrendRange = defaultTrendRange
     }
 
+    func loadOfflineCache() {
+        if stats == nil && topAlbums.isEmpty {
+            loadCache()
+        }
+        errorMessage = nil
+        isLoading = false
+    }
+
     func load(using server: ServerConfig) async {
         if stats == nil && topAlbums.isEmpty {
             loadCache()

@@ -119,8 +119,11 @@ struct PadAppLayoutView: View {
             }
         }
         .task {
-            guard let server = store.currentServer else { return }
-            await libraryViewModel.load(using: server)
+            if let server = store.currentServer {
+                await libraryViewModel.load(using: server)
+            } else {
+                await libraryViewModel.loadLocalOnly()
+            }
         }
         .onChange(of: store.currentServer) { _, server in
             guard let server else { return }
@@ -129,10 +132,19 @@ struct PadAppLayoutView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task {
-                await store.performForegroundConnectionHealthCheckIfNeeded()
+                if store.currentServer != nil {
+                    await store.performForegroundConnectionHealthCheckIfNeeded()
+                } else if store.isOfflineBrowsing {
+                    await store.attemptAutoReconnectIfOffline()
+                }
                 guard let server = store.currentServer, store.isConnectionHealthy else { return }
                 await libraryViewModel.refresh(using: server)
             }
+        }
+        .sheet(isPresented: $store.isConnectionSheetPresented) {
+            ConnectionView(isPresentedInSheet: true)
+                .environmentObject(store)
+                .environment(store.mobileScrobbleCoordinator)
         }
         .onReceive(NotificationCenter.default.publisher(for: .librarySyncDidUpdate)) { _ in
             guard let server = store.currentServer else { return }

@@ -16,6 +16,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/common"
 	"github.com/vincentchyu/sonic-lens/core/ai"
 	"github.com/vincentchyu/sonic-lens/internal/logic/insight"
+	"github.com/vincentchyu/sonic-lens/internal/logic/track"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
 
@@ -988,5 +989,112 @@ func TestGenreAlbumsRouteUnescaping(t *testing.T) {
 	}
 	if fakeService.lastGenreQueried != "Adult Alternative" {
 		t.Fatalf("expected defense unescaped 'Adult Alternative', got '%s'", fakeService.lastGenreQueried)
+	}
+}
+
+type fakeMobileScrobbleService struct {
+	lastRecords []track.ExternalPlaybackRecordInput
+	result      *track.MobileScrobbleBatchResult
+	err         error
+}
+
+func (f *fakeMobileScrobbleService) IngestAppleMusicPlaybackBatch(
+	_ context.Context, records []track.ExternalPlaybackRecordInput,
+) (*track.MobileScrobbleBatchResult, error) {
+	f.lastRecords = records
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.result, nil
+}
+
+func TestRegisterMobileScrobblerRoutesBatchIngest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeMobileScrobbleService{
+		result: &track.MobileScrobbleBatchResult{
+			AcceptedCount:  1,
+			DuplicateCount: 1,
+			ScrobbledCount: 1,
+			FailedCount:    0,
+			AcceptedKeys:   []string{"k1", "k2"},
+			FailedKeys:     []string{},
+		},
+	}
+	router := gin.New()
+	registerMobileScrobblerRoutes(router, service)
+
+	payload := `{
+		"device_id": "iphone-16",
+		"device_name": "Vincent iPhone",
+		"records": [
+			{
+				"idempotency_key": "k1",
+				"title": "Song A",
+				"artist": "Artist A",
+				"album": "Album A",
+				"track_number": 1,
+				"disc_number": 1,
+				"duration": 200,
+				"played_at": "2026-11-15T12:00:00Z"
+			},
+			{
+				"idempotency_key": "k2",
+				"title": "Song B",
+				"artist": "Artist B",
+				"album": "Album B",
+				"played_at": "2026-11-15T12:05:00Z"
+			}
+		]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/scrobbler/mobile/batch", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(service.lastRecords) != 2 {
+		t.Fatalf("expected 2 records passed to service, got %d", len(service.lastRecords))
+	}
+
+	var resp struct {
+		Status         string   `json:"status"`
+		AcceptedCount  int      `json:"accepted_count"`
+		DuplicateCount int      `json:"duplicate_count"`
+		ScrobbledCount int      `json:"scrobbled_count"`
+		AcceptedKeys   []string `json:"accepted_keys"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Status != "ok" || resp.AcceptedCount != 1 || resp.DuplicateCount != 1 || len(resp.AcceptedKeys) != 2 {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestRegisterMobileScrobblerRoutesRejectsOversizeBatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeMobileScrobbleService{}
+	router := gin.New()
+	registerMobileScrobblerRoutes(router, service)
+
+	records := make([]track.ExternalPlaybackRecordInput, maxMobileScrobbleBatchSize+1)
+	bodyBytes, err := json.Marshal(mobileScrobbleBatchRequest{
+		DeviceID: "iphone",
+		Records:  records,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/scrobbler/mobile/batch", strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized batch, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

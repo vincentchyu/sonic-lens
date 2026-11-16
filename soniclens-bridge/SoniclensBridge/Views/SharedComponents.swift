@@ -172,3 +172,60 @@ struct FavoriteActionNoticeBanner: View {
         }
     }
 }
+
+struct OfflineModeBanner: View {
+    @EnvironmentObject private var store: AppStore
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "icloud.slash")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("离线模式")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SonicTheme.textPrimary)
+                Text("当前未连接服务端，正在展示本地曲库与上次缓存快照")
+                    .font(.caption2)
+                    .foregroundStyle(SonicTheme.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            if store.isConnecting {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                HStack(spacing: 6) {
+                    if !store.recentServers.isEmpty {
+                        Button("重连") {
+                            Task {
+                                await store.reconnectLastServerFromOffline()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+
+                    Button("连接") {
+                        store.isConnectionSheetPresented = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.orange.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.orange.opacity(0.24), lineWidth: 1)
+        )
+    }
+}

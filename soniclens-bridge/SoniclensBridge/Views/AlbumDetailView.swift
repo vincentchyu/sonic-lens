@@ -65,8 +65,8 @@ struct AlbumDetailView: View {
 
             if !viewModel.isLoading, viewModel.detail == nil, viewModel.errorMessage == nil {
                 EmptyStateView(
-                    title: "暂无专辑详情",
-                    subtitle: "请稍后重试或返回重进。"
+                    title: store.currentServer == nil ? "离线模式" : "暂无专辑详情",
+                    subtitle: store.currentServer == nil ? "连接服务端后可加载完整专辑曲目与音眸解析。" : "请稍后重试或返回重进。"
                 )
                 .padding(32)
             }

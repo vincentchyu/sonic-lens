@@ -35,11 +35,17 @@ struct PhoneHomeView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
+                    if store.currentServer == nil && store.isOfflineBrowsing {
+                        OfflineModeBanner()
+                    }
+
                     if let message = viewModel.errorMessage {
                         ErrorBanner(message: message)
                     }
 
                     PhoneHomeHero(nowPlaying: playbackStore.nowPlaying, onOpenNowPlaying: onOpenNowPlaying)
+
+                    MobileScrobbleStatusCard()
 
                     let hotPresentation = viewModel.hotModulePresentation
                     let trendSnapshot = viewModel.trendSnapshot
@@ -128,6 +134,8 @@ struct PhoneHomeView: View {
         .task {
             if let server = store.currentServer {
                 await viewModel.load(using: server)
+            } else {
+                viewModel.loadOfflineCache()
             }
         }
         .onChange(of: store.currentServer) { _, server in

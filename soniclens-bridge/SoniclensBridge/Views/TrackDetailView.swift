@@ -218,6 +218,10 @@ struct TrackDetailView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    } else if store.currentServer == nil {
+                        Text("离线模式暂不支持加载远程歌词")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     } else {
                         Text("暂无歌词")
                             .font(.subheadline)

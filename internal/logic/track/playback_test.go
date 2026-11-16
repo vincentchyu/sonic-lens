@@ -786,3 +786,251 @@ func TestProbeAndSyncTrackFavoriteInvalidatesLastfmHotCacheOnVersionChange(t *te
 	service.ProbeAndSyncTrackFavorite(context.Background(), input)
 	require.Equal(t, 2, lastfmCalls)
 }
+
+func TestBuildAppleMusicPlaybackEventInput(t *testing.T) {
+	originalGenreFn := cacheGetEnglishGenre
+	cacheGetEnglishGenre = func(genre string) string {
+		if genre == "搖滾" || genre == "摇滚" {
+			return "Rock"
+		}
+		return genre
+	}
+	t.Cleanup(func() {
+		cacheGetEnglishGenre = originalGenreFn
+	})
+
+	playedAt := time.Date(2026, 11, 15, 10, 30, 0, 0, time.UTC)
+	fav := true
+	eventInput := BuildAppleMusicPlaybackEventInput(ExternalPlaybackRecordInput{
+		IdempotencyKey:  "key-1",
+		Title:           "Another Brick In the Wall, Pt. 2",
+		Artist:          "萬能青年旅店",
+		AlbumArtist:     "",
+		Album:           "Omnipotent Youth - EP (Deluxe Edition)",
+		Genre:           "搖滾",
+		Composer:        "董亞千",
+		TrackNumber:     2,
+		DiscNumber:      0,
+		Duration:        238,
+		ReleaseDate:     "2020-12-22",
+		ReleaseYear:     2020,
+		PlayedAt:        playedAt,
+		UniqueID:        "987654321",
+		BundleID:        "com.apple.Music",
+		IsAppleMusicFav: &fav,
+	})
+
+	require.Equal(t, "Another Brick in the Wall, Part 2", eventInput.Track)
+	require.Equal(t, "万能青年旅店", eventInput.Artist)
+	require.Equal(t, "万能青年旅店", eventInput.AlbumArtist)
+	require.Equal(t, "Omnipotent Youth", eventInput.Album)
+	require.Equal(t, "Deluxe Edition", eventInput.AlbumSubtitle)
+	require.NotNil(t, eventInput.AlbumTitleMetadata)
+	require.Equal(t, "ep", eventInput.AlbumTitleMetadata.ReleaseType)
+	require.Equal(t, int8(2), eventInput.TrackNumber)
+	require.Equal(t, int8(1), eventInput.DiscNumber)
+	require.Equal(t, int64(238), eventInput.Duration)
+	require.Equal(t, common.PlayerAppleMusic, eventInput.PlayerSource)
+	require.Equal(t, playedAt, eventInput.PlaybackStartedAt)
+	require.Equal(t, "Rock", eventInput.Metadata.Genre)
+	require.Equal(t, "董亚千", eventInput.Metadata.Composer)
+	require.Equal(t, common.TrackMetadataConfidenceMedium, eventInput.Metadata.Confidence)
+	require.False(t, eventInput.ControllerFavoriteKnown)
+	require.False(t, eventInput.ControllerFavorite)
+}
+
+func TestIngestAppleMusicPlaybackBatch(t *testing.T) {
+	originalPush := lastfmPushTrackScrobble
+	originalIsDup := modelIsDuplicateTrackPlayRecord
+	originalInsert := modelInsertTrackPlayRecord
+	originalProcess := modelProcessTrackPlayRecord
+	originalGetRecord := modelGetTrackPlayRecordByID
+	originalGoSafe := telemetryGoOnlySafe
+	originalBroadcast := websocketBroadcastRecentPlaysUpdated
+	t.Cleanup(func() {
+		lastfmPushTrackScrobble = originalPush
+		modelIsDuplicateTrackPlayRecord = originalIsDup
+		modelInsertTrackPlayRecord = originalInsert
+		modelProcessTrackPlayRecord = originalProcess
+		modelGetTrackPlayRecordByID = originalGetRecord
+		telemetryGoOnlySafe = originalGoSafe
+		websocketBroadcastRecentPlaysUpdated = originalBroadcast
+	})
+
+	var pushedTimestamps []int64
+	var pushedTracks []string
+	lastfmPushTrackScrobble = func(ctx context.Context, req *lastfm.PushTrackScrobbleReq) (string, error) {
+		pushedTimestamps = append(pushedTimestamps, req.Timestamp)
+		pushedTracks = append(pushedTracks, req.Track)
+		return "ok", nil
+	}
+
+	insertedCount := 0
+	modelIsDuplicateTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord, window time.Duration) (bool, error) {
+		require.Equal(t, 60*time.Second, window)
+		return record.Track == "Dup Track", nil
+	}
+	modelInsertTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord) error {
+		insertedCount++
+		record.ID = int64(insertedCount)
+		return nil
+	}
+	modelProcessTrackPlayRecord = func(ctx context.Context, recordID int64, metadata model.TrackMetadata) error {
+		return nil
+	}
+	modelGetTrackPlayRecordByID = func(ctx context.Context, id int64) (*model.TrackPlayRecord, error) {
+		return &model.TrackPlayRecord{ID: id}, nil
+	}
+	telemetryGoOnlySafe = func(ctx context.Context, fn func(context.Context)) {
+		fn(ctx)
+	}
+	websocketBroadcastRecentPlaysUpdated = func(ctx context.Context) {}
+
+	tEarly := time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)
+	tLate := time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
+
+	service := &TrackServiceImpl{}
+	res, err := service.IngestAppleMusicPlaybackBatch(t.Context(), []ExternalPlaybackRecordInput{
+		{
+			IdempotencyKey: "k-late",
+			Title:          "Late Track",
+			Artist:         "Artist A",
+			Album:          "Album A",
+			TrackNumber:    2,
+			Duration:       210,
+			PlayedAt:       tLate,
+		},
+		{
+			IdempotencyKey: "k-dup",
+			Title:          "Dup Track",
+			Artist:         "Artist A",
+			Album:          "Album A",
+			TrackNumber:    3,
+			Duration:       180,
+			PlayedAt:       tEarly.Add(10 * time.Minute),
+		},
+		{
+			IdempotencyKey: "k-invalid",
+			Title:          "No Album Track",
+			Artist:         "Artist A",
+			Album:          "",
+			PlayedAt:       tEarly.Add(5 * time.Minute),
+		},
+		{
+			IdempotencyKey: "k-early",
+			Title:          "Early Track",
+			Artist:         "Artist A",
+			Album:          "Album A",
+			TrackNumber:    1,
+			Duration:       200,
+			PlayedAt:       tEarly,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, res.AcceptedCount)
+	require.Equal(t, 1, res.DuplicateCount)
+	require.Equal(t, 2, res.ScrobbledCount)
+	require.Equal(t, 1, res.FailedCount)
+	require.ElementsMatch(t, []string{"k-early", "k-dup", "k-late"}, res.AcceptedKeys)
+	require.Equal(t, []string{"k-invalid"}, res.FailedKeys)
+	// 确认按时间升序补推 Last.fm，且重复曲目不会重复推 Last.fm
+	require.Equal(t, []string{"Early Track", "Late Track"}, pushedTracks)
+	require.Equal(t, []int64{tEarly.Unix(), tLate.Unix()}, pushedTimestamps)
+	require.Equal(t, 2, insertedCount)
+}
+
+func TestParseAppleMusicAlbumMetadataNormalizesFullwidthAndSimplified(t *testing.T) {
+	cleanAlbum, subtitle, meta := ParseAppleMusicAlbumMetadata("萬能青年旅店 - EP （Deluxe Edition）")
+
+	require.Equal(t, "万能青年旅店", cleanAlbum)
+	require.Equal(t, "Deluxe Edition", subtitle)
+	require.Equal(t, "ep", meta.ReleaseType)
+
+	// 无空格括号与全角逗号也应统一转换为半角并完成繁转简
+	plainAlbum, plainSubtitle, _ := ParseAppleMusicAlbumMetadata("萬能青年旅店，現場版（2026）")
+	require.Equal(t, "万能青年旅店,现场版(2026)", plainAlbum)
+	require.Empty(t, plainSubtitle)
+}
+
+func TestHandleTrackPlaybackThresholdPrefersStoredNormalizedGenre(t *testing.T) {
+	originalPush := lastfmPushTrackScrobble
+	originalIsDup := modelIsDuplicateTrackPlayRecord
+	originalInsert := modelInsertTrackPlayRecord
+	originalProcess := modelProcessTrackPlayRecord
+	originalGetRecord := modelGetTrackPlayRecordByID
+	originalIncrementGenre := modelIncrementGenrePlayCount
+	originalNormalizeGenre := modelNormalizeGenre
+	originalGoSafe := telemetryGoOnlySafe
+	originalBroadcast := websocketBroadcastRecentPlaysUpdated
+	t.Cleanup(func() {
+		lastfmPushTrackScrobble = originalPush
+		modelIsDuplicateTrackPlayRecord = originalIsDup
+		modelInsertTrackPlayRecord = originalInsert
+		modelProcessTrackPlayRecord = originalProcess
+		modelGetTrackPlayRecordByID = originalGetRecord
+		modelIncrementGenrePlayCount = originalIncrementGenre
+		modelNormalizeGenre = originalNormalizeGenre
+		telemetryGoOnlySafe = originalGoSafe
+		websocketBroadcastRecentPlaysUpdated = originalBroadcast
+	})
+
+	lastfmPushTrackScrobble = func(ctx context.Context, req *lastfm.PushTrackScrobbleReq) (string, error) {
+		return "ok", nil
+	}
+	modelIsDuplicateTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord, window time.Duration) (bool, error) {
+		return false, nil
+	}
+	modelInsertTrackPlayRecord = func(ctx context.Context, record *model.TrackPlayRecord) error {
+		record.ID = 100
+		return nil
+	}
+	modelProcessTrackPlayRecord = func(ctx context.Context, recordID int64, metadata model.TrackMetadata) error {
+		return nil
+	}
+	telemetryGoOnlySafe = func(ctx context.Context, fn func(context.Context)) {}
+	websocketBroadcastRecentPlaysUpdated = func(ctx context.Context) {}
+	modelNormalizeGenre = model.NormalizeGenre
+
+	var incrementedGenres []string
+	modelIncrementGenrePlayCount = func(ctx context.Context, name string) error {
+		incrementedGenres = append(incrementedGenres, name)
+		return nil
+	}
+
+	service := &TrackServiceImpl{}
+
+	// 场景 1：playRecord 已回填归因后的标准流派，优先使用 playRecord.Genre
+	modelGetTrackPlayRecordByID = func(ctx context.Context, id int64) (*model.TrackPlayRecord, error) {
+		return &model.TrackPlayRecord{ID: id, Genre: "Alternative Rock"}, nil
+	}
+	service.HandleTrackPlaybackThreshold(t.Context(), PlaybackEventInput{
+		Artist:            "大象体操",
+		Album:             "世界",
+		Track:             "银河",
+		Duration:          240,
+		PlayerSource:      common.PlayerAppleMusic,
+		PlaybackStartedAt: time.Unix(1700000000, 0),
+		Metadata: model.TrackMetadata{
+			Genre: "獨立搖滾, Pop",
+		},
+	})
+
+	// 场景 2：playRecord 流派为空时，退回 input.Metadata.Genre 并经 NormalizeGenre 提取首段且繁转简
+	modelGetTrackPlayRecordByID = func(ctx context.Context, id int64) (*model.TrackPlayRecord, error) {
+		return &model.TrackPlayRecord{ID: id, Genre: ""}, nil
+	}
+	service.HandleTrackPlaybackThreshold(t.Context(), PlaybackEventInput{
+		Artist:            "顺子",
+		Album:             "I Am Not a Star",
+		Track:             "摇篮曲",
+		Duration:          220,
+		PlayerSource:      common.PlayerAppleMusic,
+		PlaybackStartedAt: time.Unix(1700000300, 0),
+		Metadata: model.TrackMetadata{
+			Genre: "獨立搖滾, Pop",
+		},
+	})
+
+	require.Equal(t, []string{"Alternative Rock", "独立摇滚"}, incrementedGenres)
+}

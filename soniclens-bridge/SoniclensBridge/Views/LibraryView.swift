@@ -419,7 +419,9 @@ private struct LibraryMetaLabel: View {
 
 struct TrackListView: View {
     @EnvironmentObject private var store: AppStore
+    #if os(macOS)
     @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
+    #endif
     @Environment(PlaybackStore.self) private var playbackStore
     @Environment(FavoriteStore.self) private var favoriteStore
     @ObservedObject var viewModel: LibraryViewModel
@@ -559,7 +561,11 @@ struct TrackListView: View {
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture {
+                                    #if os(macOS)
                                     navigationCoordinator.push(.trackDetail(track: track))
+                                    #else
+                                    selectedTrack = track
+                                    #endif
                                 }
                                 .onAppear {
                                     if viewModel.shouldLoadMoreTracks(at: index) {
@@ -598,6 +604,11 @@ struct TrackListView: View {
             guard showsInlineControls else { return }
             scheduleSearchCommit(value)
         }
+        #if !os(macOS)
+        .navigationDestination(item: $selectedTrack) { track in
+            trackDetailDestination(track: track)
+        }
+        #endif
     }
 
     private func favoriteKey(
@@ -979,17 +990,33 @@ struct UnscrobbledListView: View {
     @ObservedObject var viewModel: LibraryViewModel
 
     var body: some View {
-        List {
-            Section(header: Text("未上报")) {
-                ForEach(viewModel.unscrobbled) { record in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(record.track)
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("\(record.artist) · \(record.displayAlbum)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+        Group {
+            if store.currentServer == nil {
+                VStack(spacing: 12) {
+                    EmptyStateView(
+                        title: "离线模式",
+                        subtitle: "连接服务端后可查看尚未上报至 Last.fm 的播放流水。"
+                    )
+                    Button("连接服务端") {
+                        store.isConnectionSheetPresented = true
                     }
-                    .padding(.vertical, 4)
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+            } else {
+                List {
+                    Section(header: Text("未上报")) {
+                        ForEach(viewModel.unscrobbled) { record in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(record.track)
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("\(record.artist) · \(record.displayAlbum)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
                 }
             }
         }

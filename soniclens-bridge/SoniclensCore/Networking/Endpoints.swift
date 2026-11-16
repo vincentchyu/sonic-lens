@@ -36,6 +36,7 @@ enum APIPath {
     static func insightJob(id: String) -> String { "/api/insight-jobs/\(id)" }
     static func insightJobLiveActivityToken(id: String) -> String { "/api/insight-jobs/\(id)/live-activity-token" }
     static let favorite = "/api/favorite"
+    static let mobileScrobbleBatch = "/api/scrobbler/mobile/batch"
     static let artworkResolve = "/api/artwork/resolve"
 
     static let musicBrainzSearchReleases = "/api/musicbrainz/search-releases"

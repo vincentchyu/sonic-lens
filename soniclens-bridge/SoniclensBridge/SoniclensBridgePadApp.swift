@@ -13,6 +13,7 @@ struct SoniclensBridgePadApp: App {
                 .environment(store.favoriteStore)
                 .environment(store.favoriteActionStore)
                 .environment(store.connectionRecoveryStore)
+                .environment(store.mobileScrobbleCoordinator)
                 .environmentObject(store.insightCoordinator)
         }
     }

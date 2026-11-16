@@ -1,8 +1,5 @@
 import SwiftUI
 
-#if os(macOS)
-import AppKit
-
 enum SidebarDestination: String, CaseIterable, Hashable {
     case home
     case futureFeatures
@@ -79,6 +76,9 @@ enum SidebarDestination: String, CaseIterable, Hashable {
         }
     }
 }
+
+#if os(macOS)
+import AppKit
 
 struct AppLayoutView: View {
     @EnvironmentObject private var store: AppStore
@@ -834,6 +834,14 @@ struct UnifiedLibraryToolbarGroup<Controls: View>: ToolbarContent {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("断开当前服务端")
+            } else if store.isOfflineBrowsing {
+                Button {
+                    store.isConnectionSheetPresented = true
+                } label: {
+                    ToolbarIconButton(systemImage: "antenna.radiowaves.left.and.right", helpText: "连接服务端")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("连接服务端")
             }
         }
     }

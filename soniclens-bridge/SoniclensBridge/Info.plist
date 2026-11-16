@@ -34,6 +34,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>用于读取本机 Apple Music 播放记录，将户外或离线听歌流水同步至 SonicLens 服务端</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_soniclens._tcp</string>
@@ -45,6 +47,6 @@
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
+	<string>LaunchScreenPhone</string>
 </dict>
 </plist>

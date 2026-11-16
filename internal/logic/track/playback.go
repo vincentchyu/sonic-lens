@@ -1,9 +1,11 @@
 package track
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/vincentchyu/sonic-lens/core/lastfm"
 	"github.com/vincentchyu/sonic-lens/core/log"
 	redisc "github.com/vincentchyu/sonic-lens/core/redis"
+	"github.com/vincentchyu/sonic-lens/internal/cache"
 	artworklogic "github.com/vincentchyu/sonic-lens/internal/logic/artwork"
 	"github.com/vincentchyu/sonic-lens/internal/model"
 )
@@ -23,12 +26,14 @@ var (
 	lastfmTrackUpdateNowPlaying = lastfm.TrackUpdateNowPlaying
 	lastfmIsFavorite            = lastfm.IsFavorite
 	artworkEnsureAlbumCover     = artworklogic.EnsureAlbumCover
+	cacheGetEnglishGenre        = cache.GetEnglishGenre
 	timeNow                     = time.Now
 )
 
 const (
 	lastfmFavoritePositiveProbeInterval = 15 * time.Second
 	lastfmFavoriteNegativeProbeMax      = 2 * time.Minute
+	mobileScrobbleDuplicateWindow       = 60 * time.Second
 )
 
 func allowsLastfmNowPlaying(playerSource common.PlayerType) bool {
@@ -74,6 +79,134 @@ type TrackFavoriteProbeResult struct {
 // PlaybackThresholdResult 表示达到 scrobble 阈值后的处理结果。
 type PlaybackThresholdResult struct {
 	Scrobbled bool
+}
+
+// ExternalPlaybackRecordInput 表示移动端或外部终端采集上报的原始 Apple Music 播放记录。
+type ExternalPlaybackRecordInput struct {
+	IdempotencyKey  string                         `json:"idempotency_key"`
+	Title           string                         `json:"title"`
+	Artist          string                         `json:"artist"`
+	AlbumArtist     string                         `json:"album_artist"`
+	Album           string                         `json:"album"`
+	Genre           string                         `json:"genre"`
+	Composer        string                         `json:"composer"`
+	TrackNumber     int8                           `json:"track_number"`
+	DiscNumber      int8                           `json:"disc_number"`
+	Duration        int64                          `json:"duration"`
+	ReleaseDate     string                         `json:"release_date"`
+	ReleaseYear     int                            `json:"release_year"`
+	PlayedAt        time.Time                      `json:"played_at"`
+	UniqueID        string                         `json:"unique_id"`
+	BundleID        string                         `json:"bundle_id"`
+	IsAppleMusicFav *bool                          `json:"is_apple_music_fav,omitempty"`
+	Confidence      common.TrackMetadataConfidence `json:"confidence,omitzero"`
+}
+
+// MobileScrobbleItemResult 表示单条移动端播放记录的接入处理结果。
+type MobileScrobbleItemResult struct {
+	IdempotencyKey string `json:"idempotency_key"`
+	Status         string `json:"status"`
+	Scrobbled      bool   `json:"scrobbled,omitzero"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+// MobileScrobbleBatchResult 表示移动端批量补录的汇总结果。
+type MobileScrobbleBatchResult struct {
+	AcceptedCount  int                        `json:"accepted_count"`
+	DuplicateCount int                        `json:"duplicate_count"`
+	ScrobbledCount int                        `json:"scrobbled_count"`
+	FailedCount    int                        `json:"failed_count"`
+	AcceptedKeys   []string                   `json:"accepted_keys"`
+	FailedKeys     []string                   `json:"failed_keys"`
+	Results        []MobileScrobbleItemResult `json:"results,omitempty"`
+}
+
+// NormalizeAppleMusicTitle 统一清洗并简繁归一 Apple Music 曲目标题。
+func NormalizeAppleMusicTitle(title string) string {
+	return common.ConversionSimplifiedFx(common.UnityFixAll(common.TrackCustomFit(strings.TrimSpace(title))))
+}
+
+// ParseAppleMusicAlbumMetadata 统一拆解 Apple Music 专辑主标题、括号版本说明及连字符发行类型后缀。
+func ParseAppleMusicAlbumMetadata(album string) (cleanAlbum string, subtitle string, meta common.AlbumTitleMetadata) {
+	trimmed := common.UnityFixAll(strings.TrimSpace(album))
+	meta = common.ParseAlbumTitleMetadata(trimmed)
+	cleanAlbum = common.ConversionSimplifiedFx(common.UnityFixAll(meta.OfficialTitle))
+	_, rawSubtitle := common.ParseAlbumTitleAndSubtitle(trimmed)
+	subtitle = common.ConversionSimplifiedFx(common.UnityFixAll(rawSubtitle))
+	return cleanAlbum, subtitle, meta
+}
+
+// NormalizeAppleMusicArtist 统一清洗并简繁归一 Apple Music 曲目艺术家。
+func NormalizeAppleMusicArtist(artist string) string {
+	return common.ConversionSimplifiedFx(common.ArtistCustomFit(strings.TrimSpace(artist)))
+}
+
+// NormalizeAppleMusicAlbumArtist 统一计算 Apple Music 专辑艺术家，缺失时回退曲目艺术家。
+func NormalizeAppleMusicAlbumArtist(albumArtist, artist string) string {
+	preferred := cmp.Or(
+		common.ArtistCustomFit(strings.TrimSpace(albumArtist)),
+		common.ArtistCustomFit(strings.TrimSpace(artist)),
+	)
+	return common.ConversionSimplifiedFx(preferred)
+}
+
+// BuildAppleMusicPlaybackEventInput 将外部采集的 Apple Music 原始记录构造为标准播放事件输入。
+func BuildAppleMusicPlaybackEventInput(raw ExternalPlaybackRecordInput) PlaybackEventInput {
+	cleanTitle := NormalizeAppleMusicTitle(raw.Title)
+	cleanAlbum, albumSubtitle, albumMeta := ParseAppleMusicAlbumMetadata(raw.Album)
+	cleanArtist := NormalizeAppleMusicArtist(raw.Artist)
+	cleanAlbumArtist := NormalizeAppleMusicAlbumArtist(raw.AlbumArtist, raw.Artist)
+	cleanGenre := cacheGetEnglishGenre(strings.TrimSpace(raw.Genre))
+	cleanComposer := common.ConversionSimplifiedFx(strings.TrimSpace(raw.Composer))
+
+	discNumber := raw.DiscNumber
+	if discNumber <= 0 && raw.TrackNumber > 0 {
+		discNumber = 1
+	}
+
+	confidence := raw.Confidence
+	if confidence <= 0 {
+		if raw.TrackNumber > 0 && raw.Duration > 0 {
+			confidence = common.TrackMetadataConfidenceMedium
+		} else {
+			confidence = common.TrackMetadataConfidenceLow
+		}
+	}
+
+	metadata := model.TrackMetadata{
+		AlbumArtist:   cleanAlbumArtist,
+		AlbumSubtitle: albumSubtitle,
+		TrackNumber:   raw.TrackNumber,
+		Duration:      raw.Duration,
+		Genre:         cleanGenre,
+		Composer:      cleanComposer,
+		ReleaseDate:   strings.TrimSpace(raw.ReleaseDate),
+		ReleaseYear:   raw.ReleaseYear,
+		Source:        string(common.PlayerAppleMusic),
+		BundleID:      strings.TrimSpace(raw.BundleID),
+		UniqueID:      strings.TrimSpace(raw.UniqueID),
+		DiscNumber:    discNumber,
+		PlayerType:    string(common.PlayerAppleMusic),
+		Confidence:    confidence,
+	}
+
+	return PlaybackEventInput{
+		Artist:                  cleanArtist,
+		AlbumArtist:             cleanAlbumArtist,
+		Album:                   cleanAlbum,
+		AlbumSubtitle:           albumSubtitle,
+		AlbumTitleMetadata:      &albumMeta,
+		Track:                   cleanTitle,
+		TrackNumber:             raw.TrackNumber,
+		DiscNumber:              discNumber,
+		Duration:                raw.Duration,
+		Metadata:                metadata,
+		PlayerSource:            common.PlayerAppleMusic,
+		TrackChanged:            true,
+		PlaybackStartedAt:       raw.PlayedAt,
+		ControllerFavoriteKnown: false, // 离线批量补录绝不触发宿主机 macOS Music.app AppleScript 收藏操作
+		ControllerFavorite:      false,
+	}
 }
 
 type favoriteProbeState struct {
@@ -379,13 +512,14 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		if err != nil {
 			log.Warn(ctx, "HandleTrackPlaybackThreshold GetTrackPlayRecord err", zap.Error(err))
 		}
-		// 实时增加流派播放次数，确保未归因数据也能计入统计
-		_Genre := input.Metadata.Genre
-		if len(_Genre) == 0 {
-			_Genre = playRecord.Genre
+		// 实时增加流派播放次数，确保未归因数据也能计入统计；优先采用落库后已规整或归因的流派，并经 NormalizeGenre 兜底。
+		var storedGenre string
+		if playRecord != nil {
+			storedGenre = playRecord.Genre
 		}
-		if strings.TrimSpace(_Genre) != "" {
-			if genreErr := model.IncrementGenrePlayCount(ctx, _Genre); genreErr != nil {
+		genreName := modelNormalizeGenre(nil, cmp.Or(strings.TrimSpace(storedGenre), strings.TrimSpace(input.Metadata.Genre)))
+		if genreName != "" {
+			if genreErr := modelIncrementGenrePlayCount(ctx, genreName); genreErr != nil {
 				log.Warn(ctx, "HandleTrackPlaybackThreshold increment genre play count err", zap.Error(genreErr))
 			}
 		}
@@ -449,6 +583,129 @@ func (s *TrackServiceImpl) HandleTrackPlaybackThreshold(
 		zap.Int64("record_id", record.ID),
 	)
 	return PlaybackThresholdResult{Scrobbled: record.Scrobbled}
+}
+
+// IngestAppleMusicPlaybackBatch 统一接入移动端（iOS/iPadOS）离线采集的 Apple Music 历史播放流水。
+func (s *TrackServiceImpl) IngestAppleMusicPlaybackBatch(
+	ctx context.Context,
+	records []ExternalPlaybackRecordInput,
+) (*MobileScrobbleBatchResult, error) {
+	result := &MobileScrobbleBatchResult{
+		AcceptedKeys: make([]string, 0, len(records)),
+		FailedKeys:   make([]string, 0),
+		Results:      make([]MobileScrobbleItemResult, 0, len(records)),
+	}
+	if len(records) == 0 {
+		return result, nil
+	}
+
+	sorted := slices.Clone(records)
+	slices.SortFunc(
+		sorted, func(a, b ExternalPlaybackRecordInput) int {
+			return a.PlayedAt.Compare(b.PlayedAt)
+		},
+	)
+
+	for _, raw := range sorted {
+		key := strings.TrimSpace(raw.IdempotencyKey)
+		if raw.PlayedAt.IsZero() {
+			result.FailedCount++
+			if key != "" {
+				result.FailedKeys = append(result.FailedKeys, key)
+			}
+			result.Results = append(
+				result.Results, MobileScrobbleItemResult{
+					IdempotencyKey: key,
+					Status:         "failed",
+					Reason:         "played_at 不能为空",
+				},
+			)
+			continue
+		}
+
+		eventInput := BuildAppleMusicPlaybackEventInput(raw)
+		if err := common.ValidateTrackInfo(ctx, eventInput.Artist, eventInput.Album, eventInput.Track); err != nil {
+			result.FailedCount++
+			if key != "" {
+				result.FailedKeys = append(result.FailedKeys, key)
+			}
+			result.Results = append(
+				result.Results, MobileScrobbleItemResult{
+					IdempotencyKey: key,
+					Status:         "failed",
+					Reason:         err.Error(),
+				},
+			)
+			continue
+		}
+
+		probeRecord := &model.TrackPlayRecord{
+			Artist:   eventInput.Artist,
+			Album:    eventInput.Album,
+			Track:    eventInput.Track,
+			PlayTime: time.Unix(eventInput.PlaybackStartedAt.UTC().Unix(), 0),
+			Source:   string(common.PlayerAppleMusic),
+		}
+		if isDup, dupErr := modelIsDuplicateTrackPlayRecord(ctx, probeRecord, mobileScrobbleDuplicateWindow); dupErr != nil {
+			log.Warn(
+				ctx,
+				"IngestAppleMusicPlaybackBatch 检查重复听歌流水失败",
+				zap.String("idempotency_key", key),
+				zap.Error(dupErr),
+			)
+			result.FailedCount++
+			if key != "" {
+				result.FailedKeys = append(result.FailedKeys, key)
+			}
+			result.Results = append(
+				result.Results, MobileScrobbleItemResult{
+					IdempotencyKey: key,
+					Status:         "failed",
+					Reason:         dupErr.Error(),
+				},
+			)
+			continue
+		} else if isDup {
+			result.DuplicateCount++
+			if key != "" {
+				result.AcceptedKeys = append(result.AcceptedKeys, key)
+			}
+			result.Results = append(
+				result.Results, MobileScrobbleItemResult{
+					IdempotencyKey: key,
+					Status:         "duplicate",
+				},
+			)
+			continue
+		}
+
+		thresholdRes := s.HandleTrackPlaybackThreshold(ctx, eventInput)
+		result.AcceptedCount++
+		if thresholdRes.Scrobbled {
+			result.ScrobbledCount++
+		}
+		if key != "" {
+			result.AcceptedKeys = append(result.AcceptedKeys, key)
+		}
+		result.Results = append(
+			result.Results, MobileScrobbleItemResult{
+				IdempotencyKey: key,
+				Status:         "accepted",
+				Scrobbled:      thresholdRes.Scrobbled,
+			},
+		)
+	}
+
+	log.Info(
+		ctx,
+		"移动端 Apple Music 播放流水批量接入完成",
+		zap.Int("total", len(sorted)),
+		zap.Int("accepted_count", result.AcceptedCount),
+		zap.Int("duplicate_count", result.DuplicateCount),
+		zap.Int("scrobbled_count", result.ScrobbledCount),
+		zap.Int("failed_count", result.FailedCount),
+	)
+	return result, nil
 }
 
 func fallbackAlbumArtist(albumArtist, artist string) string {

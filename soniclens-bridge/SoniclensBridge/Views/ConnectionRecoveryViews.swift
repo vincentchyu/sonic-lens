@@ -62,6 +62,7 @@ struct ConnectionRecoveryDecisionView: View {
     let status: ConnectionStatus
     let onReconnect: () -> Void
     let onDisconnect: () -> Void
+    var onOffline: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -108,6 +109,13 @@ struct ConnectionRecoveryDecisionView: View {
                         .buttonStyle(.borderedProminent)
                     }
                     .frame(maxWidth: .infinity)
+
+                    if let onOffline {
+                        Button("暂不重连，进入离线模式") {
+                            onOffline()
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
                 .frame(maxWidth: 560)
                 .padding(24)

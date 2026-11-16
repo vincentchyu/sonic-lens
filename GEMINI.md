@@ -74,6 +74,9 @@ SonicLens 核心架构蓝图、领域规则、开发规范与防坑记忆。AI A
 - **播放与网络契约**：
   - GET 请求 query 参数统一经由 `APIClient` 百分号编码（将 `+` 编码为 `%2B`），路径拼接严禁使用 `appendingPathComponent` 二次转义。
   - 正在播放消费 `WS now_playing` 结构化状态（`apple_music_state`、`lastfm_state`、`favorite_state`）；WS 静默超时自动冻结本地进度。
+- **iOS 户外 Apple Music 离线捕获与补录 (`AppleMusicScrobbleCoordinator` / `MobileScrobbleStore`)**：
+  - 采用 `MPMediaLibrary` 静默水位基线差量扫描 + `systemMusicPlayer` 实时监听双引擎采集，待同步队列独立存储于 `soniclens-mobile-scrobble.sqlite`，严禁混入轻量曲库索引 `LibraryIndexStore`。
+  - iOS/iPadOS 启动恢复失败时自动降级进入**离线浏览模式**（保留最近服务端目标，展示 `SnapshotCache` 首页缓存与本地 SQLite 曲库，提供 `OfflineModeBanner` 一键重连/切换服务端）；回前台或握手建连后自动恢复在线并调用 `POST /api/scrobbler/mobile/batch` 批量补录，服务端通过 `IngestAppleMusicPlaybackBatch` 统一走 60 秒窗幂等去重与 `HandleTrackPlaybackThreshold`（严格禁用宿主 macOS AppleScript 收藏探针）。
 - **音眸与分享 (ShareKit)**：
   - 音眸契约以 `core/ai/agent_insight_*.go` JSON Schema 为准；任务统一走 `/api/insight-jobs` 异步主链 + WS 推送 + 深链回流；iOS 关联 Live Activity 进度。
   - 分享统一走 `ShareKit`（iPhone 390pt 长图 / macOS 16:9 Bento Grid 双栏流式分页），全面废弃直接 View 截图。

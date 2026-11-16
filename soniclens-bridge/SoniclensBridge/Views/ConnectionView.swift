@@ -3,7 +3,10 @@ import OSLog
 
 struct ConnectionView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var discovery = BonjourDiscovery()
+
+    var isPresentedInSheet: Bool = false
 
     @State private var manualHost: String = ""
     @State private var manualPort: String = "8082"
@@ -15,9 +18,39 @@ struct ConnectionView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    ContentHeader(title: "连接 音眸轨迹")
+                    HStack {
+                        ContentHeader(title: "连接 音眸轨迹")
+                        if isPresentedInSheet {
+                            Button("完成") {
+                                dismiss()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
 
                     ConnectionStatusView(status: store.connectionStatus)
+                    #if os(iOS)
+                    MobileScrobbleStatusCard()
+
+                    if !isPresentedInSheet && store.currentServer == nil {
+                        Button {
+                            store.enterOfflineMode()
+                        } label: {
+                            HStack {
+                                Label("暂不连接服务端，进入离线模式", systemImage: "icloud.slash")
+                                    .font(.subheadline.weight(.medium))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    #endif
                     if store.connectionStatus.phase.isInFlight {
                         HStack {
                             Button("取消连接") {
@@ -162,6 +195,9 @@ struct ConnectionView: View {
             logger.info("连接页出现，准备刷新扫描与最近连接")
             refreshDiscovery()
             store.loadRecentServers()
+            #if os(iOS)
+            Task { await store.refreshMobileScrobblesIfNeeded() }
+            #endif
         }
         .onDisappear {
             logger.info("连接页消失，停止局域网扫描")
