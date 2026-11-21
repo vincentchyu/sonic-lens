@@ -183,7 +183,7 @@ private final class PlaybackBarWindowOverlayView: NSView {
         layer?.shadowOffset = CGSize(width: 0, height: 4)
 
         glassView.translatesAutoresizingMaskIntoConstraints = false
-        glassView.blendingMode = .withinWindow
+        glassView.blendingMode = .behindWindow
         glassView.material = .hudWindow
         glassView.state = .active
         glassView.isEmphasized = false
@@ -237,13 +237,22 @@ private final class PlaybackBarWindowOverlayView: NSView {
             performanceModeEnabled: performanceModeEnabled,
             isDarkAppearance: isDarkAppearance
         ).cgColor
+        let glassTintColor = glassOverlayColor(isDarkAppearance: isDarkAppearance).cgColor
 
+        glassView.layer?.backgroundColor = glassTintColor
         glassView.layer?.borderWidth = borderWidth
         glassView.layer?.borderColor = borderColor
 
         fallbackView.layer?.backgroundColor = fillColor
         fallbackView.layer?.borderWidth = borderWidth
         fallbackView.layer?.borderColor = borderColor
+    }
+
+    private func glassOverlayColor(isDarkAppearance: Bool) -> PlatformColor {
+        if isDarkAppearance {
+            return PlatformColor.sonicWhite(0.08, alpha: 0.44)
+        }
+        return PlatformColor.sonicWhite(1.0, alpha: 0.56)
     }
 
     private func surfaceBorderColor(
@@ -279,6 +288,23 @@ private final class PlaybackBarWindowOverlayView: NSView {
         let cornerRadius = style == .compact ? 16.0 : 18.0
         glassView.layer?.cornerRadius = cornerRadius
         fallbackView.layer?.cornerRadius = cornerRadius
+        updateShadowPath()
+    }
+
+    override func layout() {
+        super.layout()
+        updateShadowPath()
+    }
+
+    private func updateShadowPath() {
+        guard !bounds.isEmpty else { return }
+        let cornerRadius = currentStyle == .compact ? 16.0 : 18.0
+        layer?.shadowPath = CGPath(
+            roundedRect: bounds,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
     }
 }
 

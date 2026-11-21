@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"testing"
+	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -58,6 +59,38 @@ func TestGetTopTracksByPlayCountFromStatReturnsCoverArtURL(t *testing.T) {
 
 	assert.Equal(t, "你的城市", result[1].Track)
 	assert.Equal(t, "/album/v1/originals/aac8c6e69cf34225620859e37673c249139a53f7", result[1].CoverArtURL)
+
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetPlayTrendFromStatByDaysUsesHalfOpenWindow(t *testing.T) {
+	_, mock := newModelTestDB(t)
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	startDateKey := today.AddDate(0, 0, -6).Format("2006-01-02")
+	todayKey := today.Format("2006-01-02")
+	nextDayKey := today.AddDate(0, 0, 1).Format("2006-01-02")
+
+	dailyRows := sqlmock.NewRows([]string{"stat_date", "play_count"}).
+		AddRow(todayKey, 8)
+	hourlyRows := sqlmock.NewRows([]string{"stat_date", "hour", "play_count"}).
+		AddRow(todayKey, 14, 5).
+		AddRow(todayKey, 20, 3)
+
+	mock.ExpectQuery(`SELECT DATE\(stat_date\) as stat_date, play_count FROM play_trend_daily_stat WHERE stat_date >= \? AND stat_date < \?`).
+		WithArgs(startDateKey, nextDayKey).
+		WillReturnRows(dailyRows)
+	mock.ExpectQuery(`SELECT DATE\(stat_date\) as stat_date, hour, play_count FROM play_trend_hourly_stat WHERE stat_date >= \? AND stat_date < \?`).
+		WithArgs(startDateKey, nextDayKey).
+		WillReturnRows(hourlyRows)
+
+	daily, hourly, err := GetPlayTrendFromStatByDays(t.Context(), 7)
+	require.NoError(t, err)
+	assert.Equal(t, 8, daily[todayKey])
+	require.Contains(t, hourly, todayKey)
+	assert.Equal(t, 5, hourly[todayKey].Hourly[14])
+	assert.Equal(t, 3, hourly[todayKey].Hourly[20])
 
 	require.NoError(t, mock.ExpectationsWereMet())
 }

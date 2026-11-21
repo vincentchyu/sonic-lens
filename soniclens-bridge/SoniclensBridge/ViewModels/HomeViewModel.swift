@@ -50,6 +50,12 @@ final class HomeViewModel: ObservableObject {
     }
 
     func load(using server: ServerConfig) async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            applyUIVerificationFixture(UIVerificationLaunchConfig.current.fixtureKind)
+            return
+        }
+        #endif
         if stats == nil && topAlbums.isEmpty {
             loadCache()
         }
@@ -257,6 +263,25 @@ final class HomeViewModel: ObservableObject {
 
     private func cacheKey() -> String {
         "soniclens.home.snapshot"
+    }
+
+    func applyUIVerificationFixture(_ kind: UIVerificationFixtureKind = .dense) {
+        let snapshot = UIVerificationFixtures.homeSnapshot(days: defaultTrendRange, kind: kind)
+        stats = snapshot.stats
+        topArtistsByPlays = snapshot.topArtistsByPlays
+        topArtistsByTracks = snapshot.topArtistsByTracks
+        playSourceCounts = snapshot.playSourceCounts ?? [:]
+        topAlbums = snapshot.topAlbums
+        topGenres = snapshot.topGenres
+        topTracks = snapshot.topTracks
+        recentPlays = snapshot.recentPlays
+        recentPlayArtworkURLs = [:]
+        trendPoints = snapshot.trendPoints
+        hourlyData = snapshot.hourlyData
+        selectedTrendRange = snapshot.selectedTrendRange
+        isLoading = false
+        errorMessage = nil
+        refreshDerivedState()
     }
 
     private func loadCache() {

@@ -1254,8 +1254,11 @@ func GetTopGenresWithDetailsFromStat(ctx context.Context, limit int) ([]*TopGenr
 func GetPlayTrendFromStatByDays(ctx context.Context, days int) (
 	map[string]int, map[string]*HourlyPlayTrendData, error,
 ) {
-	startDate := time.Now().AddDate(0, 0, -days)
-	dateKey := startDate.Format("2006-01-02")
+	days = max(days, 1)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	startDateKey := today.AddDate(0, 0, -(days - 1)).Format("2006-01-02")
+	nextDayKey := today.AddDate(0, 0, 1).Format("2006-01-02")
 
 	type dailyRow struct {
 		StatDate  string
@@ -1270,20 +1273,20 @@ func GetPlayTrendFromStatByDays(ctx context.Context, days int) (
 	var dailySQL string
 	var hourlySQL string
 	if isMySQL(GetDB()) {
-		dailySQL = "SELECT DATE(stat_date) as stat_date, play_count FROM play_trend_daily_stat WHERE stat_date >= ?"
-		hourlySQL = "SELECT DATE(stat_date) as stat_date, hour, play_count FROM play_trend_hourly_stat WHERE stat_date >= ?"
+		dailySQL = "SELECT DATE(stat_date) as stat_date, play_count FROM play_trend_daily_stat WHERE stat_date >= ? AND stat_date < ?"
+		hourlySQL = "SELECT DATE(stat_date) as stat_date, hour, play_count FROM play_trend_hourly_stat WHERE stat_date >= ? AND stat_date < ?"
 	} else {
-		dailySQL = "SELECT date(stat_date) as stat_date, play_count FROM play_trend_daily_stat WHERE stat_date >= ?"
-		hourlySQL = "SELECT date(stat_date) as stat_date, hour, play_count FROM play_trend_hourly_stat WHERE stat_date >= ?"
+		dailySQL = "SELECT date(stat_date) as stat_date, play_count FROM play_trend_daily_stat WHERE stat_date >= ? AND stat_date < ?"
+		hourlySQL = "SELECT date(stat_date) as stat_date, hour, play_count FROM play_trend_hourly_stat WHERE stat_date >= ? AND stat_date < ?"
 	}
 
 	var dailyRows []dailyRow
 	var hourlyRows []hourlyRow
 
-	if err := GetDB().WithContext(ctx).Raw(dailySQL, dateKey).Scan(&dailyRows).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Raw(dailySQL, startDateKey, nextDayKey).Scan(&dailyRows).Error; err != nil {
 		return nil, nil, err
 	}
-	if err := GetDB().WithContext(ctx).Raw(hourlySQL, dateKey).Scan(&hourlyRows).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Raw(hourlySQL, startDateKey, nextDayKey).Scan(&hourlyRows).Error; err != nil {
 		return nil, nil, err
 	}
 

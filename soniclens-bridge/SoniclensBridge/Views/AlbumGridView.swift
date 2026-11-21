@@ -12,6 +12,7 @@ struct AlbumGridView: View {
     @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
     #endif
     @State private var selectedAlbum: Album?
+    @State private var measuredWidth: CGFloat = 0
 
     init(
         viewModel: LibraryViewModel,
@@ -30,57 +31,63 @@ struct AlbumGridView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let metrics = AlbumGridMetrics(
-                availableWidth: proxy.size.width,
-                prefersCompactLayout: prefersCompactLayout
-            )
+        let effectiveWidth = measuredWidth > 0 ? measuredWidth : (prefersCompactLayout ? 390 : 880)
+        let metrics = AlbumGridMetrics(
+            availableWidth: effectiveWidth,
+            prefersCompactLayout: prefersCompactLayout
+        )
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
-                    if prefersCompactLayout, let statusSummary {
-                        LibraryStatusSummaryChip(text: statusSummary)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
+                if prefersCompactLayout, let statusSummary {
+                    LibraryStatusSummaryChip(text: statusSummary)
+                }
 
-                    if let loadingStatus = viewModel.albumLoadingStatusText {
-                        LibraryCollectionLoadingHint(text: loadingStatus)
-                    }
+                if let loadingStatus = viewModel.albumLoadingStatusText {
+                    LibraryCollectionLoadingHint(text: loadingStatus)
+                }
 
-                    if viewModel.albums.isEmpty {
-                        EmptyStateView(
-                            title: "未找到专辑",
-                            subtitle: "请尝试更换搜索关键词或清除筛选。"
-                        )
-                    } else {
-                        LazyVGrid(columns: metrics.columns, spacing: metrics.gridSpacing) {
-                            ForEach(Array(viewModel.albums.enumerated()), id: \.element.id) { index, album in
-                                AlbumCardView(
-                                    album: album,
-                                    artworkBaseURL: artworkBaseURL,
-                                    cardWidth: metrics.cardWidth,
-                                    contentWidth: metrics.cardContentWidth,
-                                    prefersCompactLayout: prefersCompactLayout,
-                                    onSelect: {
-                                        #if os(macOS)
-                                        navigationCoordinator.push(.albumDetail(albumID: album.id))
-                                        #else
-                                        selectedAlbum = album
-                                        #endif
-                                    }
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 18))
-                                .onAppear {
-                                    if viewModel.shouldLoadMoreAlbums(at: index) {
-                                        Task { await viewModel.loadMoreAlbums(sort: sort, query: query) }
-                                    }
+                if viewModel.albums.isEmpty {
+                    EmptyStateView(
+                        title: "未找到专辑",
+                        subtitle: "请尝试更换搜索关键词或清除筛选。"
+                    )
+                } else {
+                    LazyVGrid(columns: metrics.columns, spacing: metrics.gridSpacing) {
+                        ForEach(Array(viewModel.albums.enumerated()), id: \.element.id) { index, album in
+                            AlbumCardView(
+                                album: album,
+                                artworkBaseURL: artworkBaseURL,
+                                cardWidth: metrics.cardWidth,
+                                contentWidth: metrics.cardContentWidth,
+                                prefersCompactLayout: prefersCompactLayout,
+                                onSelect: {
+                                    #if os(macOS)
+                                    navigationCoordinator.push(.albumDetail(albumID: album.id))
+                                    #else
+                                    selectedAlbum = album
+                                    #endif
+                                }
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 18))
+                            .onAppear {
+                                if viewModel.shouldLoadMoreAlbums(at: index) {
+                                    Task { await viewModel.loadMoreAlbums(sort: sort, query: query) }
                                 }
                             }
                         }
                     }
+                    .accessibilityIdentifier(UIAccessibilityID.albumsGrid)
                 }
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, prefersCompactLayout ? 20 : 32)
-                .padding(.bottom, 108)
+            }
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.top, prefersCompactLayout ? 20 : 32)
+            .padding(.bottom, 108)
+        }
+        .accessibilityIdentifier(UIAccessibilityID.albumsScrollView)
+        .measureDebouncedWidth(delayMs: 100, threshold: 4) { width, _ in
+            if abs(width - measuredWidth) >= 1 {
+                measuredWidth = width
             }
         }
         .task(id: "\(sort.rawValue)|\(query)") {

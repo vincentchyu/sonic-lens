@@ -18,21 +18,29 @@ struct GlassCardStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         let simplified = isSimplified || performanceModeEnabled
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
         content
+            .clipShape(shape)
             .background {
-                if simplified {
-                    SonicTheme.card
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                } else {
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(.ultraThinMaterial)
+                Group {
+                    if simplified {
+                        shape.fill(SonicTheme.card)
+                    } else {
+                        shape.fill(.ultraThinMaterial)
+                    }
                 }
+                .shadow(
+                    color: Color.black.opacity(simplified ? 0.04 : 0.08),
+                    radius: simplified ? 8 : 16,
+                    x: 0,
+                    y: simplified ? 4 : 10
+                )
             }
             .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
+                shape
                     .stroke(SonicTheme.glassBorder, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(simplified ? 0.04 : 0.08), radius: simplified ? 8 : 16, x: 0, y: simplified ? 4 : 10)
     }
 }
 

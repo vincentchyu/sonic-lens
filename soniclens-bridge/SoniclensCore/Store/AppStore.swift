@@ -294,6 +294,17 @@ final class AppStore: ObservableObject {
     }
 
     func bootstrapConnectionIfNeeded() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-mock") {
+            let mockServer = ServerConfig(name: "UI Fixture", host: "127.0.0.1", port: 8082)
+            hasAttemptedBootstrapRestore = true
+            connectionRecoveryStore.clear()
+            isOfflineBrowsing = false
+            currentServer = mockServer
+            connectionStatus = .connected(message: "已连接", detail: mockServer.displayName)
+            return
+        }
+        #endif
         guard !hasAttemptedBootstrapRestore else { return }
         guard currentServer == nil else { return }
         guard connectionRecoveryStore.isIdle else { return }
@@ -400,6 +411,11 @@ final class AppStore: ObservableObject {
     }
 
     func performForegroundConnectionHealthCheckIfNeeded() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-mock") {
+            return
+        }
+        #endif
         guard connectionRecoveryStore.isIdle else { return }
         guard let server = currentServer else { return }
         guard !isConnecting else { return }

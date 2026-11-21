@@ -58,38 +58,51 @@ enum SonicTheme {
 struct GlassPanel<Content: View>: View {
     let cornerRadius: CGFloat
     let padding: CGFloat
+    let clipsContent: Bool
     let content: Content
     @Environment(\.sonicPerformanceModeEnabled) private var performanceModeEnabled
 
-    init(cornerRadius: CGFloat = 16, padding: CGFloat = 16, @ViewBuilder content: () -> Content) {
+    init(
+        cornerRadius: CGFloat = 16,
+        padding: CGFloat = 16,
+        clipsContent: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) {
         self.cornerRadius = cornerRadius
         self.padding = padding
+        self.clipsContent = clipsContent
         self.content = content()
     }
 
     var body: some View {
         let simplified = performanceModeEnabled
-        content
-            .padding(padding)
-            .background {
-                if simplified {
-                    SonicTheme.card
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                } else {
-                    SonicTheme.card
-                }
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        Group {
+            if clipsContent {
+                content
+                    .padding(padding)
+                    .clipShape(shape)
+            } else {
+                content
+                    .padding(padding)
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(SonicTheme.glassBorder, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .shadow(
-                color: Color.black.opacity(simplified ? 0.04 : 0.08),
-                radius: simplified ? 10 : 18,
-                x: 0,
-                y: simplified ? 6 : 12
-            )
+        }
+        .background {
+            // 阴影挂在纯圆角背景形状上，走硬件解析阴影，避免复杂内容离屏栅格化
+            shape
+                .fill(SonicTheme.card)
+                .shadow(
+                    color: Color.black.opacity(simplified ? 0.04 : 0.06),
+                    radius: simplified ? 6 : 10,
+                    x: 0,
+                    y: simplified ? 3 : 5
+                )
+        }
+        .overlay {
+            shape
+                .stroke(SonicTheme.glassBorder, lineWidth: 1)
+        }
     }
 }
 
@@ -109,22 +122,39 @@ struct AmbientBackgroundView: View {
         ZStack {
             gradient
             if !visibleOrbs.isEmpty {
-                ForEach(visibleOrbs) { orb in
-                    Circle()
-                        .fill(orb.color)
-                        .frame(
-                            width: orb.size * (simplified ? 0.82 : 0.92),
-                            height: orb.size * (simplified ? 0.82 : 0.92)
-                        )
-                        .blur(radius: orb.blur * (simplified ? 0.46 : 0.72))
-                        .opacity(orb.opacity * (simplified ? 0.55 : 0.82))
-                        .offset(animated && animate ? orb.offsetTo : orb.offsetFrom)
-                        .animation(
-                            animated
-                            ? .easeInOut(duration: orb.duration).repeatForever(autoreverses: true)
-                            : nil,
-                            value: animate
-                        )
+                // 使用稳定序号作为身份，避免每次重求值因 UUID 变化销毁重建光斑
+                ForEach(Array(visibleOrbs.enumerated()), id: \.offset) { _, orb in
+                    if simplified {
+                        let diameter = orb.size * 0.96
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        orb.color.opacity(orb.opacity * 0.62),
+                                        orb.color.opacity(orb.opacity * 0.22),
+                                        .clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: diameter * 0.5
+                                )
+                            )
+                            .frame(width: diameter, height: diameter)
+                            .offset(orb.offsetFrom)
+                    } else {
+                        Circle()
+                            .fill(orb.color)
+                            .frame(width: orb.size * 0.92, height: orb.size * 0.92)
+                            .blur(radius: orb.blur * 0.72)
+                            .opacity(orb.opacity * 0.82)
+                            .offset(animated && animate ? orb.offsetTo : orb.offsetFrom)
+                            .animation(
+                                animated
+                                ? .easeInOut(duration: orb.duration).repeatForever(autoreverses: true)
+                                : nil,
+                                value: animate
+                            )
+                    }
                 }
             }
         }
@@ -148,4 +178,75 @@ struct AmbientOrb: Identifiable {
     let offsetFrom: CGSize
     let offsetTo: CGSize
     let duration: Double
+}
+
+@MainActor
+private final class WidthDebounceController {
+    var task: Task<Void, Never>?
+    var lastCommittedWidth: CGFloat = 0
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+}
+
+private struct DebouncedWidthModifier: ViewModifier {
+    let delayMs: UInt64
+    let threshold: CGFloat
+    let onChange: @MainActor (CGFloat, Bool) -> Void
+
+    @State private var controller = WidthDebounceController()
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear {
+                            let width = proxy.size.width
+                            guard width > 0 else { return }
+                            if controller.lastCommittedWidth == 0 || abs(width - controller.lastCommittedWidth) >= threshold {
+                                controller.lastCommittedWidth = width
+                                onChange(width, true)
+                            }
+                        }
+                        .onChange(of: proxy.size.width) { _, newWidth in
+                            guard newWidth > 0 else { return }
+                            if controller.lastCommittedWidth == 0 {
+                                controller.cancel()
+                                controller.lastCommittedWidth = newWidth
+                                onChange(newWidth, true)
+                                return
+                            }
+                            controller.cancel()
+                            controller.task = Task { @MainActor in
+                                do {
+                                    try await Task.sleep(nanoseconds: delayMs * 1_000_000)
+                                } catch {
+                                    return
+                                }
+                                guard !Task.isCancelled else { return }
+                                guard abs(newWidth - controller.lastCommittedWidth) >= threshold else { return }
+                                controller.lastCommittedWidth = newWidth
+                                onChange(newWidth, false)
+                            }
+                        }
+                        .onDisappear {
+                            controller.cancel()
+                        }
+                }
+            }
+    }
+}
+
+extension View {
+    /// 防抖监听容器宽度变化，避免侧边栏或窗口缩放动画期间每帧触发外层重排
+    func measureDebouncedWidth(
+        delayMs: UInt64 = 120,
+        threshold: CGFloat = 4,
+        onChange: @escaping @MainActor (CGFloat, Bool) -> Void
+    ) -> some View {
+        modifier(DebouncedWidthModifier(delayMs: delayMs, threshold: threshold, onChange: onChange))
+    }
 }

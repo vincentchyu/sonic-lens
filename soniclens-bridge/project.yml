@@ -27,6 +27,12 @@ schemes:
     build:
       targets:
         SoniclensBridgeMac: all
+        SoniclensBridgeMacTests: [test]
+        SoniclensBridgeMacUITests: [test]
+    test:
+      targets:
+        - SoniclensBridgeMacTests
+        - SoniclensBridgeMacUITests
   SoniclensBridgePad:
     build:
       targets:
@@ -35,6 +41,12 @@ schemes:
     build:
       targets:
         SoniclensBridgePhone: all
+        SoniclensBridgePhoneTests: [test]
+        SoniclensBridgePhoneUITests: [test]
+    test:
+      targets:
+        - SoniclensBridgePhoneTests
+        - SoniclensBridgePhoneUITests
   SoniclensActivities:
     build:
       targets:
@@ -72,6 +84,8 @@ targets:
       - path: SoniclensCore
     dependencies:
       - package: Nuke
+        product: Nuke
+      - package: Nuke
         product: NukeUI
     info:
       path: SoniclensBridge/Info-macOS.plist
@@ -104,6 +118,8 @@ targets:
           - Views/PlaybackBarWindowOverlayController.swift
       - path: SoniclensCore
     dependencies:
+      - package: Nuke
+        product: Nuke
       - package: Nuke
         product: NukeUI
     info:
@@ -143,6 +159,8 @@ targets:
           - Views/PlaybackBarWindowOverlayController.swift
       - path: SoniclensCore
     dependencies:
+      - package: Nuke
+        product: Nuke
       - package: Nuke
         product: NukeUI
       - target: SoniclensActivities
@@ -198,3 +216,61 @@ targets:
         NSLocalNetworkUsageDescription: "用于在实时活动中显示 SonicLens 共享封面缓存"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  SoniclensBridgeMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SoniclensBridgeMacTests
+    dependencies:
+      - target: SoniclensBridgeMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.mac.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+
+  SoniclensBridgeMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SoniclensBridgeMacUITests
+    dependencies:
+      - target: SoniclensBridgeMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.mac.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SoniclensBridgeMac
+        CODE_SIGN_IDENTITY: "-"
+
+  SoniclensBridgePhoneTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: SoniclensBridgeTests
+    dependencies:
+      - target: SoniclensBridgePhone
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.phone.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+
+  SoniclensBridgePhoneUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: SoniclensBridgePhoneUITests
+    dependencies:
+      - target: SoniclensBridgePhone
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vincentchyu.soniclens-bridge.phone.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SoniclensBridgePhone
+        TARGETED_DEVICE_FAMILY: "1"

@@ -1,4 +1,5 @@
 import SwiftUI
+import Nuke
 import NukeUI
 import Combine
 #if !os(macOS)
@@ -388,6 +389,15 @@ struct ArtworkSquareView: View {
                         placeholder
                     }
                 }
+                .processors([
+                    ImageProcessors.Resize(
+                        size: CGSize(width: size, height: size),
+                        unit: .points,
+                        contentMode: .aspectFill,
+                        crop: true
+                    )
+                ])
+                .onDisappear(.cancel)
             } else {
                 placeholder
             }

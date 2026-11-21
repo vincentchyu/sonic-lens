@@ -15,6 +15,9 @@ struct SoniclensBridgePhoneApp: App {
                 .environment(store.connectionRecoveryStore)
                 .environment(store.mobileScrobbleCoordinator)
                 .environmentObject(store.insightCoordinator)
+                #if DEBUG
+                .preferredColorScheme(UIVerificationLaunchConfig.current.preferredColorScheme)
+                #endif
         }
     }
 }

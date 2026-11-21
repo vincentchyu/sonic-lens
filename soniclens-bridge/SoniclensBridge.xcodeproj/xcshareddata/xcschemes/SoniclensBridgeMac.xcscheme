@@ -21,6 +21,34 @@
                ReferencedContainer = "container:SoniclensBridge.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "39750A6F9EA24C0A54F3A9FE"
+               BuildableName = "SoniclensBridgeMacTests.xctest"
+               BlueprintName = "SoniclensBridgeMacTests"
+               ReferencedContainer = "container:SoniclensBridge.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "BFFD48FC63FC308BE619744C"
+               BuildableName = "SoniclensBridgeMacUITests.xctest"
+               BlueprintName = "SoniclensBridgeMacUITests"
+               ReferencedContainer = "container:SoniclensBridge.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -39,7 +67,31 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "39750A6F9EA24C0A54F3A9FE"
+               BuildableName = "SoniclensBridgeMacTests.xctest"
+               BlueprintName = "SoniclensBridgeMacTests"
+               ReferencedContainer = "container:SoniclensBridge.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "BFFD48FC63FC308BE619744C"
+               BuildableName = "SoniclensBridgeMacUITests.xctest"
+               BlueprintName = "SoniclensBridgeMacUITests"
+               ReferencedContainer = "container:SoniclensBridge.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

@@ -93,6 +93,12 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func loadLocalOnly() async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            applyUIVerificationFixture(UIVerificationLaunchConfig.current.fixtureKind)
+            return
+        }
+        #endif
         isLoading = albums.isEmpty && tracks.isEmpty
         errorMessage = nil
         do {
@@ -108,6 +114,12 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func load(using server: ServerConfig) async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            applyUIVerificationFixture(UIVerificationLaunchConfig.current.fixtureKind)
+            return
+        }
+        #endif
         let isServerChanged = currentServerURL != server.baseURL
         if isServerChanged {
             currentServerURL = server.baseURL
@@ -135,11 +147,22 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func refresh(using server: ServerConfig) async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            return
+        }
+        #endif
         logger.debug("触发资料库刷新")
         scheduleBackgroundRefresh(using: server, forceFullSync: false)
     }
 
     func reloadAlbums(sort: LibrarySort, query: String, force: Bool = false) async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            applyAlbumVerificationFixture(kind: UIVerificationLaunchConfig.current.fixtureKind, sort: sort, query: query)
+            return
+        }
+        #endif
         if !force, hasLoadedAlbums, sort == currentAlbumSort, query == currentAlbumQuery {
             logger.debug("专辑重载跳过，参数未变化")
             return
@@ -222,6 +245,17 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func reloadTracks(sort: LibrarySort, filter: TrackFilter, query: String, force: Bool = false) async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            applyTrackVerificationFixture(
+                kind: UIVerificationLaunchConfig.current.fixtureKind,
+                sort: sort,
+                filter: filter,
+                query: query
+            )
+            return
+        }
+        #endif
         if !force, hasLoadedTracks, sort == currentTrackSort, filter == currentTrackFilter, query == currentTrackQuery {
             logger.debug("曲目重载跳过，参数未变化")
             return
@@ -606,6 +640,66 @@ final class LibraryViewModel: ObservableObject {
         refreshTask = nil
     }
 
+    private func applyUIVerificationFixture(_ kind: UIVerificationFixtureKind) {
+        applyAlbumVerificationFixture(kind: kind, sort: currentAlbumSort, query: currentAlbumQuery)
+        applyTrackVerificationFixture(kind: kind, sort: currentTrackSort, filter: currentTrackFilter, query: currentTrackQuery)
+        let pending = UIVerificationFixtures.unscrobbledRecords(kind: kind)
+        unscrobbled = pending
+        unscrobbledCount = pending.count
+        isLoading = false
+        errorMessage = nil
+        syncState = .idle
+    }
+
+    private func applyAlbumVerificationFixture(kind: UIVerificationFixtureKind, sort: LibrarySort, query: String) {
+        currentAlbumSort = sort
+        currentAlbumQuery = query
+        var items = UIVerificationFixtures.libraryAlbums(kind: kind)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            items = items.filter {
+                $0.displayName.localizedCaseInsensitiveContains(trimmed)
+                    || $0.artist.localizedCaseInsensitiveContains(trimmed)
+            }
+        }
+        albums = items
+        albumTotal = items.count
+        hasLoadedAlbums = true
+        hasResolvedAlbumTotal = true
+        isAlbumPageLoading = false
+        isAlbumCountLoading = false
+    }
+
+    private func applyTrackVerificationFixture(
+        kind: UIVerificationFixtureKind,
+        sort: LibrarySort,
+        filter: TrackFilter,
+        query: String
+    ) {
+        currentTrackSort = sort
+        currentTrackFilter = filter
+        currentTrackQuery = query
+        var items = UIVerificationFixtures.libraryTracks(kind: kind)
+        if filter == .favorites {
+            items = items.filter(\.isFavorited)
+        }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            items = items.filter {
+                $0.track.localizedCaseInsensitiveContains(trimmed)
+                    || $0.artist.localizedCaseInsensitiveContains(trimmed)
+                    || $0.album.localizedCaseInsensitiveContains(trimmed)
+            }
+        }
+        tracks = items
+        trackTotal = items.count
+        favoriteTrackCount = items.filter(\.isFavorited).count
+        hasLoadedTracks = true
+        hasResolvedTrackTotal = true
+        isTrackPageLoading = false
+        isTrackCountLoading = false
+    }
+
     private func resetSyncStateForServerChange() {
         syncState = .idle
         insights = []
@@ -669,6 +763,14 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func reloadUnscrobbled(using server: ServerConfig) async {
+        #if DEBUG
+        if UIVerificationLaunchConfig.current.isEnabled {
+            let items = UIVerificationFixtures.unscrobbledRecords(kind: UIVerificationLaunchConfig.current.fixtureKind)
+            unscrobbled = items
+            unscrobbledCount = items.count
+            return
+        }
+        #endif
         logger.debug("开始重载未上报曲目")
         do {
             let all = try await fetchAllUnscrobbled(using: server)

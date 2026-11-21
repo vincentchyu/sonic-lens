@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import Nuke
+import NukeUI
 
 struct HotModuleSectionHeader: View {
     let title: String
@@ -10,6 +12,13 @@ struct HotModuleSectionHeader: View {
     var accentKey: HomeHotAccentKey? = nil
 
     var body: some View {
+        #if os(macOS)
+        HStack(alignment: .center, spacing: 12) {
+            titleBlock
+            Spacer(minLength: 12)
+            trailingContent
+        }
+        #else
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: 12) {
                 titleBlock
@@ -23,6 +32,7 @@ struct HotModuleSectionHeader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        #endif
     }
 
     private var titleBlock: some View {
@@ -142,10 +152,8 @@ struct GenreCapsuleMap: View {
                 genreCapsule(hero, isHero: true)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(Array(items.dropFirst())) { item in
-                    genreCapsule(item, isHero: false)
-                }
+            StaticTwoColumnGrid(items: Array(items.dropFirst()), spacing: 10) { item in
+                genreCapsule(item, isHero: false)
             }
 
             Spacer(minLength: 0)
@@ -1109,8 +1117,8 @@ private struct ArtistAvatarView: View {
     var body: some View {
         Group {
             if let resolvedArtworkURL {
-                AsyncImage(url: resolvedArtworkURL) { phase in
-                    if let image = phase.image {
+                LazyImage(url: resolvedArtworkURL) { state in
+                    if let image = state.image {
                         image
                             .resizable()
                             .scaledToFill()
@@ -1118,6 +1126,15 @@ private struct ArtistAvatarView: View {
                         fallbackAvatar
                     }
                 }
+                .processors([
+                    ImageProcessors.Resize(
+                        size: CGSize(width: size, height: size),
+                        unit: .points,
+                        contentMode: .aspectFill,
+                        crop: true
+                    )
+                ])
+                .onDisappear(.cancel)
             } else {
                 fallbackAvatar
             }
@@ -1203,10 +1220,8 @@ struct AlbumShelfCard: View {
                 albumFeatureCard(hero, artworkSize: 152, isHero: true)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(Array(items.dropFirst().prefix(4))) { item in
-                    albumFeatureCard(item, artworkSize: 72, isHero: false)
-                }
+            StaticTwoColumnGrid(items: Array(items.dropFirst().prefix(4)), spacing: 10) { item in
+                albumFeatureCard(item, artworkSize: 72, isHero: false)
             }
 
             Spacer(minLength: 0)
@@ -1420,10 +1435,8 @@ struct TrackShelfCard: View {
                 trackFeatureCard(hero, artworkSize: 152, isHero: true)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(Array(displayItems.dropFirst())) { item in
-                    trackFeatureCard(item, artworkSize: 72, isHero: false)
-                }
+            StaticTwoColumnGrid(items: Array(displayItems.dropFirst()), spacing: 10) { item in
+                trackFeatureCard(item, artworkSize: 72, isHero: false)
             }
 
             Spacer(minLength: 0)
@@ -1792,6 +1805,7 @@ private struct ProfileDonutChart: View {
                 }
             }
             .rotationEffect(.degrees(-90))
+            .drawingGroup()
 
             if showsCenterContent {
                 VStack(spacing: 6) {
@@ -1960,5 +1974,36 @@ extension HomeHotAccentKey {
 
     func tintedSurface(opacity: Double) -> Color {
         solidColor.opacity(opacity)
+    }
+}
+
+private struct StaticTwoColumnGrid<Item: Identifiable, Content: View>: View {
+    let items: [Item]
+    let spacing: CGFloat
+    @ViewBuilder let content: (Item) -> Content
+
+    var body: some View {
+        let pairs = stride(from: 0, to: items.count, by: 2).map { index -> (Int, Item, Item?) in
+            let first = items[index]
+            let second = index + 1 < items.count ? items[index + 1] : nil
+            return (index, first, second)
+        }
+
+        VStack(alignment: .leading, spacing: spacing) {
+            ForEach(pairs, id: \.0) { _, first, second in
+                HStack(alignment: .top, spacing: spacing) {
+                    content(first)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                    if let second {
+                        content(second)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    } else {
+                        Color.clear
+                            .frame(maxWidth: .infinity, minHeight: 1)
+                    }
+                }
+            }
+        }
     }
 }

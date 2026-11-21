@@ -253,6 +253,7 @@ private struct PhoneHomeHero: View {
                         endRadius: 200
                     )
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
         }
     }

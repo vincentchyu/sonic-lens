@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -1096,5 +1098,73 @@ func TestRegisterMobileScrobblerRoutesRejectsOversizeBatch(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for oversized batch, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFillInTrendCycleFrom(t *testing.T) {
+	loc := time.FixedZone("CST", 8*3600)
+	baseNow := time.Date(2026, 11, 20, 11, 0, 0, 0, loc)
+
+	cases := []struct {
+		rangeDays int
+		wantLen   int
+		wantFirst string
+		wantLast  string
+	}{
+		{rangeDays: 0, wantLen: 0},
+		{rangeDays: 1, wantLen: 1, wantFirst: "2026-11-20", wantLast: "2026-11-20"},
+		{rangeDays: 7, wantLen: 7, wantFirst: "2026-11-14", wantLast: "2026-11-20"},
+		{rangeDays: 30, wantLen: 30, wantFirst: "2026-10-22", wantLast: "2026-11-20"},
+		{rangeDays: 90, wantLen: 90, wantFirst: "2026-08-23", wantLast: "2026-11-20"},
+	}
+
+	for _, tc := range cases {
+		got := fillInTrendCycleFrom(baseNow, tc.rangeDays)
+		if len(got) != tc.wantLen {
+			t.Fatalf("rangeDays=%d: expected len %d, got %d (%v)", tc.rangeDays, tc.wantLen, len(got), got)
+		}
+		if slices.Contains(got, "2026-11-21") {
+			t.Fatalf("rangeDays=%d: unexpected future date 2026-11-21 in %v", tc.rangeDays, got)
+		}
+		if tc.wantLen > 0 {
+			if got[0] != tc.wantFirst || got[len(got)-1] != tc.wantLast {
+				t.Fatalf("rangeDays=%d: expected [%s..%s], got [%s..%s]", tc.rangeDays, tc.wantFirst, tc.wantLast, got[0], got[len(got)-1])
+			}
+		}
+	}
+}
+
+func TestBuildTrendWindowResponse(t *testing.T) {
+	trendDates := []string{"2026-11-18", "2026-11-19", "2026-11-20"}
+	rawDaily := map[string]int{
+		"2026-11-17": 5,  // 窗口外旧日期
+		"2026-11-18": 12, // 正常日期
+		"2026-11-21": 9,  // 窗口外未来日期
+	}
+	rawHourly := map[string]*model.HourlyPlayTrendData{
+		"2026-11-17": {Date: "2026-11-17", Total: 5, Hourly: map[int]int{10: 5}},
+		"2026-11-18": {Date: "2026-11-18", Total: 12, Hourly: map[int]int{18: 12}},
+		"2026-11-21": {Date: "2026-11-21", Total: 9, Hourly: map[int]int{8: 9}},
+	}
+
+	daily, hourly := buildTrendWindowResponse(trendDates, rawDaily, rawHourly)
+
+	if len(daily) != len(trendDates) || len(hourly) != len(trendDates) {
+		t.Fatalf("expected exact %d entries, got daily=%d hourly=%d", len(trendDates), len(daily), len(hourly))
+	}
+	if _, exists := daily["2026-11-17"]; exists {
+		t.Fatalf("unexpected out-of-window past date in daily: %v", daily)
+	}
+	if _, exists := daily["2026-11-21"]; exists {
+		t.Fatalf("unexpected future date in daily: %v", daily)
+	}
+	if daily["2026-11-18"] != 12 || hourly["2026-11-18"].Hourly[18] != 12 {
+		t.Fatalf("expected preserved data for 2026-11-18, got daily=%d hourly=%+v", daily["2026-11-18"], hourly["2026-11-18"])
+	}
+	if daily["2026-11-19"] != 0 || hourly["2026-11-19"] == nil || len(hourly["2026-11-19"].Hourly) != 0 {
+		t.Fatalf("expected zero-filled data for 2026-11-19, got daily=%d hourly=%+v", daily["2026-11-19"], hourly["2026-11-19"])
+	}
+	if daily["2026-11-20"] != 0 || hourly["2026-11-20"] == nil {
+		t.Fatalf("expected zero-filled data for 2026-11-20, got daily=%d hourly=%+v", daily["2026-11-20"], hourly["2026-11-20"])
 	}
 }

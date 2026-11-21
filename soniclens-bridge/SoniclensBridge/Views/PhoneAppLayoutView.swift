@@ -51,6 +51,7 @@ struct PhoneAppLayoutView: View {
     @State private var routedAlbum: AlbumDetailRoute?
     @StateObject private var libraryViewModel = LibraryViewModel()
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled = false
+    @State private var didApplyUIVerificationLaunchConfig = false
     private let tabBarHeight: CGFloat = 49
     private let logger = Logger(subsystem: "com.vincentchyu.soniclens-bridge", category: "PhoneAppLayout")
 
@@ -166,6 +167,21 @@ struct PhoneAppLayoutView: View {
         .onChange(of: selection) { _, newValue in
             logger.info("切换手机底部标签 \(newValue.title, privacy: .public)")
         }
+        .onAppear {
+            #if DEBUG
+            guard !didApplyUIVerificationLaunchConfig else { return }
+            didApplyUIVerificationLaunchConfig = true
+            let config = UIVerificationLaunchConfig.current
+            guard config.isEnabled else { return }
+            if let override = config.performanceModeOverride {
+                performanceModeEnabled = override
+            }
+            if let tabRaw = config.initialTabRawValue,
+               let destination = PhoneTabDestination(rawValue: tabRaw) {
+                selection = destination
+            }
+            #endif
+        }
     }
 
     @ViewBuilder
@@ -193,6 +209,7 @@ struct PhoneAppLayoutView: View {
         }
         .tabItem {
             Label(destination.title, systemImage: destination.systemImage)
+                .accessibilityIdentifier(UIAccessibilityID.sidebarTab(destination.rawValue))
         }
         .tag(destination)
     }

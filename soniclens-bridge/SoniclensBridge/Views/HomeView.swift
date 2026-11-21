@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct HomeView: View {
     @EnvironmentObject var store: AppStore
@@ -30,189 +33,185 @@ struct HomeContentView: View {
     @State private var layoutModes = HomeLayoutModes()
     @State private var activeListeningProfileDetailMode: ListeningProfileDetailMode? = nil
 
+    private static let homeAmbientOrbs: [AmbientOrb] = [
+        AmbientOrb(color: SonicTheme.primary.opacity(0.35), size: 520, blur: 120, opacity: 0.7, offsetFrom: CGSize(width: -200, height: -260), offsetTo: CGSize(width: -120, height: -180), duration: 18),
+        AmbientOrb(color: SonicTheme.primary.opacity(0.25), size: 420, blur: 130, opacity: 0.7, offsetFrom: CGSize(width: 260, height: 120), offsetTo: CGSize(width: 200, height: 220), duration: 22),
+        AmbientOrb(color: SonicTheme.primary.opacity(0.18), size: 360, blur: 140, opacity: 0.6, offsetFrom: CGSize(width: 120, height: -40), offsetTo: CGSize(width: 80, height: 40), duration: 26)
+    ]
+
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                AmbientBackgroundView(
-                    gradient: LinearGradient(
-                        colors: [SonicTheme.background, SonicTheme.background],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    orbs: [
-                        AmbientOrb(color: SonicTheme.primary.opacity(0.35), size: 520, blur: 120, opacity: 0.7, offsetFrom: CGSize(width: -200, height: -260), offsetTo: CGSize(width: -120, height: -180), duration: 18),
-                        AmbientOrb(color: SonicTheme.primary.opacity(0.25), size: 420, blur: 130, opacity: 0.7, offsetFrom: CGSize(width: 260, height: 120), offsetTo: CGSize(width: 200, height: 220), duration: 22),
-                        AmbientOrb(color: SonicTheme.primary.opacity(0.18), size: 360, blur: 140, opacity: 0.6, offsetFrom: CGSize(width: 120, height: -40), offsetTo: CGSize(width: 80, height: 40), duration: 26)
-                    ],
-                    renderingStyle: .staticHome
-                )
+        ZStack {
+            AmbientBackgroundView(
+                gradient: LinearGradient(
+                    colors: [SonicTheme.background, SonicTheme.background],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                orbs: Self.homeAmbientOrbs,
+                renderingStyle: .staticHome
+            )
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 28) {
-                        if let message = viewModel.errorMessage {
-                            ErrorBanner(message: message)
-                        }
-
-                        let hotPresentation = viewModel.hotModulePresentation
-                        let trendSnapshot = viewModel.trendSnapshot
-                        let selectedAccent = hotPresentation.primaryAccentKey
-
-                        HomeHeroSection()
-
-                        VStack(alignment: .leading, spacing: 14) {
-                            if layoutModes.wideInsights {
-                                WideListeningInsightsSection(
-                                    points: trendSnapshot.points,
-                                    hourlyData: trendSnapshot.hourlyData,
-                                    trendSubtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
-                                    summaryText: hotPresentation.combinedSummaryText,
-                                    footnoteText: hotPresentation.profileFootnoteText,
-                                    genres: hotPresentation.genres,
-                                    sources: hotPresentation.sources,
-                                    accentKey: selectedAccent,
-                                    onSelectGenre: { item in
-                                        selectedGenreItem = item
-                                    },
-                                    onOpenDetailMode: { mode in
-                                        activeListeningProfileDetailMode = mode
-                                    }
-                                )
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                            } else {
-                                VStack(alignment: .leading, spacing: 14) {
-                                    DashboardTrendSection(
-                                        points: trendSnapshot.points,
-                                        hourlyData: trendSnapshot.hourlyData,
-                                        subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
-                                        heatmapLayout: .fixedWidthScrollable(cellWidth: 8),
-                                        axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
-                                    )
-                                    .equatable()
-                                    .frame(maxWidth: .infinity)
-
-                                    ListeningProfileCard(
-                                        summaryText: hotPresentation.combinedSummaryText,
-                                        footnoteText: hotPresentation.profileFootnoteText,
-                                        genres: hotPresentation.genres,
-                                        sources: hotPresentation.sources,
-                                        accentKey: selectedAccent,
-                                        layoutStyle: .split,
-                                        onSelectGenre: { item in
-                                            selectedGenreItem = item
-                                        },
-                                        onOpenDetailMode: { mode in
-                                            activeListeningProfileDetailMode = mode
-                                        }
-                                    )
-                                }
-                            }
-
-                            if layoutModes.wideRankings {
-                                HStack(alignment: .top, spacing: 16) {
-                                    AlbumShelfCard(
-                                        items: Array(hotPresentation.albums.prefix(5)),
-                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                        style: .featureGrid,
-                                        collectionCount: hotPresentation.totalAlbumsCount,
-                                        accentKey: selectedAccent,
-                                        onAlbumTap: { albumID in
-                                            navigationCoordinator.push(.albumDetail(albumID: albumID))
-                                        }
-                                    )
-                                    .frame(minWidth: AlbumShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
-
-                                    ArtistLadderCard(
-                                        items: Array(hotPresentation.artists.prefix(6)),
-                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                        collectionCount: hotPresentation.totalArtistsCount,
-                                        accentKey: selectedAccent
-                                    )
-                                    .frame(minWidth: ArtistLadderCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
-                                }
-
-                                HStack(alignment: .top, spacing: 16) {
-                                    TrackShelfCard(
-                                        items: Array(hotPresentation.tracks.prefix(10)),
-                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                        style: .featureGrid,
-                                        visibleItemCount: 9,
-                                        totalTracksCount: hotPresentation.totalTracksCount,
-                                        accentKey: selectedAccent,
-                                        onTrackTap: { navigationCoordinator.push(.trackDetail(track: $0.bridgeTrack)) }
-                                    )
-                                    .frame(minWidth: TrackShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
-
-                                    RecentPlaysSection(
-                                        items: viewModel.recentPlays,
-                                        artworkURLs: viewModel.recentPlayArtworkURLs,
-                                        totalPlaysCount: hotPresentation.totalPlaysCount,
-                                        accentKey: selectedAccent,
-                                        onTrackTap: { track in
-                                            navigationCoordinator.push(.trackDetail(track: track))
-                                        }
-                                    )
-                                    .frame(minWidth: RecentPlaysSection.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
-                                }
-                            } else {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    AlbumShelfCard(
-                                        items: Array(hotPresentation.albums.prefix(5)),
-                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                        style: .featureGrid,
-                                        collectionCount: hotPresentation.totalAlbumsCount,
-                                        accentKey: selectedAccent,
-                                        onAlbumTap: { albumID in
-                                            navigationCoordinator.push(.albumDetail(albumID: albumID))
-                                        }
-                                    )
-
-                                    ArtistLadderCard(
-                                        items: Array(hotPresentation.artists.prefix(6)),
-                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                        collectionCount: hotPresentation.totalArtistsCount,
-                                        accentKey: selectedAccent
-                                    )
-
-                                    TrackShelfCard(
-                                        items: Array(hotPresentation.tracks.prefix(5)),
-                                        artworkBaseURL: store.currentServer?.artworkBaseURL,
-                                        style: .featureGrid,
-                                        visibleItemCount: 5,
-                                        totalTracksCount: hotPresentation.totalTracksCount,
-                                        accentKey: selectedAccent,
-                                        onTrackTap: { navigationCoordinator.push(.trackDetail(track: $0.bridgeTrack)) }
-                                    )
-
-                                    RecentPlaysSection(
-                                        items: viewModel.recentPlays,
-                                        artworkURLs: viewModel.recentPlayArtworkURLs,
-                                        totalPlaysCount: hotPresentation.totalPlaysCount,
-                                        accentKey: selectedAccent,
-                                        onTrackTap: { track in
-                                            navigationCoordinator.push(.trackDetail(track: track))
-                                        }
-                                    )
-                                }
-                            }
-                        }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if let message = viewModel.errorMessage {
+                        ErrorBanner(message: message)
                     }
-                    .padding(.horizontal, 32)
-                    .padding(.top, 28)
-                    .padding(.bottom, 108)
+
+                    let hotPresentation = viewModel.hotModulePresentation
+                    let trendSnapshot = viewModel.trendSnapshot
+                    let selectedAccent = hotPresentation.primaryAccentKey
+
+                    HomeHeroSection()
+                        .padding(.bottom, 12)
+
+                    if layoutModes.wideInsights {
+                        WideListeningInsightsSection(
+                            points: trendSnapshot.points,
+                            hourlyData: trendSnapshot.hourlyData,
+                            trendSubtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                            summaryText: hotPresentation.combinedSummaryText,
+                            footnoteText: hotPresentation.profileFootnoteText,
+                            genres: hotPresentation.genres,
+                            sources: hotPresentation.sources,
+                            accentKey: selectedAccent,
+                            onSelectGenre: { item in
+                                selectedGenreItem = item
+                            },
+                            onOpenDetailMode: { mode in
+                                activeListeningProfileDetailMode = mode
+                            }
+                        )
+                        .equatable()
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    } else {
+                        DashboardTrendSection(
+                            points: trendSnapshot.points,
+                            hourlyData: trendSnapshot.hourlyData,
+                            subtitle: "按日期展开 24 小时播放分布，保持时间轴比例，可横向浏览完整 90 天。",
+                            heatmapLayout: .fixedWidthScrollable(cellWidth: 8),
+                            axisLabelStyle: .dayStride(step: 3, rotationDegrees: 42)
+                        )
+                        .equatable()
+                        .frame(maxWidth: .infinity)
+
+                        ListeningProfileCard(
+                            summaryText: hotPresentation.combinedSummaryText,
+                            footnoteText: hotPresentation.profileFootnoteText,
+                            genres: hotPresentation.genres,
+                            sources: hotPresentation.sources,
+                            accentKey: selectedAccent,
+                            layoutStyle: .split,
+                            onSelectGenre: { item in
+                                selectedGenreItem = item
+                            },
+                            onOpenDetailMode: { mode in
+                                activeListeningProfileDetailMode = mode
+                            }
+                        )
+                        .accessibilityIdentifier(UIAccessibilityID.homeProfileCard)
+                    }
+
+                    if layoutModes.wideRankings {
+                        HStack(alignment: .top, spacing: 16) {
+                            AlbumShelfCard(
+                                items: Array(hotPresentation.albums.prefix(5)),
+                                artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                style: .featureGrid,
+                                collectionCount: hotPresentation.totalAlbumsCount,
+                                accentKey: selectedAccent,
+                                onAlbumTap: { albumID in
+                                    navigationCoordinator.push(.albumDetail(albumID: albumID))
+                                }
+                            )
+                            .frame(minWidth: AlbumShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
+
+                            ArtistLadderCard(
+                                items: Array(hotPresentation.artists.prefix(6)),
+                                artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                collectionCount: hotPresentation.totalArtistsCount,
+                                accentKey: selectedAccent
+                            )
+                            .frame(minWidth: ArtistLadderCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
+                        }
+
+                        HStack(alignment: .top, spacing: 16) {
+                            TrackShelfCard(
+                                items: Array(hotPresentation.tracks.prefix(10)),
+                                artworkBaseURL: store.currentServer?.artworkBaseURL,
+                                style: .featureGrid,
+                                visibleItemCount: 9,
+                                totalTracksCount: hotPresentation.totalTracksCount,
+                                accentKey: selectedAccent,
+                                onTrackTap: { navigationCoordinator.push(.trackDetail(track: $0.bridgeTrack)) }
+                            )
+                            .frame(minWidth: TrackShelfCard.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
+
+                            RecentPlaysSection(
+                                items: viewModel.recentPlays,
+                                artworkURLs: viewModel.recentPlayArtworkURLs,
+                                totalPlaysCount: hotPresentation.totalPlaysCount,
+                                accentKey: selectedAccent,
+                                onTrackTap: { track in
+                                    navigationCoordinator.push(.trackDetail(track: track))
+                                }
+                            )
+                            .equatable()
+                            .frame(minWidth: RecentPlaysSection.homeMinimumWidth, maxWidth: .infinity, alignment: .topLeading)
+                        }
+                    } else {
+                        AlbumShelfCard(
+                            items: Array(hotPresentation.albums.prefix(5)),
+                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                            style: .featureGrid,
+                            collectionCount: hotPresentation.totalAlbumsCount,
+                            accentKey: selectedAccent,
+                            onAlbumTap: { albumID in
+                                navigationCoordinator.push(.albumDetail(albumID: albumID))
+                            }
+                        )
+
+                        ArtistLadderCard(
+                            items: Array(hotPresentation.artists.prefix(6)),
+                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                            collectionCount: hotPresentation.totalArtistsCount,
+                            accentKey: selectedAccent
+                        )
+
+                        TrackShelfCard(
+                            items: Array(hotPresentation.tracks.prefix(5)),
+                            artworkBaseURL: store.currentServer?.artworkBaseURL,
+                            style: .featureGrid,
+                            visibleItemCount: 5,
+                            totalTracksCount: hotPresentation.totalTracksCount,
+                            accentKey: selectedAccent,
+                            onTrackTap: { navigationCoordinator.push(.trackDetail(track: $0.bridgeTrack)) }
+                        )
+
+                        RecentPlaysSection(
+                            items: viewModel.recentPlays,
+                            artworkURLs: viewModel.recentPlayArtworkURLs,
+                            totalPlaysCount: hotPresentation.totalPlaysCount,
+                            accentKey: selectedAccent,
+                            onTrackTap: { track in
+                                navigationCoordinator.push(.trackDetail(track: track))
+                            }
+                        )
+                        .equatable()
+                    }
                 }
+                .padding(.horizontal, 32)
+                .padding(.top, 28)
+                .padding(.bottom, 108)
+            }
+            .accessibilityIdentifier(UIAccessibilityID.homeScrollView)
+        }
+        .measureDebouncedWidth(delayMs: 120, threshold: 4) { width, isInitial in
+            var next = layoutModes
+            next.update(for: max(width - 64, 0), force: isInitial)
+            if next != layoutModes {
+                layoutModes = next
             }
         }
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear {
-                        layoutModes.update(for: max(proxy.size.width - 64, 0), force: true)
-                    }
-                    .onChange(of: proxy.size.width) { _, newValue in
-                        layoutModes.update(for: max(newValue - 64, 0))
-                    }
-            }
-        )
         .overlay {
             if viewModel.isLoading && viewModel.stats == nil {
                 LoadingOverlay()
@@ -256,7 +255,7 @@ struct HomeContentView: View {
     }
 }
 
-private struct HomeLayoutModes {
+private struct HomeLayoutModes: Equatable {
     var wideInsights = false
     var wideRankings = false
     private var didInitialize = false
@@ -337,6 +336,7 @@ struct HomeHeroSection: View {
             }
             .frame(height: 100)
         }
+        .accessibilityIdentifier(UIAccessibilityID.homeHero)
     }
 }
 
@@ -397,6 +397,7 @@ struct DashboardTrendSection: View, Equatable {
     var actionPlacement: TrendActionPlacement = .header
     var actionTitle: String? = nil
     var onAction: (() -> Void)? = nil
+    var previewHoveredCell: (dayIndex: Int, hourIndex: Int)? = nil
 
     static func == (lhs: DashboardTrendSection, rhs: DashboardTrendSection) -> Bool {
         lhs.points == rhs.points &&
@@ -407,7 +408,9 @@ struct DashboardTrendSection: View, Equatable {
         lhs.heatmapLayout == rhs.heatmapLayout &&
         lhs.axisLabelStyle == rhs.axisLabelStyle &&
         lhs.actionPlacement == rhs.actionPlacement &&
-        lhs.actionTitle == rhs.actionTitle
+        lhs.actionTitle == rhs.actionTitle &&
+        lhs.previewHoveredCell?.dayIndex == rhs.previewHoveredCell?.dayIndex &&
+        lhs.previewHoveredCell?.hourIndex == rhs.previewHoveredCell?.hourIndex
     }
 
     var body: some View {
@@ -422,9 +425,11 @@ struct DashboardTrendSection: View, Equatable {
                 axisLabelStyle: axisLabelStyle,
                 actionPlacement: actionPlacement,
                 actionTitle: actionTitle,
-                onAction: onAction
+                onAction: onAction,
+                previewHoveredCell: previewHoveredCell
             )
         }
+        .accessibilityIdentifier(UIAccessibilityID.homeTrendSection)
     }
 }
 
@@ -439,6 +444,7 @@ private struct DashboardTrendSectionBody: View, Equatable {
     let actionPlacement: TrendActionPlacement
     let actionTitle: String?
     let onAction: (() -> Void)?
+    let previewHoveredCell: TrendHeatmapHoveredCell?
     private let metricsSnapshot: TrendMetricsSnapshot
     private let heatmapRenderModel: TrendHeatmapView.RenderModel
 
@@ -452,7 +458,8 @@ private struct DashboardTrendSectionBody: View, Equatable {
         axisLabelStyle: TrendAxisLabelStyle,
         actionPlacement: TrendActionPlacement,
         actionTitle: String?,
-        onAction: (() -> Void)?
+        onAction: (() -> Void)?,
+        previewHoveredCell: (dayIndex: Int, hourIndex: Int)? = nil
     ) {
         self.points = points
         self.hourlyData = hourlyData
@@ -464,6 +471,9 @@ private struct DashboardTrendSectionBody: View, Equatable {
         self.actionPlacement = actionPlacement
         self.actionTitle = actionTitle
         self.onAction = onAction
+        self.previewHoveredCell = previewHoveredCell.map {
+            TrendHeatmapHoveredCell(dayIndex: $0.dayIndex, hourIndex: $0.hourIndex)
+        }
         self.metricsSnapshot = TrendMetricsSnapshot(points: points, hourlyData: hourlyData)
         self.heatmapRenderModel = TrendHeatmapView.RenderModel(hourlyData: hourlyData, axisLabelStyle: axisLabelStyle)
     }
@@ -477,10 +487,17 @@ private struct DashboardTrendSectionBody: View, Equatable {
         lhs.heatmapLayout == rhs.heatmapLayout &&
         lhs.axisLabelStyle == rhs.axisLabelStyle &&
         lhs.actionPlacement == rhs.actionPlacement &&
-        lhs.actionTitle == rhs.actionTitle
+        lhs.actionTitle == rhs.actionTitle &&
+        lhs.previewHoveredCell == rhs.previewHoveredCell
     }
 
     var body: some View {
+        let resolvedHeatmapHeight = TrendHeatmapView.preferredHeight(
+            fallbackHeight: heatmapHeight,
+            layout: heatmapLayout,
+            axisLabelStyle: axisLabelStyle
+        )
+
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 headerContent
@@ -492,8 +509,15 @@ private struct DashboardTrendSectionBody: View, Equatable {
             .padding(.horizontal, 18)
             .padding(.top, 18)
 
-            TrendHeatmapView(renderModel: heatmapRenderModel, layout: heatmapLayout, axisLabelStyle: axisLabelStyle)
-            .frame(height: heatmapHeight)
+            TrendHeatmapView(
+                renderModel: heatmapRenderModel,
+                layout: heatmapLayout,
+                axisLabelStyle: axisLabelStyle,
+                previewHoveredCell: previewHoveredCell
+            )
+            .equatable()
+            .accessibilityIdentifier(UIAccessibilityID.homeTrendHeatmap)
+            .frame(height: resolvedHeatmapHeight)
             .padding(.horizontal, 18)
             .padding(.bottom, 18)
         }
@@ -501,6 +525,18 @@ private struct DashboardTrendSectionBody: View, Equatable {
     }
 
     private var headerContent: some View {
+        #if os(macOS)
+        HStack(alignment: .top, spacing: 12) {
+            headerText
+            Spacer(minLength: 12)
+            HStack(spacing: 10) {
+                TrendLegendView(maxCount: metricsSnapshot.maxHourlyCount)
+                if actionPlacement == .header {
+                    headerAction
+                }
+            }
+        }
+        #else
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 12) {
                 headerText
@@ -521,9 +557,25 @@ private struct DashboardTrendSectionBody: View, Equatable {
                 }
             }
         }
+        #endif
     }
 
     private var metricsContent: some View {
+        #if os(macOS)
+        HStack(spacing: 10) {
+            TrendMetricPill(title: "总播放", value: "\(metricsSnapshot.totalPlays)")
+            TrendMetricPill(title: "日均", value: "\(metricsSnapshot.averageDailyPlays)")
+            TrendMetricPill(
+                title: "峰值",
+                value: metricsSnapshot.peakDay.map { "\($0.count) · \(TrendHeatmapView.compactDateLabel(for: $0.date))" } ?? "--",
+                valueColor: .orange
+            )
+            if actionPlacement == .metricsTrailing {
+                headerAction
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #else
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 TrendMetricPill(title: "总播放", value: "\(metricsSnapshot.totalPlays)")
@@ -555,6 +607,7 @@ private struct DashboardTrendSectionBody: View, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        #endif
     }
 
     private var headerText: some View {
@@ -579,6 +632,7 @@ private struct DashboardTrendSectionBody: View, Equatable {
             Text(subtitle)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(SonicTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -623,7 +677,7 @@ private struct TrendMetricsSnapshot: Equatable {
     }
 }
 
-private struct WideListeningInsightsSection: View {
+private struct WideListeningInsightsSection: View, Equatable {
     let points: [TrendPoint]
     let hourlyData: [HourlyData]
     let trendSubtitle: String
@@ -634,6 +688,17 @@ private struct WideListeningInsightsSection: View {
     let accentKey: HomeHotAccentKey?
     var onSelectGenre: ((HomeHotGenrePresentationItem) -> Void)? = nil
     var onOpenDetailMode: ((ListeningProfileDetailMode) -> Void)? = nil
+
+    static func == (lhs: WideListeningInsightsSection, rhs: WideListeningInsightsSection) -> Bool {
+        lhs.points == rhs.points &&
+        lhs.hourlyData == rhs.hourlyData &&
+        lhs.trendSubtitle == rhs.trendSubtitle &&
+        lhs.summaryText == rhs.summaryText &&
+        lhs.footnoteText == rhs.footnoteText &&
+        lhs.genres == rhs.genres &&
+        lhs.sources == rhs.sources &&
+        lhs.accentKey == rhs.accentKey
+    }
 
     var body: some View {
         GlassPanel(cornerRadius: 18, padding: 0) {
@@ -649,13 +714,12 @@ private struct WideListeningInsightsSection: View {
                 )
                 .padding(18)
                 .frame(width: 380, alignment: .topLeading)
-                
-                
+
                 Rectangle()
                     .fill(SonicTheme.glassBorder.opacity(0.9))
                     .frame(width: 1)
                     .padding(.vertical, 18)
-                
+
                 DashboardTrendSectionBody(
                     points: points,
                     hourlyData: hourlyData,
@@ -668,12 +732,12 @@ private struct WideListeningInsightsSection: View {
                     actionTitle: nil,
                     onAction: nil
                 )
+                .equatable()
+                .accessibilityIdentifier(UIAccessibilityID.homeTrendSection)
                 .frame(minWidth: 720, maxWidth: .infinity, alignment: .topLeading)
-
-
-               
             }
         }
+        .accessibilityIdentifier(UIAccessibilityID.homeProfileCard)
     }
 }
 
@@ -697,7 +761,7 @@ enum TrendAxisLabelStyle: Equatable {
         case .monthBoundaries:
             return 24
         case .dayStride:
-            return 34
+            return 38
         }
     }
 
@@ -713,9 +777,18 @@ enum TrendAxisLabelStyle: Equatable {
     var axisToGridSpacing: CGFloat {
         switch self {
         case .monthBoundaries:
-            return 8
+            return 6
         case .dayStride:
             return 2
+        }
+    }
+
+    var trailingAxisOverflow: CGFloat {
+        switch self {
+        case .monthBoundaries:
+            return 0
+        case .dayStride:
+            return 16
         }
     }
 
@@ -724,7 +797,7 @@ enum TrendAxisLabelStyle: Equatable {
         case .monthBoundaries:
             return 54
         case .dayStride:
-            return 26
+            return 16
         }
     }
 
@@ -751,103 +824,168 @@ enum TrendAxisLabelStyle: Equatable {
         case .monthBoundaries:
             return 26
         case .dayStride:
-            return 24
+            return 20
         }
     }
 
     var yAxisTextAlignment: Alignment {
-        switch self {
-        case .monthBoundaries:
-            return .trailing
-        case .dayStride:
-            return .leading
-        }
+        .trailing
     }
+}
+
+private enum FixedScrollHintState: Equatable {
+    case none
+    case canScrollOlder
+    case canReturnRecent
+}
+
+@MainActor
+private final class TrendScrollOffsetTracker {
+    var lastOffsetX: CGFloat = 0
 }
 
 struct TrendHeatmapView: View, Equatable {
     var layout: TrendHeatmapLayout = .fitted(minCellWidth: 2)
     var axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries
-    @State private var fixedScrollOffsetX: CGFloat = 0
+    private let previewHoveredCell: TrendHeatmapHoveredCell?
+    @State private var scrollHintState: FixedScrollHintState = .none
+    @State private var fixedViewportWidth: CGFloat = 0
+    @State private var scrollTracker = TrendScrollOffsetTracker()
 
     private let model: RenderModel
-    private let cellSpacing: CGFloat = 2
-    private let gridInset: CGFloat = 10
+    private static let cellSpacingValue: CGFloat = 2
+    private static let gridInsetValue: CGFloat = 10
+    private static let fixedScrollHintBarHeight: CGFloat = 18
+    private static let labeledHours: [(rowIndex: Int, text: String)] = [
+        (0, "23"),
+        (5, "18"),
+        (11, "12"),
+        (17, "06"),
+        (23, "00")
+    ]
+
+    private var cellSpacing: CGFloat { Self.cellSpacingValue }
+    private var gridInset: CGFloat { Self.gridInsetValue }
 
     init(
         hourlyData: [HourlyData],
         layout: TrendHeatmapLayout = .fitted(minCellWidth: 2),
-        axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries
+        axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries,
+        previewHoveredCell: (dayIndex: Int, hourIndex: Int)? = nil
     ) {
         self.layout = layout
         self.axisLabelStyle = axisLabelStyle
+        self.previewHoveredCell = previewHoveredCell.map {
+            TrendHeatmapHoveredCell(dayIndex: $0.dayIndex, hourIndex: $0.hourIndex)
+        }
         self.model = RenderModel(hourlyData: hourlyData, axisLabelStyle: axisLabelStyle)
     }
 
     fileprivate init(
         renderModel: RenderModel,
         layout: TrendHeatmapLayout = .fitted(minCellWidth: 2),
-        axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries
+        axisLabelStyle: TrendAxisLabelStyle = .monthBoundaries,
+        previewHoveredCell: TrendHeatmapHoveredCell? = nil
     ) {
         self.layout = layout
         self.axisLabelStyle = axisLabelStyle
+        self.previewHoveredCell = previewHoveredCell
         self.model = renderModel
+    }
+
+    static func preferredHeight(
+        fallbackHeight: CGFloat,
+        layout: TrendHeatmapLayout,
+        axisLabelStyle: TrendAxisLabelStyle
+    ) -> CGFloat {
+        switch layout {
+        case let .fixedWidthScrollable(cellWidth):
+            let cellSize = max(cellWidth, 2)
+            let gridHeight = CGFloat(hours.count) * cellSize + CGFloat(hours.count - 1) * cellSpacingValue
+            return axisLabelStyle.axisHeight
+                + axisLabelStyle.axisToGridSpacing
+                + gridInsetValue * 2
+                + gridHeight
+                + fixedScrollHintBarHeight
+        case .fitted, .scrollable:
+            return fallbackHeight
+        }
     }
 
     private var xAxisHeight: CGFloat {
         axisLabelStyle.axisHeight
     }
 
-    private static let hours = Array(stride(from: 23, through: 0, by: -1))
+    fileprivate static let hours = Array(stride(from: 23, through: 0, by: -1))
 
     static func == (lhs: TrendHeatmapView, rhs: TrendHeatmapView) -> Bool {
         lhs.layout == rhs.layout &&
         lhs.axisLabelStyle == rhs.axisLabelStyle &&
+        lhs.previewHoveredCell == rhs.previewHoveredCell &&
         lhs.model == rhs.model
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let rowCount = CGFloat(Self.hours.count)
-            let availableHeight = max(geometry.size.height - xAxisHeight, 0)
-            let gridHeight = max(availableHeight - axisLabelStyle.axisToGridSpacing - gridInset * 2, 0)
-            let cellHeight = max(
-                4,
-                (gridHeight - (rowCount - 1) * cellSpacing) / rowCount
+        if model.dayColumns.isEmpty {
+            emptyStateView
+        } else {
+            heatmapBody
+        }
+    }
+
+    private var emptyStateView: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Self.gridBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Self.gridBorder, lineWidth: 1)
             )
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "chart.bar.xaxis")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                    Text("暂无播放趋势数据")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                }
+                .padding(.vertical, 24)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 220)
+    }
 
-            HStack(alignment: .top, spacing: 0) {
-                hourLabelsColumn(cellHeight: cellHeight)
-                switch layout {
-                case let .fitted(minCellWidth):
-                    let availableWidth = max(geometry.size.width - axisLabelStyle.yAxisColumnWidth, 0)
-                    let dayCount = max(model.dayColumns.count, 1)
-                    let gridWidth = max(availableWidth - gridInset * 2, 0)
-                    let cellWidth = max(
-                        minCellWidth,
-                        (gridWidth - CGFloat(dayCount - 1) * cellSpacing) / CGFloat(dayCount)
-                    )
-                    let contentWidth = CGFloat(dayCount) * cellWidth + CGFloat(dayCount - 1) * cellSpacing
+    @ViewBuilder
+    private var heatmapBody: some View {
+        switch layout {
+        case let .fixedWidthScrollable(cellWidth):
+            let resolvedCellWidth = max(cellWidth, 2)
+            let resolvedCellHeight = resolvedCellWidth
+            let dayCount = max(model.dayColumns.count, 1)
+            let contentWidth = CGFloat(dayCount) * resolvedCellWidth + CGFloat(dayCount - 1) * cellSpacing
+            let totalTrackWidth = contentWidth + gridInset * 2 + axisLabelStyle.trailingAxisOverflow
+            let availableViewportWidth = max(fixedViewportWidth - axisLabelStyle.yAxisColumnWidth, 0)
+            let maxScrollDistance = max(totalTrackWidth - availableViewportWidth, 0)
+            let tracker = scrollTracker
+            let inset = gridInset
 
-                    heatmapColumns(
-                        cellWidth: cellWidth,
-                        cellHeight: cellHeight,
-                        contentWidth: contentWidth
-                    )
-                case let .fixedWidthScrollable(cellWidth):
-                    let availableWidth = max(geometry.size.width - axisLabelStyle.yAxisColumnWidth, 0)
-                    let dayCount = max(model.dayColumns.count, 1)
-                    let resolvedCellWidth = max(cellWidth, 2)
-                    let resolvedCellHeight = resolvedCellWidth
-                    let contentWidth = CGFloat(dayCount) * resolvedCellWidth + CGFloat(dayCount - 1) * cellSpacing
-                    let maxScrollDistance = max(contentWidth + gridInset * 2 - availableWidth, 0)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 0) {
+                    hourLabelsColumn(cellHeight: resolvedCellHeight)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         heatmapColumns(
                             cellWidth: resolvedCellWidth,
                             cellHeight: resolvedCellHeight,
-                            contentWidth: contentWidth
+                            contentWidth: contentWidth,
+                            visibleXRange: {
+                                guard availableViewportWidth > 0 else { return 0...contentWidth }
+                                let visibleMin = max(0, -tracker.lastOffsetX - inset)
+                                let visibleMax = min(contentWidth, visibleMin + max(availableViewportWidth - inset * 2, 0))
+                                return visibleMin <= visibleMax ? visibleMin...visibleMax : 0...contentWidth
+                            }
                         )
+                        .padding(.trailing, axisLabelStyle.trailingAxisOverflow)
                         .background(
                             GeometryReader { proxy in
                                 Color.clear.preference(
@@ -859,40 +997,79 @@ struct TrendHeatmapView: View, Equatable {
                     }
                     .coordinateSpace(name: "trend-fixed-scroll")
                     .onPreferenceChange(TrendFixedScrollOffsetPreferenceKey.self) { value in
-                        fixedScrollOffsetX = value
+                        guard abs(value - scrollTracker.lastOffsetX) >= 0.5 else { return }
+                        scrollTracker.lastOffsetX = value
+                        updateScrollHintState(offsetX: value, maxScrollDistance: maxScrollDistance)
                     }
-                    .overlay(alignment: .topTrailing) {
-                        if let hint = fixedScrollHint(maxScrollDistance: maxScrollDistance) {
-                            Text(hint)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(SonicTheme.textSecondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(
-                                    Capsule()
-                                        .fill(SonicTheme.dynamicColor(
-                                            light: .sonicWhite(1, alpha: 0.86),
-                                            dark: .sonicWhite(0.14, alpha: 0.9)
-                                        ))
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(SonicTheme.glassBorder.opacity(0.75), lineWidth: 1)
-                                )
-                                .padding(.trailing, 8)
-                        }
-                    }
-                case let .scrollable(minCellWidth):
-                    let dayCount = max(model.dayColumns.count, 1)
-                    let cellWidth = max(minCellWidth, 2)
-                    let contentWidth = CGFloat(dayCount) * cellWidth + CGFloat(dayCount - 1) * cellSpacing
+                }
 
+                fixedScrollHintBar(maxScrollDistance: maxScrollDistance)
+            }
+            .measureDebouncedWidth(delayMs: 120, threshold: 4) { width, _ in
+                if abs(width - fixedViewportWidth) >= 1 {
+                    fixedViewportWidth = width
+                }
+            }
+            .onChange(of: maxScrollDistance) { _, newMax in
+                updateScrollHintState(offsetX: scrollTracker.lastOffsetX, maxScrollDistance: newMax)
+            }
+            .onAppear {
+                updateScrollHintState(offsetX: scrollTracker.lastOffsetX, maxScrollDistance: maxScrollDistance)
+            }
+
+        case let .fitted(minCellWidth):
+            GeometryReader { geometry in
+                let rowCount = CGFloat(Self.hours.count)
+                let availableHeight = max(geometry.size.height - xAxisHeight, 0)
+                let gridHeight = max(availableHeight - axisLabelStyle.axisToGridSpacing - gridInset * 2, 0)
+                let resolvedCellHeight = max(
+                    4,
+                    (gridHeight - (rowCount - 1) * cellSpacing) / rowCount
+                )
+                let availableWidth = max(geometry.size.width - axisLabelStyle.yAxisColumnWidth, 0)
+                let dayCount = max(model.dayColumns.count, 1)
+                let gridWidth = max(availableWidth - gridInset * 2 - axisLabelStyle.trailingAxisOverflow, 0)
+                let cellWidth = max(
+                    minCellWidth,
+                    (gridWidth - CGFloat(dayCount - 1) * cellSpacing) / CGFloat(dayCount)
+                )
+                let contentWidth = CGFloat(dayCount) * cellWidth + CGFloat(dayCount - 1) * cellSpacing
+
+                HStack(alignment: .top, spacing: 0) {
+                    hourLabelsColumn(cellHeight: resolvedCellHeight)
+                    heatmapColumns(
+                        cellWidth: cellWidth,
+                        cellHeight: resolvedCellHeight,
+                        contentWidth: contentWidth,
+                        visibleXRange: { 0...contentWidth }
+                    )
+                    .padding(.trailing, axisLabelStyle.trailingAxisOverflow)
+                }
+            }
+
+        case let .scrollable(minCellWidth):
+            GeometryReader { geometry in
+                let rowCount = CGFloat(Self.hours.count)
+                let availableHeight = max(geometry.size.height - xAxisHeight, 0)
+                let gridHeight = max(availableHeight - axisLabelStyle.axisToGridSpacing - gridInset * 2, 0)
+                let resolvedCellHeight = max(
+                    4,
+                    (gridHeight - (rowCount - 1) * cellSpacing) / rowCount
+                )
+                let dayCount = max(model.dayColumns.count, 1)
+                let cellWidth = max(minCellWidth, 2)
+                let contentWidth = CGFloat(dayCount) * cellWidth + CGFloat(dayCount - 1) * cellSpacing
+
+                HStack(alignment: .top, spacing: 0) {
+                    hourLabelsColumn(cellHeight: resolvedCellHeight)
                     ScrollView(.horizontal, showsIndicators: false) {
                         heatmapColumns(
                             cellWidth: cellWidth,
-                            cellHeight: cellHeight,
-                            contentWidth: contentWidth
+                            cellHeight: resolvedCellHeight,
+                            contentWidth: contentWidth,
+                            visibleXRange: { 0...contentWidth }
                         )
+                        .padding(.trailing, axisLabelStyle.trailingAxisOverflow)
                     }
                 }
             }
@@ -900,25 +1077,25 @@ struct TrendHeatmapView: View, Equatable {
     }
 
     private func hourLabelsColumn(cellHeight: CGFloat) -> some View {
-        VStack(alignment: .trailing, spacing: cellSpacing) {
-            ForEach(Self.hours, id: \.self) { hour in
-                if hour == 23 || hour == 18 || hour == 12 || hour == 6 || hour == 0 {
-                    Text(String(format: "%02d", hour))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(SonicTheme.textSecondary)
-                        .frame(
-                            width: axisLabelStyle.yAxisTextWidth,
-                            height: cellHeight,
-                            alignment: axisLabelStyle.yAxisTextAlignment
-                        )
-                } else {
-                    Spacer().frame(width: axisLabelStyle.yAxisTextWidth, height: cellHeight)
-                }
+        let totalGridHeight = CGFloat(Self.hours.count) * cellHeight + CGFloat(Self.hours.count - 1) * cellSpacing
+
+        return ZStack(alignment: .topLeading) {
+            ForEach(Self.labeledHours, id: \.rowIndex) { item in
+                let centerY = CGFloat(item.rowIndex) * (cellHeight + cellSpacing) + cellHeight / 2
+                Text(item.text)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(SonicTheme.textSecondary)
+                    .frame(
+                        width: axisLabelStyle.yAxisTextWidth,
+                        height: max(cellHeight, 11),
+                        alignment: axisLabelStyle.yAxisTextAlignment
+                    )
+                    .position(x: axisLabelStyle.yAxisTextWidth / 2, y: centerY)
             }
         }
+        .frame(width: axisLabelStyle.yAxisColumnWidth, height: totalGridHeight, alignment: .topLeading)
         .padding(.top, xAxisHeight + axisLabelStyle.axisToGridSpacing + gridInset)
         .padding(.bottom, gridInset)
-        .frame(width: axisLabelStyle.yAxisColumnWidth, alignment: .leading)
     }
 
     private func heatmapColumns(
@@ -926,7 +1103,8 @@ struct TrendHeatmapView: View, Equatable {
         cellHeight: CGFloat,
         contentWidth: CGFloat,
         dayColumns: [DayColumn]? = nil,
-        axisLabels: [AxisLabel]? = nil
+        axisLabels: [AxisLabel]? = nil,
+        visibleXRange: @escaping () -> ClosedRange<CGFloat>
     ) -> some View {
         let resolvedDayColumns = dayColumns ?? model.dayColumns
         let resolvedAxisLabels = axisLabels ?? model.axisLabels
@@ -937,7 +1115,8 @@ struct TrendHeatmapView: View, Equatable {
                 cellWidth: cellWidth,
                 cellHeight: cellHeight,
                 contentWidth: contentWidth,
-                dayColumns: resolvedDayColumns
+                dayColumns: resolvedDayColumns,
+                visibleXRange: visibleXRange
             )
         }
     }
@@ -945,18 +1124,36 @@ struct TrendHeatmapView: View, Equatable {
     private func xAxisLabels(contentWidth: CGFloat, cellWidth: CGFloat, axisLabels: [AxisLabel]) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(axisLabels) { item in
-                Text(item.text)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(SonicTheme.textSecondary)
-                    .fixedSize()
-                    .rotationEffect(.degrees(axisLabelStyle.rotationDegrees), anchor: .topLeading)
-                    .offset(
-                        x: min(
-                            max(0, labelX(at: item.index, cellWidth: cellWidth) - 12),
-                            max(contentWidth - axisLabelStyle.trailingLabelInset, 0)
-                        ),
-                        y: axisLabelStyle.labelYOffset
-                    )
+                let centerX = labelX(at: item.index, cellWidth: cellWidth)
+
+                Rectangle()
+                    .fill(SonicTheme.textSecondary.opacity(0.35))
+                    .frame(width: 1, height: 3)
+                    .position(x: centerX, y: xAxisHeight - 1.5)
+
+                switch axisLabelStyle {
+                case .monthBoundaries:
+                    let columnLeadingX = CGFloat(item.index) * (cellWidth + cellSpacing)
+                    Text(item.text)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                        .fixedSize()
+                        .offset(
+                            x: min(columnLeadingX, max(contentWidth - axisLabelStyle.trailingLabelInset, 0)),
+                            y: axisLabelStyle.labelYOffset
+                        )
+                case let .dayStride(_, rotationDegrees):
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .overlay(alignment: .bottomLeading) {
+                            Text(item.text)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(SonicTheme.textSecondary)
+                                .fixedSize()
+                                .rotationEffect(.degrees(-abs(rotationDegrees)), anchor: .bottomLeading)
+                        }
+                        .position(x: centerX, y: xAxisHeight - 5)
+                }
             }
         }
         .frame(width: contentWidth, height: xAxisHeight, alignment: .topLeading)
@@ -967,19 +1164,18 @@ struct TrendHeatmapView: View, Equatable {
         cellWidth: CGFloat,
         cellHeight: CGFloat,
         contentWidth: CGFloat,
-        dayColumns: [DayColumn]
+        dayColumns: [DayColumn],
+        visibleXRange: @escaping () -> ClosedRange<CGFloat>
     ) -> some View {
-        TrendHeatmapCanvas(
+        TrendHeatmapInteractiveGrid(
             dayColumns: dayColumns,
             cellWidth: cellWidth,
             cellHeight: cellHeight,
             cellSpacing: cellSpacing,
-            maxCount: model.maxCount
-        )
-        .frame(
-            width: contentWidth,
-            height: CGFloat(Self.hours.count) * cellHeight + CGFloat(Self.hours.count - 1) * cellSpacing,
-            alignment: .leading
+            maxCount: model.maxCount,
+            contentWidth: contentWidth,
+            previewHoveredCell: previewHoveredCell,
+            visibleXRange: visibleXRange
         )
         .padding(gridInset)
         .background(
@@ -992,16 +1188,51 @@ struct TrendHeatmapView: View, Equatable {
         )
     }
 
-    private func fixedScrollHint(maxScrollDistance: CGFloat) -> String? {
-        guard maxScrollDistance > 24 else { return nil }
-        let offset = max(0, -fixedScrollOffsetX)
+    private func fixedScrollHintBar(maxScrollDistance: CGFloat) -> some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            switch scrollHintState {
+            case .none:
+                EmptyView()
+            case .canScrollOlder:
+                HStack(spacing: 4) {
+                    Text("可向右查看更早日期")
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+            case .canReturnRecent:
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("可向左返回最近日期")
+                }
+            }
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(SonicTheme.textSecondary.opacity(0.85))
+        .padding(.trailing, axisLabelStyle.trailingAxisOverflow)
+        .frame(height: Self.fixedScrollHintBarHeight, alignment: .trailing)
+        .opacity(maxScrollDistance > 24 && scrollHintState != .none ? 1 : 0)
+        .accessibilityIdentifier(UIAccessibilityID.homeTrendScrollHint)
+    }
+
+    private func updateScrollHintState(offsetX: CGFloat, maxScrollDistance: CGFloat) {
+        let nextState = resolvedScrollHintState(offsetX: offsetX, maxScrollDistance: maxScrollDistance)
+        if nextState != scrollHintState {
+            scrollHintState = nextState
+        }
+    }
+
+    private func resolvedScrollHintState(offsetX: CGFloat, maxScrollDistance: CGFloat) -> FixedScrollHintState {
+        guard maxScrollDistance > 24 else { return .none }
+        let offset = max(0, -offsetX)
         if offset <= 12 {
-            return "可向右查看更早日期"
+            return .canScrollOlder
         }
         if offset >= maxScrollDistance - 12 {
-            return "可向左返回最近日期"
+            return .canReturnRecent
         }
-        return nil
+        return .none
     }
 
     private func labelX(at index: Int, cellWidth: CGFloat) -> CGFloat {
@@ -1011,6 +1242,11 @@ struct TrendHeatmapView: View, Equatable {
     static func compactDateLabel(for dateString: String) -> String {
         guard let date = dayFormatter.date(from: dateString) else { return dateString }
         return shortDayFormatter.string(from: date)
+    }
+
+    static func tooltipDateLabel(for dateString: String) -> String {
+        guard let date = dayFormatter.date(from: dateString) else { return dateString }
+        return tooltipDayFormatter.string(from: date)
     }
 
     private static func makeAxisLabels(for dates: [String], axisLabelStyle: TrendAxisLabelStyle) -> [AxisLabel] {
@@ -1073,15 +1309,29 @@ struct TrendHeatmapView: View, Equatable {
         return unique.sorted { $0.index < $1.index }
     }
 
-    fileprivate static func color(for count: Int, maxCount: Int) -> Color {
-        if count == 0 { return emptyCell }
+    fileprivate static func colorLevel(for count: Int, maxCount: Int) -> Int {
+        if count <= 0 { return 0 }
         let ratio = Double(count) / Double(max(maxCount, 1))
         switch ratio {
-        case 0..<0.25: return levelOne
-        case 0.25..<0.5: return levelTwo
-        case 0.5..<0.75: return levelThree
+        case 0..<0.25: return 1
+        case 0.25..<0.5: return 2
+        case 0.5..<0.75: return 3
+        default: return 4
+        }
+    }
+
+    fileprivate static func color(forLevel level: Int) -> Color {
+        switch level {
+        case 0: return emptyCell
+        case 1: return levelOne
+        case 2: return levelTwo
+        case 3: return levelThree
         default: return levelFour
         }
+    }
+
+    fileprivate static func color(for count: Int, maxCount: Int) -> Color {
+        color(forLevel: colorLevel(for: count, maxCount: maxCount))
     }
 
     static let emptyCell = SonicTheme.dynamicColor(
@@ -1125,6 +1375,13 @@ struct TrendHeatmapView: View, Equatable {
         return formatter
     }()
 
+    private static let tooltipDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M/d EEE"
+        return formatter
+    }()
+
     private static let yearMonthFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy/MM"
@@ -1140,12 +1397,19 @@ struct TrendHeatmapView: View, Equatable {
             let sortedData = hourlyData.sorted { $0.date > $1.date }
             var maxCount = 1
             let dayColumns = sortedData.map { day in
+                var totalCount = 0
                 let counts = TrendHeatmapView.hours.map { hour -> Int in
                     let count = day.hourly[hour] ?? 0
                     maxCount = max(maxCount, count)
+                    totalCount += count
                     return count
                 }
-                return DayColumn(date: day.date, counts: counts)
+                return DayColumn(
+                    date: day.date,
+                    tooltipDateLabel: TrendHeatmapView.tooltipDateLabel(for: day.date),
+                    counts: counts,
+                    totalCount: totalCount
+                )
             }
 
             self.dayColumns = dayColumns
@@ -1159,7 +1423,9 @@ struct TrendHeatmapView: View, Equatable {
 
     fileprivate struct DayColumn: Equatable {
         let date: String
+        let tooltipDateLabel: String
         let counts: [Int]
+        let totalCount: Int
     }
 }
 
@@ -1171,6 +1437,281 @@ private struct TrendFixedScrollOffsetPreferenceKey: PreferenceKey {
     }
 }
 
+private struct TrendHeatmapHoveredCell: Equatable {
+    let dayIndex: Int
+    let hourIndex: Int
+}
+
+#if os(macOS)
+@MainActor
+private final class HeatmapScrollHoverGate {
+    private(set) var isScrolling = false
+    nonisolated(unsafe) private var monitor: Any?
+    private var resetTask: Task<Void, Never>?
+
+    func start(onScrollStart: @escaping @MainActor () -> Void) {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    self?.handleScroll(onScrollStart: onScrollStart)
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    self?.handleScroll(onScrollStart: onScrollStart)
+                }
+            }
+            return event
+        }
+    }
+
+    func stop() {
+        resetTask?.cancel()
+        resetTask = nil
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+        isScrolling = false
+    }
+
+    private func handleScroll(onScrollStart: @escaping @MainActor () -> Void) {
+        if !isScrolling {
+            isScrolling = true
+            onScrollStart()
+        }
+        resetTask?.cancel()
+        resetTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 180_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.isScrolling = false
+        }
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+}
+#endif
+
+private struct TrendHeatmapInteractiveGrid: View {
+    let dayColumns: [TrendHeatmapView.DayColumn]
+    let cellWidth: CGFloat
+    let cellHeight: CGFloat
+    let cellSpacing: CGFloat
+    let maxCount: Int
+    let contentWidth: CGFloat
+    let previewHoveredCell: TrendHeatmapHoveredCell?
+    let visibleXRange: () -> ClosedRange<CGFloat>
+
+    @State private var hoveredCell: TrendHeatmapHoveredCell?
+    #if os(macOS)
+    @State private var hoverGate = HeatmapScrollHoverGate()
+    #endif
+
+    private var gridHeight: CGFloat {
+        CGFloat(TrendHeatmapView.hours.count) * cellHeight
+            + CGFloat(max(TrendHeatmapView.hours.count - 1, 0)) * cellSpacing
+    }
+
+    var body: some View {
+        let activeHoveredCell = previewHoveredCell ?? hoveredCell
+
+        TrendHeatmapCanvas(
+            dayColumns: dayColumns,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            cellSpacing: cellSpacing,
+            maxCount: maxCount
+        )
+        .equatable()
+        .accessibilityIdentifier(UIAccessibilityID.homeTrendCanvas)
+        .frame(width: contentWidth, height: gridHeight, alignment: .leading)
+        .contentShape(Rectangle())
+        .onContinuousHover(coordinateSpace: .local) { phase in
+            switch phase {
+            case .active(let location):
+                #if os(macOS)
+                guard !hoverGate.isScrolling else { return }
+                #endif
+                let strideX = cellWidth + cellSpacing
+                let strideY = cellHeight + cellSpacing
+                guard !dayColumns.isEmpty,
+                      strideX > 0, strideY > 0,
+                      location.x >= 0, location.x <= contentWidth,
+                      location.y >= 0, location.y <= gridHeight else {
+                    if hoveredCell != nil {
+                        hoveredCell = nil
+                    }
+                    return
+                }
+                let dayIndex = min(max(Int(location.x / strideX), 0), dayColumns.count - 1)
+                let hourIndex = min(max(Int(location.y / strideY), 0), TrendHeatmapView.hours.count - 1)
+                let next = TrendHeatmapHoveredCell(dayIndex: dayIndex, hourIndex: hourIndex)
+                if next != hoveredCell {
+                    hoveredCell = next
+                }
+            case .ended:
+                if hoveredCell != nil {
+                    hoveredCell = nil
+                }
+            }
+        }
+        #if os(macOS)
+        .onAppear {
+            hoverGate.start {
+                if hoveredCell != nil {
+                    hoveredCell = nil
+                }
+            }
+        }
+        .onDisappear {
+            hoverGate.stop()
+        }
+        #endif
+        .onChange(of: dayColumns.count) { _, newCount in
+            if let current = hoveredCell, current.dayIndex >= newCount {
+                hoveredCell = nil
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let activeHoveredCell,
+               dayColumns.indices.contains(activeHoveredCell.dayIndex),
+               TrendHeatmapView.hours.indices.contains(activeHoveredCell.hourIndex),
+               dayColumns[activeHoveredCell.dayIndex].counts.indices.contains(activeHoveredCell.hourIndex) {
+                hoverOverlay(for: activeHoveredCell)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func hoverOverlay(for cell: TrendHeatmapHoveredCell) -> some View {
+        let day = dayColumns[cell.dayIndex]
+        let hour = TrendHeatmapView.hours[cell.hourIndex]
+        let count = day.counts[cell.hourIndex]
+        let cellOriginX = CGFloat(cell.dayIndex) * (cellWidth + cellSpacing)
+        let cellOriginY = CGFloat(cell.hourIndex) * (cellHeight + cellSpacing)
+        let cellCenterX = cellOriginX + cellWidth / 2
+        let cellCenterY = cellOriginY + cellHeight / 2
+
+        let estimatedHalfWidth: CGFloat = 86
+        let estimatedHeight: CGFloat = 44
+        let range = visibleXRange()
+        let minCenterX = range.lowerBound + estimatedHalfWidth + 6
+        let maxCenterX = range.upperBound - estimatedHalfWidth - 6
+        let tooltipX: CGFloat = if minCenterX <= maxCenterX {
+            min(max(cellCenterX, minCenterX), maxCenterX)
+        } else {
+            (range.lowerBound + range.upperBound) / 2
+        }
+
+        let placesBelow = cellOriginY < estimatedHeight + 14
+        let tooltipY = placesBelow
+            ? cellOriginY + cellHeight + 10 + estimatedHeight / 2
+            : cellOriginY - 10 - estimatedHeight / 2
+
+        return ZStack(alignment: .topLeading) {
+            // 极淡十字引导线，帮助将格子映射到横纵轴刻度
+            Rectangle()
+                .fill(TrendHeatmapView.levelThree.opacity(0.10))
+                .frame(width: cellWidth, height: gridHeight)
+                .position(x: cellCenterX, y: gridHeight / 2)
+
+            Rectangle()
+                .fill(TrendHeatmapView.levelThree.opacity(0.10))
+                .frame(width: contentWidth, height: cellHeight)
+                .position(x: contentWidth / 2, y: cellCenterY)
+
+            RoundedRectangle(
+                cornerRadius: min(2.5, min(cellWidth, cellHeight) * 0.45 + 0.5),
+                style: .continuous
+            )
+            .stroke(Self.highlightBorderColor, lineWidth: 1.5)
+            .frame(width: cellWidth + 2, height: cellHeight + 2)
+            .position(x: cellCenterX, y: cellCenterY)
+
+            tooltipCard(day: day, hour: hour, count: count)
+                .fixedSize()
+                .accessibilityIdentifier(UIAccessibilityID.homeTrendTooltip)
+                .position(x: tooltipX, y: tooltipY)
+        }
+        .frame(width: contentWidth, height: gridHeight, alignment: .topLeading)
+    }
+
+    private func tooltipCard(day: TrendHeatmapView.DayColumn, hour: Int, count: Int) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("\(day.tooltipDateLabel) · \(String(format: "%02d:00–%02d:00", hour, hour + 1))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(SonicTheme.textSecondary)
+
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(TrendHeatmapView.color(for: count, maxCount: maxCount))
+                    .frame(width: 7, height: 7)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .stroke(Self.swatchBorderColor, lineWidth: 0.5)
+                    )
+
+                if count > 0 {
+                    Text("\(count) 次播放")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(SonicTheme.textPrimary)
+                } else {
+                    Text("无播放记录")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                }
+
+                if day.totalCount > 0 {
+                    Text("· 当日共 \(day.totalCount) 次")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(SonicTheme.textSecondary)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background {
+            shape
+                .fill(Self.tooltipBackgroundColor)
+                .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 4)
+        }
+        .overlay {
+            shape
+                .stroke(Self.tooltipBorderColor, lineWidth: 1)
+        }
+    }
+
+    private static let highlightBorderColor = SonicTheme.dynamicColor(
+        light: .sonicRGBA(0.58, 0.36, 0.08, 0.95),
+        dark: .sonicRGBA(1.0, 0.88, 0.62, 0.95)
+    )
+
+    private static let swatchBorderColor = SonicTheme.dynamicColor(
+        light: .sonicRGBA(0.60, 0.42, 0.16, 0.25),
+        dark: .sonicRGBA(1.0, 0.90, 0.70, 0.25)
+    )
+
+    private static let tooltipBackgroundColor = SonicTheme.dynamicColor(
+        light: .sonicRGBA(1.0, 0.99, 0.96, 0.97),
+        dark: .sonicRGBA(0.14, 0.12, 0.10, 0.96)
+    )
+
+    private static let tooltipBorderColor = SonicTheme.dynamicColor(
+        light: .sonicRGBA(0.76, 0.56, 0.22, 0.22),
+        dark: .sonicRGBA(0.88, 0.70, 0.34, 0.26)
+    )
+}
+
 private struct TrendHeatmapCanvas: View, Equatable {
     let dayColumns: [TrendHeatmapView.DayColumn]
     let cellWidth: CGFloat
@@ -1179,26 +1720,31 @@ private struct TrendHeatmapCanvas: View, Equatable {
     let maxCount: Int
 
     var body: some View {
-        Canvas(opaque: false, rendersAsynchronously: true) { context, _ in
+        Canvas(opaque: false, rendersAsynchronously: false) { context, _ in
             let cornerRadius = min(2, min(cellWidth, cellHeight) * 0.45)
+            let useRounded = cornerRadius > 0.5
+            let cornerSize = CGSize(width: cornerRadius, height: cornerRadius)
+            var bucketPaths = Array(repeating: Path(), count: 5)
 
             for (dayIndex, day) in dayColumns.enumerated() {
                 let originX = CGFloat(dayIndex) * (cellWidth + cellSpacing)
                 for (hourIndex, count) in day.counts.enumerated() {
                     let originY = CGFloat(hourIndex) * (cellHeight + cellSpacing)
                     let rect = CGRect(x: originX, y: originY, width: cellWidth, height: cellHeight)
-                    if cornerRadius <= 0.5 {
-                        context.fill(
-                            Path(rect),
-                            with: .color(TrendHeatmapView.color(for: count, maxCount: maxCount))
-                        )
+                    let level = TrendHeatmapView.colorLevel(for: count, maxCount: maxCount)
+                    if useRounded {
+                        bucketPaths[level].addRoundedRect(in: rect, cornerSize: cornerSize, style: .continuous)
                     } else {
-                        context.fill(
-                            Path(roundedRect: rect, cornerRadius: cornerRadius),
-                            with: .color(TrendHeatmapView.color(for: count, maxCount: maxCount))
-                        )
+                        bucketPaths[level].addRect(rect)
                     }
                 }
+            }
+
+            for level in 0..<5 where !bucketPaths[level].isEmpty {
+                context.fill(
+                    bucketPaths[level],
+                    with: .color(TrendHeatmapView.color(forLevel: level))
+                )
             }
         }
         .accessibilityLabel("聆听趋势")
@@ -1232,7 +1778,8 @@ struct TrendLegendView: View {
             Text(maxCount > 0 ? "高" : "暂无数据")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(SonicTheme.textSecondary)
-                .frame(width: 24, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 16, alignment: .leading)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -1459,7 +2006,7 @@ struct RankingsCard: View {
     }
 }
 
-struct RecentPlaysSection: View {
+struct RecentPlaysSection: View, Equatable {
     static let homeMinimumWidth: CGFloat = 340
 
     let items: [RecentPlayRecord]
@@ -1467,6 +2014,20 @@ struct RecentPlaysSection: View {
     let totalPlaysCount: Int64?
     let accentKey: HomeHotAccentKey?
     let onTrackTap: (Track) -> Void
+
+    static func == (lhs: RecentPlaysSection, rhs: RecentPlaysSection) -> Bool {
+        lhs.totalPlaysCount == rhs.totalPlaysCount &&
+        lhs.accentKey == rhs.accentKey &&
+        lhs.artworkURLs == rhs.artworkURLs &&
+        lhs.items.count == rhs.items.count &&
+        zip(lhs.items, rhs.items).allSatisfy {
+            $0.id == $1.id &&
+            $0.playTime == $1.playTime &&
+            $0.track == $1.track &&
+            $0.artist == $1.artist &&
+            $0.album == $1.album
+        }
+    }
 
     var body: some View {
         GlassPanel(cornerRadius: 20, padding: 18) {

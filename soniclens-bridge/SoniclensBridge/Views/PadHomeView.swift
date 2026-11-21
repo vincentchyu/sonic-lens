@@ -264,6 +264,7 @@ private struct PadHomeHero: View {
                         endRadius: 220
                     )
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             }
         }
     }

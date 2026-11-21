@@ -82,7 +82,6 @@ import AppKit
 
 struct AppLayoutView: View {
     @EnvironmentObject private var store: AppStore
-    @Environment(PlaybackStore.self) private var playbackStore
     @State private var selection: SidebarDestination = .home
     @State private var showNowPlaying = false
     @State private var albumSort: LibrarySort = .recent
@@ -95,6 +94,7 @@ struct AppLayoutView: View {
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled: Bool = false
     @State private var playbackOverlayController = PlaybackBarWindowOverlayController()
     @State private var nowPlayingOverlayController = NowPlayingWindowOverlayController()
+    @State private var didApplyUIVerificationLaunchConfig = false
 
     private var sidebarSelectionBinding: Binding<SidebarDestination> {
         Binding(
@@ -149,34 +149,13 @@ struct AppLayoutView: View {
         .environment(\.sonicPerformanceModeEnabled, performanceModeEnabled)
         .environmentObject(navigationCoordinator)
         .background(
-            PlaybackBarWindowOverlayBridge(
-                controller: playbackOverlayController,
-                nowPlaying: playbackStore.nowPlaying,
+            MacPlaybackOverlayHostView(
+                playbackOverlayController: playbackOverlayController,
+                nowPlayingOverlayController: nowPlayingOverlayController,
                 performanceModeEnabled: performanceModeEnabled,
-                isVisible: !showNowPlaying,
-                style: .regular,
-                onActivate: {
-                    guard playbackStore.hasActiveNowPlaying else { return }
-                    showNowPlaying = true
-                }
+                showNowPlaying: $showNowPlaying
             )
         )
-        .background(
-            NowPlayingWindowOverlayBridge(
-                controller: nowPlayingOverlayController,
-                nowPlaying: playbackStore.nowPlaying,
-                appStore: store,
-                playbackStore: playbackStore,
-                isVisible: showNowPlaying,
-                onClose: {
-                    showNowPlaying = false
-                }
-            )
-        )
-        .onChange(of: playbackStore.hasActiveNowPlaying) { _, hasActiveNowPlaying in
-            guard !hasActiveNowPlaying else { return }
-            showNowPlaying = false
-        }
         .task {
             guard let server = store.currentServer else { return }
             await libraryViewModel.load(using: server)
@@ -214,18 +193,26 @@ struct AppLayoutView: View {
             playbackOverlayController.detach()
             nowPlayingOverlayController.detach()
         }
+        .onAppear {
+            #if DEBUG
+            guard !didApplyUIVerificationLaunchConfig else { return }
+            didApplyUIVerificationLaunchConfig = true
+            let config = UIVerificationLaunchConfig.current
+            guard config.isEnabled else { return }
+            if let override = config.performanceModeOverride {
+                performanceModeEnabled = override
+            }
+            if let tabRaw = config.initialTabRawValue,
+               let destination = SidebarDestination(rawValue: tabRaw) {
+                navigationCoordinator.selectedTab = destination
+            }
+            #endif
+        }
         .frame(minWidth: 1100, minHeight: 720)
         .background(
             Group {
                 Button("") { navigationCoordinator.goBack() }.keyboardShortcut("[", modifiers: .command)
                 Button("") { navigationCoordinator.goForward() }.keyboardShortcut("]", modifiers: .command)
-                Button("") {
-                    if showNowPlaying {
-                        showNowPlaying = false
-                    } else if playbackStore.hasActiveNowPlaying {
-                        showNowPlaying = true
-                    }
-                }.keyboardShortcut("j", modifiers: .command)
                 Button("") { navigationCoordinator.selectTab(.home) }.keyboardShortcut("1", modifiers: .control)
                 Button("") { navigationCoordinator.selectTab(.albums) }.keyboardShortcut("2", modifiers: .control)
                 Button("") { navigationCoordinator.selectTab(.tracks) }.keyboardShortcut("3", modifiers: .control)
@@ -294,6 +281,61 @@ struct AppLayoutView: View {
     }
 }
 
+private struct MacPlaybackOverlayHostView: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(PlaybackStore.self) private var playbackStore
+    let playbackOverlayController: PlaybackBarWindowOverlayController
+    let nowPlayingOverlayController: NowPlayingWindowOverlayController
+    let performanceModeEnabled: Bool
+    @Binding var showNowPlaying: Bool
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .background(
+                PlaybackBarWindowOverlayBridge(
+                    controller: playbackOverlayController,
+                    nowPlaying: playbackStore.nowPlaying,
+                    performanceModeEnabled: performanceModeEnabled,
+                    isVisible: !showNowPlaying,
+                    style: .regular,
+                    onActivate: {
+                        guard playbackStore.hasActiveNowPlaying else { return }
+                        showNowPlaying = true
+                    }
+                )
+            )
+            .background(
+                NowPlayingWindowOverlayBridge(
+                    controller: nowPlayingOverlayController,
+                    nowPlaying: playbackStore.nowPlaying,
+                    appStore: store,
+                    playbackStore: playbackStore,
+                    isVisible: showNowPlaying,
+                    onClose: {
+                        showNowPlaying = false
+                    }
+                )
+            )
+            .background(
+                Button("") {
+                    if showNowPlaying {
+                        showNowPlaying = false
+                    } else if playbackStore.hasActiveNowPlaying {
+                        showNowPlaying = true
+                    }
+                }
+                .keyboardShortcut("j", modifiers: .command)
+                .opacity(0)
+                .allowsHitTesting(false)
+            )
+            .onChange(of: playbackStore.hasActiveNowPlaying) { _, hasActiveNowPlaying in
+                guard !hasActiveNowPlaying else { return }
+                showNowPlaying = false
+            }
+    }
+}
+
 struct SidebarView: View {
     @Binding var selection: SidebarDestination
 
@@ -348,6 +390,7 @@ struct SidebarItemView: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
+        .accessibilityIdentifier(UIAccessibilityID.sidebarTab(item.rawValue))
     }
 }
 
@@ -732,6 +775,7 @@ struct ToolbarSearchField: View {
                 .stroke((isFocused?.wrappedValue ?? false) ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.12), lineWidth: 1)
         )
         .accessibilityLabel("搜索")
+        .accessibilityIdentifier(UIAccessibilityID.toolbarSearchField)
     }
 }
 
@@ -825,6 +869,7 @@ struct UnifiedLibraryToolbarGroup<Controls: View>: ToolbarContent {
             ToolbarDivider()
 
             PerformanceModeToolbarButton(isEnabled: $performanceModeEnabled)
+                .accessibilityIdentifier(UIAccessibilityID.toolbarPerformanceMode)
 
             if store.currentServer != nil {
                 Button {
@@ -834,6 +879,7 @@ struct UnifiedLibraryToolbarGroup<Controls: View>: ToolbarContent {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("断开当前服务端")
+                .accessibilityIdentifier(UIAccessibilityID.toolbarDisconnect)
             } else if store.isOfflineBrowsing {
                 Button {
                     store.isConnectionSheetPresented = true
@@ -959,6 +1005,7 @@ struct ToolbarTitleMenu: View {
             }
         }
         .help("点击快速切换模块 (⌃1~⌃6)")
+        .accessibilityIdentifier(UIAccessibilityID.toolbarTitleMenu)
     }
 
     @ViewBuilder

@@ -183,16 +183,18 @@ brew install redis
 brew install media-control
 ```
 
-运行方式：
+运行方式（推荐使用根目录 `Makefile` 统一代理入口，随时执行 `make help` 查看全部指令）：
 
 ```bash
-# 方式一：前台调试
+# 方式一：统一 Makefile 代理（推荐）
+make help       # 查看所有后端、三端客户端、测试与清理指令
+make init       # 编译后端并安装/重载 launchd 守护服务
+make restart    # 停止、重新编译最新 Go 后端并启动
+make status     # 查看 launchd 任务与 8082 端口状态
+
+# 方式二：前台直接调试
 go build -o sonic-lens
 ./sonic-lens
-
-# 方式二：使用仓库脚本部署为后台服务
-sh shell/script/build_sonic-lens_launchctl.sh
-sh shell/script/start_sonic-lens.sh
 ```
 
 启动后，你可以使用 Web 端或客户端连接它。
@@ -237,6 +239,20 @@ xcodegen generate
 - 如果你改了 target、scheme、Info.plist 生成配置，应该先改 `project.yml` 再重新生成工程
 
 ## 三端打包指引
+
+推荐使用根目录 `Makefile` 一键代理打包或验证编译：
+
+```bash
+make macos          # 仅编译 Release 版 dist/Soniclens Bridge.app
+make dmg            # 完整打包 macOS DMG + ZIP + SHA256 到 dist/
+make install-macos  # 编译并覆盖安装到 /Applications 并重启客户端
+make ios            # 编译验证 SoniclensBridgePhone (iOS)
+make ipad           # 编译验证 SoniclensBridgePad (iPadOS)
+make test           # 运行 Go 全量单元测试
+make clean          # 清理 dist/ 与 .derivedData/ 构建缓存
+```
+
+如需在 Xcode 中手动调试或分步执行：
 
 ### macOS
 

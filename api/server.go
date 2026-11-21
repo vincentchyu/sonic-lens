@@ -1124,23 +1124,12 @@ func setupRouter(name string) *gin.Engine {
 				}
 			}
 
-			for _, trendCycle := range fillInTrendCycle {
-				if _, ok := dateTrendData[trendCycle]; !ok {
-					dateTrendData[trendCycle] = 0
-				}
-				if _, ok := hourlyTrendData[trendCycle]; !ok {
-					hourlyTrendData[trendCycle] = &model.HourlyPlayTrendData{
-						Date:   trendCycle,
-						Total:  0,
-						Hourly: map[int]int{},
-					}
-				}
-			}
+			dailyTrend, hourlyTrend := buildTrendWindowResponse(fillInTrendCycle, dateTrendData, hourlyTrendData)
 
 			// 构造返回数据
 			result := gin.H{
-				"daily":  dateTrendData,
-				"hourly": hourlyTrendData,
+				"daily":  dailyTrend,
+				"hourly": hourlyTrend,
 			}
 
 			c.JSON(http.StatusOK, result)
@@ -3166,16 +3155,44 @@ func registerMobileScrobblerRoutes(r gin.IRoutes, trackService mobileScrobbleRou
 	)
 }
 
-// FillInTrendCycle FillInTrendCycle
+// FillInTrendCycle 生成截至今天的最近 rangeDays 天日期列表（含今天，按日期升序，共 rangeDays 天）
 func FillInTrendCycle(rangeDays int) []string {
-	now := time.Now()
-	rangeDayList := make([]string, 0, rangeDays)
-	rangeDayList = append(rangeDayList, now.AddDate(0, 0, -rangeDays).Format("2006-01-02"))
-	start := now.AddDate(0, 0, -rangeDays)
-	for start.Before(now) {
-		start = start.AddDate(0, 0, 1)
-		rangeDayList = append(rangeDayList, start.Format("2006-01-02"))
+	return fillInTrendCycleFrom(time.Now(), rangeDays)
+}
+
+func fillInTrendCycleFrom(now time.Time, rangeDays int) []string {
+	if rangeDays <= 0 {
+		return []string{}
 	}
-	rangeDayList = append(rangeDayList, now.AddDate(0, 0, 1).Format("2006-01-02"))
+	// 按本地日历零点对齐，避免跨午夜或夏令时产生日期漂移
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	start := today.AddDate(0, 0, -(rangeDays - 1))
+	rangeDayList := make([]string, rangeDays)
+	for i := range rangeDays {
+		rangeDayList[i] = start.AddDate(0, 0, i).Format("2006-01-02")
+	}
 	return rangeDayList
+}
+
+// buildTrendWindowResponse 仅保留目标周期窗口内的日期并对缺失日期补零，防止越界或未来日期透出
+func buildTrendWindowResponse(
+	trendDates []string,
+	rawDaily map[string]int,
+	rawHourly map[string]*model.HourlyPlayTrendData,
+) (map[string]int, map[string]*model.HourlyPlayTrendData) {
+	daily := make(map[string]int, len(trendDates))
+	hourly := make(map[string]*model.HourlyPlayTrendData, len(trendDates))
+	for _, dateKey := range trendDates {
+		daily[dateKey] = rawDaily[dateKey]
+		if existing, ok := rawHourly[dateKey]; ok && existing != nil {
+			hourly[dateKey] = existing
+		} else {
+			hourly[dateKey] = &model.HourlyPlayTrendData{
+				Date:   dateKey,
+				Total:  daily[dateKey],
+				Hourly: map[int]int{},
+			}
+		}
+	}
+	return daily, hourly
 }

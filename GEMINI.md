@@ -59,6 +59,7 @@ SonicLens 核心架构蓝图、领域规则、开发规范与防坑记忆。AI A
 ### 2.3 客户端规范 (SwiftUI / Bridge)
 *详细 UI 布局、多碟规范与性能模式见 [soniclens-bridge/Docs/](file:///Users/vincent/Developer/code/go_code/src/github.com/vincentchyu/sonic-lens/soniclens-bridge/Docs/)*
 - **工程管理**：Xcode 工程由 `project.yml` 驱动，任何 Target/配置修改必须改 `project.yml` 并执行 `xcodegen generate`，严禁手改 `.xcodeproj`。
+- **统一构建与打包代理 (`Makefile`)**：根目录 [`Makefile`](./Makefile) 统一代理调度后端 `launchd` 服务（`make init`/`start`/`stop`/`restart`/`status`/`logs`，底层调用 `sonic-lens-run.sh`）、三端客户端打包（`make macos`/`dmg`/`install-macos`/`ios`/`ipad`）与测试清理（`make test`/`clean`），执行 `make help` 查看完整指令清单。
 - **平台隔离与材质**：macOS 专属代码与 AppKit 必须通过 `#if os(macOS)` 隔离；macOS 玻璃拟态效果必须由窗口级 `NSVisualEffectView` 长期承载，禁止在 SwiftUI 修饰链中裸用。
 - **资料库架构与轻量索引**：
   - 坚持“本地 SQLite (schema 7+) + FTS5 搜索 + `/api/library/sync` 增量同步 + WS 推送 + 详情页懒加载”；`LibraryViewModel` 单飞刷新，首页优先返回，禁止整页重载。
@@ -80,6 +81,9 @@ SonicLens 核心架构蓝图、领域规则、开发规范与防坑记忆。AI A
 - **音眸与分享 (ShareKit)**：
   - 音眸契约以 `core/ai/agent_insight_*.go` JSON Schema 为准；任务统一走 `/api/insight-jobs` 异步主链 + WS 推送 + 深链回流；iOS 关联 Live Activity 进度。
   - 分享统一走 `ShareKit`（iPhone 390pt 长图 / macOS 16:9 Bento Grid 双栏流式分页），全面废弃直接 View 截图。
+- **UI 自动化自检与可视化验收（`soniclens-ui-verify`）**：
+  - 所有跨端关键交互组件与主要容器统一在 `Testing/UIAccessibilityID.swift` 收口定义稳定 `accessibilityIdentifier`；确定性预览与 Mock 路由收口于 `Testing/UIVerificationSupport.swift`（支持 `#if DEBUG` 下 `-ui-mock`、`-ui-fixture`、`-ui-tab`、`-ui-appearance`、`-ui-performance-mode` 启动参数，由 `AppStore` / `HomeViewModel` / `LibraryViewModel` 及三端入口统一消费）。
+  - 修改或新增任意 macOS / iPadOS / iOS SwiftUI 视图、主题或交互后，必须先加载并执行 [`.agents/skills/soniclens-ui-verify/SKILL.md`](./.agents/skills/soniclens-ui-verify/SKILL.md)：先通过 `make ui-snapshots`（`SoniclensBridgeMacTests` + `SnapshotRenderer` 离屏多态渲染）生成 PNG，再按需通过 `make ui-verify-ios` / `verify_ui.sh`（或 `XcodeBuildMCP`）驱动模拟器交互并截图，**所有验收截图必须经 `read_file` 亲眼审图确认无截断、重叠、越界与换行异常后才允许宣称完成**。
 
 ### 2.4 Web 端规范
 - **后台架构**：`templates/admin.html` (Shell) + `templates/admin/*.html` (Partial) + `static/admin/` (CSS/JS)；列表状态统一使用 `ui-state.js`。

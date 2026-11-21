@@ -1,5 +1,17 @@
 # 记忆索引
 
+## 2026-11-21
+
+- **日期**: 2026-11-21
+    - **聚合摘要**: macOS 主页滚动高 CPU / 掉帧治理：底部播放条毛玻璃改 `.behindWindow`、`GlassPanel` 按需裁剪、主页 `LazyVStack` 拆平与静态网格、热力图 5 色阶合并绘制与滚动期 Hover 门控、顶层隔离 `PlaybackStore`、封面 Nuke 下采样。
+    - **特性清单**: [home_scroll_performance_feature_manifest.md](./memory/2026-11-21/home_scroll_performance_feature_manifest.md)
+
+## 2026-11-20
+
+- **日期**: 2026-11-20
+    - **聚合摘要**: 构建 `soniclens-bridge` 三层 UI 自检与可视化验收闭环（`UIAccessibilityID`、`UIVerificationSupport` Mock 启动路由、macOS 离屏快照 + 几何断言、iOS Simulator Mock 截图脚本 `verify_ui.sh`、XCUITest、`XcodeBuildMCP` 及 `.agents/skills/soniclens-ui-verify/SKILL.md`），同步完成聆听趋势热力图 X/Y 轴对齐、后端趋势日期窗口半开区间修复、桌面端悬停 Tooltip 与侧边栏收折动画性能优化。
+    - **特性清单**: [ui_verification_pipeline_feature_manifest.md](./memory/2026-11-20/ui_verification_pipeline_feature_manifest.md)
+
 ## 2026-11-16
 
 - **日期**: 2026-11-16

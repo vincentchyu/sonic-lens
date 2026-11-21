@@ -337,7 +337,7 @@ struct LyricsLiveSection: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            GlassPanel(cornerRadius: 12, padding: 0) {
+            GlassPanel(cornerRadius: 12, padding: 0, clipsContent: true) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         if lines.isEmpty {
@@ -387,7 +387,7 @@ struct InsightLiveSection: View {
     let items: [Insight]
 
     var body: some View {
-        GlassPanel(cornerRadius: 12, padding: 0) {
+        GlassPanel(cornerRadius: 12, padding: 0, clipsContent: true) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if items.isEmpty {

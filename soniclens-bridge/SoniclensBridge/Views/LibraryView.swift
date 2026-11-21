@@ -436,6 +436,7 @@ struct TrackListView: View {
     @State private var committedQuery: String
     @State private var selectedTrack: Track?
     @State private var searchCommitTask: Task<Void, Never>?
+    @State private var measuredWidth: CGFloat = 0
 
     init(
         viewModel: LibraryViewModel,
@@ -460,131 +461,136 @@ struct TrackListView: View {
     var body: some View {
         let nowPlaying = playbackStore.nowPlaying
         let favoriteKeys = favoriteStore.favoriteKeys
+        let effectiveWidth = measuredWidth > 0 ? measuredWidth : (prefersCompactLayout ? 390 : 880)
+        let columns = TrackColumnLayout(totalWidth: effectiveWidth - 40)
+        let usesCompactRows = prefersCompactLayout || effectiveWidth < 560
 
-        GeometryReader { proxy in
-            let columns = TrackColumnLayout(totalWidth: proxy.size.width - 40)
-            let usesCompactRows = prefersCompactLayout || proxy.size.width < 560
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if showsInlineControls {
-                        LibraryCollectionHeader(
-                            title: "曲目",
-                            subtitle: "长列表使用轻量表面，避免在滚动时叠加高成本材质。",
-                            statusSummary: LibraryStatusSummary.track(sort: selectedSort, filter: selectedFilter),
-                            trailing: {
-                                if usesCompactRows {
-                                    VStack(alignment: .trailing, spacing: 10) {
-                                        ToolbarSearchField(text: $query)
-                                        HStack(spacing: 10) {
-                                            TrackFilterMenu(selection: $selectedFilter)
-                                            LibrarySortMenu(title: "排序", selection: $selectedSort, options: LibrarySort.trackOptions)
-                                        }
-                                    }
-                                } else {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if showsInlineControls {
+                    LibraryCollectionHeader(
+                        title: "曲目",
+                        subtitle: "长列表使用轻量表面，避免在滚动时叠加高成本材质。",
+                        statusSummary: LibraryStatusSummary.track(sort: selectedSort, filter: selectedFilter),
+                        trailing: {
+                            if usesCompactRows {
+                                VStack(alignment: .trailing, spacing: 10) {
+                                    ToolbarSearchField(text: $query)
                                     HStack(spacing: 10) {
-                                        ToolbarSearchField(text: $query)
                                         TrackFilterMenu(selection: $selectedFilter)
                                         LibrarySortMenu(title: "排序", selection: $selectedSort, options: LibrarySort.trackOptions)
                                     }
                                 }
-                            }
-                        )
-                    }
-
-                    if let loadingStatus = viewModel.trackLoadingStatusText {
-                        LibraryCollectionLoadingHint(text: loadingStatus)
-                    }
-
-                    if viewModel.tracks.isEmpty {
-                        EmptyStateView(
-                            title: emptyTitle,
-                            subtitle: emptySubtitle
-                        )
-                    } else {
-                        if !usesCompactRows {
-                            TrackHeaderRow(columns: columns)
-                        }
-
-                        LazyVStack(spacing: 8) {
-                            ForEach(Array(viewModel.tracks.enumerated()), id: \.element.id) { index, track in
-                                let isFavorite = track.isFavorited || favoriteKeys.contains(
-                                    favoriteKey(
-                                        artist: track.artist,
-                                        album: track.album,
-                                        track: track.track,
-                                        trackNumber: track.trackNumber,
-                                        discNumber: track.discNumber
-                                    )
-                                )
-                                Group {
-                                    if usesCompactRows {
-                                        CompactTrackRowView(
-                                            track: track,
-                                            isNowPlaying: nowPlaying?.track == track.track &&
-                                                nowPlaying?.artist == track.artist &&
-                                                nowPlaying?.album == track.album,
-                                            isFavorite: isFavorite,
-                                            onFavorite: {
-                                                Task {
-                                                    await store.toggleFavorite(
-                                                        artist: track.artist,
-                                                        album: track.album,
-                                                        track: track.track,
-                                                        trackNumber: track.trackNumber,
-                                                        discNumber: track.discNumber
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    } else {
-                                        TrackRowView(
-                                            track: track,
-                                            columns: columns,
-                                            isNowPlaying: nowPlaying?.track == track.track &&
-                                                nowPlaying?.artist == track.artist &&
-                                                nowPlaying?.album == track.album,
-                                            isFavorite: isFavorite,
-                                            onFavorite: {
-                                                Task {
-                                                    await store.toggleFavorite(
-                                                        artist: track.artist,
-                                                        album: track.album,
-                                                        track: track.track,
-                                                        trackNumber: track.trackNumber,
-                                                        discNumber: track.discNumber
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    #if os(macOS)
-                                    navigationCoordinator.push(.trackDetail(track: track))
-                                    #else
-                                    selectedTrack = track
-                                    #endif
-                                }
-                                .onAppear {
-                                    if viewModel.shouldLoadMoreTracks(at: index) {
-                                        Task {
-                                            await viewModel.loadMoreTracks(
-                                                sort: selectedSort,
-                                                filter: selectedFilter,
-                                                query: committedQuery
-                                            )
-                                        }
-                                    }
+                            } else {
+                                HStack(spacing: 10) {
+                                    ToolbarSearchField(text: $query)
+                                    TrackFilterMenu(selection: $selectedFilter)
+                                    LibrarySortMenu(title: "排序", selection: $selectedSort, options: LibrarySort.trackOptions)
                                 }
                             }
                         }
-                    }
+                    )
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, showsInlineControls ? 24 : 16)
-                .padding(.bottom, 108)
+
+                if let loadingStatus = viewModel.trackLoadingStatusText {
+                    LibraryCollectionLoadingHint(text: loadingStatus)
+                }
+
+                if viewModel.tracks.isEmpty {
+                    EmptyStateView(
+                        title: emptyTitle,
+                        subtitle: emptySubtitle
+                    )
+                } else {
+                    if !usesCompactRows {
+                        TrackHeaderRow(columns: columns)
+                    }
+
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(viewModel.tracks.enumerated()), id: \.element.id) { index, track in
+                            let isFavorite = track.isFavorited || favoriteKeys.contains(
+                                favoriteKey(
+                                    artist: track.artist,
+                                    album: track.album,
+                                    track: track.track,
+                                    trackNumber: track.trackNumber,
+                                    discNumber: track.discNumber
+                                )
+                            )
+                            Group {
+                                if usesCompactRows {
+                                    CompactTrackRowView(
+                                        track: track,
+                                        isNowPlaying: nowPlaying?.track == track.track &&
+                                            nowPlaying?.artist == track.artist &&
+                                            nowPlaying?.album == track.album,
+                                        isFavorite: isFavorite,
+                                        onFavorite: {
+                                            Task {
+                                                await store.toggleFavorite(
+                                                    artist: track.artist,
+                                                    album: track.album,
+                                                    track: track.track,
+                                                    trackNumber: track.trackNumber,
+                                                    discNumber: track.discNumber
+                                                )
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    TrackRowView(
+                                        track: track,
+                                        columns: columns,
+                                        isNowPlaying: nowPlaying?.track == track.track &&
+                                            nowPlaying?.artist == track.artist &&
+                                            nowPlaying?.album == track.album,
+                                        isFavorite: isFavorite,
+                                        onFavorite: {
+                                            Task {
+                                                await store.toggleFavorite(
+                                                    artist: track.artist,
+                                                    album: track.album,
+                                                    track: track.track,
+                                                    trackNumber: track.trackNumber,
+                                                    discNumber: track.discNumber
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                #if os(macOS)
+                                navigationCoordinator.push(.trackDetail(track: track))
+                                #else
+                                selectedTrack = track
+                                #endif
+                            }
+                            .onAppear {
+                                if viewModel.shouldLoadMoreTracks(at: index) {
+                                    Task {
+                                        await viewModel.loadMoreTracks(
+                                            sort: selectedSort,
+                                            filter: selectedFilter,
+                                            query: committedQuery
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier(UIAccessibilityID.tracksList)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, showsInlineControls ? 24 : 16)
+            .padding(.bottom, 108)
+        }
+        .accessibilityIdentifier(UIAccessibilityID.tracksScrollView)
+        .measureDebouncedWidth(delayMs: 100, threshold: 4) { width, _ in
+            if abs(width - measuredWidth) >= 1 {
+                measuredWidth = width
             }
         }
         .task(id: "\(selectedSort.rawValue)|\(selectedFilter.rawValue)|\(committedQuery)") {

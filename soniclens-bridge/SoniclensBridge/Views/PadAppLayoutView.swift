@@ -68,6 +68,7 @@ struct PadAppLayoutView: View {
     @State private var trackQuery = ""
     @StateObject private var libraryViewModel = LibraryViewModel()
     @AppStorage("soniclens.performanceMode") private var performanceModeEnabled = false
+    @State private var didApplyUIVerificationLaunchConfig = false
 
     var body: some View {
         NavigationSplitView {
@@ -149,6 +150,21 @@ struct PadAppLayoutView: View {
         .onReceive(NotificationCenter.default.publisher(for: .librarySyncDidUpdate)) { _ in
             guard let server = store.currentServer else { return }
             Task { await libraryViewModel.refresh(using: server) }
+        }
+        .onAppear {
+            #if DEBUG
+            guard !didApplyUIVerificationLaunchConfig else { return }
+            didApplyUIVerificationLaunchConfig = true
+            let config = UIVerificationLaunchConfig.current
+            guard config.isEnabled else { return }
+            if let override = config.performanceModeOverride {
+                performanceModeEnabled = override
+            }
+            if let tabRaw = config.initialTabRawValue,
+               let destination = PadSidebarDestination(rawValue: tabRaw) {
+                selection = destination
+            }
+            #endif
         }
     }
 
@@ -255,5 +271,6 @@ private struct PadSidebarView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(UIAccessibilityID.sidebarTab(destination.rawValue))
     }
 }
